@@ -195,6 +195,20 @@
         .settings-value { font-size:13px; color:var(--accent-light); font-weight:600; font-family:'JetBrains Mono',monospace; }
         .nav-link.admin-link { color:var(--warning); }
         .nav-link.admin-link:hover,.nav-link.admin-link.active { color:var(--warning); background:rgba(251,191,36,0.08); }
+
+        /* ── Password Modal ──────────────────────────────── */
+        .modal-overlay { position:fixed; inset:0; z-index:9999; background:rgba(10,22,40,0.85); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; opacity:0; visibility:hidden; transition:all 0.3s ease; }
+        .modal-overlay.visible { opacity:1; visibility:visible; }
+        .modal { background:var(--navy-card); border:1px solid var(--border); border-radius:var(--radius); padding:36px; width:100%; max-width:400px; }
+        .modal h3 { font-size:18px; font-weight:700; color:var(--white); margin-bottom:20px; }
+        .modal-input { width:100%; padding:12px 14px; background:var(--navy-light); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); font-family:inherit; font-size:14px; outline:none; transition:var(--transition); margin-bottom:12px; }
+        .modal-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+        .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:8px; }
+        .modal-msg { font-size:13px; padding:10px 14px; border-radius:var(--radius-sm); margin-bottom:12px; display:none; }
+        .modal-msg.error { display:block; color:var(--error); background:var(--error-bg); border:1px solid rgba(248,113,113,0.15); }
+        .modal-msg.success { display:block; color:var(--success); background:var(--success-bg); border:1px solid rgba(52,211,153,0.15); }
+        .nav-user { cursor:pointer; transition:var(--transition); }
+        .nav-user:hover { border-color:var(--accent); color:var(--text); }
         @media (max-width:640px) {
             .nav { padding:0 16px; } .nav-links { display:none; } .hero { padding:48px 16px 40px; } .hero h1 { font-size:28px; }
             .hero-stats { gap:20px; } .container { padding:24px 16px 60px; } .db-selector { grid-template-columns:1fr; }
@@ -268,7 +282,7 @@
         </div>
         <div class="nav-right">
             <div class="nav-status"><span class="dot"></span> Online</div>
-            <span class="nav-user" id="navUser"></span>
+            <span class="nav-user" id="navUser" onclick="openPwModal()" title="Passwort ändern"></span>
             <button class="nav-logout" onclick="doLogout()">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 Abmelden
@@ -349,6 +363,21 @@
 
     <footer class="footer">BEATRIX – The Strategic Intelligence Suite · <a href="https://fehradvice.com" target="_blank">FehrAdvice & Partners AG</a> · Zürich</footer>
     <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ═══════ PASSWORD MODAL ═══════ -->
+    <div class="modal-overlay" id="pwModal" onclick="if(event.target===this)closePwModal()">
+        <div class="modal">
+            <h3>🔑 Passwort ändern</h3>
+            <div class="modal-msg" id="pwMsg"></div>
+            <input type="password" class="modal-input" id="pwCurrent" placeholder="Aktuelles Passwort">
+            <input type="password" class="modal-input" id="pwNew" placeholder="Neues Passwort (mind. 6 Zeichen)">
+            <input type="password" class="modal-input" id="pwConfirm" placeholder="Neues Passwort bestätigen">
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closePwModal()">Abbrechen</button>
+                <button class="btn btn-primary" id="pwBtn" onclick="changePassword()">Ändern</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         const API = '/api';
@@ -643,6 +672,40 @@
                 loadAdminData();
             } catch(e) { showToast('Verbindungsfehler', 'error'); }
         }
+
+        // ── Password Change ──────────────────────────────
+        function openPwModal() {
+            document.getElementById('pwModal').classList.add('visible');
+            document.getElementById('pwCurrent').value='';
+            document.getElementById('pwNew').value='';
+            document.getElementById('pwConfirm').value='';
+            document.getElementById('pwMsg').className='modal-msg';
+            document.getElementById('pwCurrent').focus();
+        }
+        function closePwModal() { document.getElementById('pwModal').classList.remove('visible'); }
+
+        async function changePassword() {
+            const cur = document.getElementById('pwCurrent').value;
+            const nw = document.getElementById('pwNew').value;
+            const conf = document.getElementById('pwConfirm').value;
+            const msg = document.getElementById('pwMsg');
+            const btn = document.getElementById('pwBtn');
+            msg.className='modal-msg';
+            if (!cur) { msg.className='modal-msg error'; msg.textContent='Bitte aktuelles Passwort eingeben.'; return; }
+            if (nw.length < 6) { msg.className='modal-msg error'; msg.textContent='Neues Passwort muss mindestens 6 Zeichen haben.'; return; }
+            if (nw !== conf) { msg.className='modal-msg error'; msg.textContent='Neue Passwörter stimmen nicht überein.'; return; }
+            btn.disabled=true; btn.textContent='Wird geändert...';
+            try {
+                const r = await fetch(`${API}/change-password`, {method:'POST', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({current_password:cur, new_password:nw})});
+                const d = await r.json();
+                if (!r.ok) { msg.className='modal-msg error'; msg.textContent=d.detail||'Fehler'; btn.disabled=false; btn.textContent='Ändern'; return; }
+                msg.className='modal-msg success'; msg.textContent='✓ Passwort erfolgreich geändert!';
+                showToast('Passwort geändert','success');
+                setTimeout(closePwModal, 1500);
+            } catch(e) { msg.className='modal-msg error'; msg.textContent='Verbindungsfehler'; }
+            btn.disabled=false; btn.textContent='Ändern';
+        }
+        document.addEventListener('keydown', e => { if(e.key==='Escape') closePwModal(); });
 
         checkAuth();
     </script>
