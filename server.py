@@ -872,15 +872,23 @@ def poll_github_answer(issue_number: int) -> dict:
         f"https://api.github.com/repos/{GH_CONTEXT_REPO}/issues/{issue_number}/comments",
         headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"})
     comments = json.loads(urllib.request.urlopen(req, context=ctx).read())
-    # Find Claude's final answer (last comment from claude[bot], not a progress update)
+    # Find Claude's answer - check from newest to oldest
     for comment in reversed(comments):
         login = comment.get("user", {}).get("login", "")
         body = comment.get("body", "")
-        if login == "claude[bot]" and not body.startswith("### Aufgabe"):
-            # Claude's real answer - strip any markdown task list headers
-            return {"status": "done", "answer": body, "comment_url": comment.get("html_url")}
-        if login == "claude[bot]":
-            return {"status": "processing", "progress": body[:200]}
+        if login != "claude[bot]": continue
+        # Final answer contains "Claude finished"
+        if "Claude finished" in body:
+            # Extract the actual answer (after the --- separator)
+            parts = body.split("---", 1)
+            answer = parts[1].strip() if len(parts) > 1 else body
+            return {"status": "done", "answer": answer, "comment_url": comment.get("html_url")}
+        # Error
+        if "encountered an error" in body:
+            return {"status": "error", "answer": "BEATRIX konnte die Analyse nicht abschließen. Bitte versuche es erneut."}
+        # Still processing
+        if "working" in body.lower() or "Working" in body:
+            return {"status": "processing", "progress": body[:300]}
     return {"status": "waiting"}
 
 @app.post("/api/chat")
