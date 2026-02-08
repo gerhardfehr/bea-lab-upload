@@ -613,7 +613,7 @@
                 // Settings
                 document.getElementById('adminSettings').innerHTML = `
                     <div class="settings-row"><span class="settings-label">E-Mail-Verifizierung</span><span class="settings-value" style="color:${settings.email_verification?'var(--success)':'var(--text-muted)'}">${settings.email_verification ? '✓ Aktiv' : '✗ Deaktiviert'}</span></div>
-                    <div class="settings-row"><span class="settings-label">SMTP konfiguriert</span><span class="settings-value" style="color:${settings.smtp_configured?'var(--success)':'var(--error)'}">${settings.smtp_configured ? '✓ Ja' : '✗ Nein'}</span></div>
+                    <div class="settings-row"><span class="settings-label">E-Mail-Versand (Resend)</span><span class="settings-value" style="color:${settings.smtp_configured?'var(--success)':'var(--error)'}">${settings.smtp_configured ? '✓ Konfiguriert' : '✗ Nicht konfiguriert'}</span></div>
                     <div class="settings-row"><span class="settings-label">Registrierung</span><span class="settings-value">${regMode}</span></div>
                     <div class="settings-row"><span class="settings-label">Erlaubte Domains</span><span class="settings-value">${domains.includes('*') ? 'Alle (*)' : domains.map(d=>'@'+d).join(', ') || 'Alle (*)'}</span></div>
                     <div class="settings-row"><span class="settings-label">JWT Gültigkeit</span><span class="settings-value">${settings.jwt_expiry_hours || 24}h</span></div>
