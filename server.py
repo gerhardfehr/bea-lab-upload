@@ -58,6 +58,14 @@ def get_db():
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
         try:
             Base.metadata.create_all(bind=_engine)
+            # Migration: add github_url column if missing
+            try:
+                from sqlalchemy import text
+                with _engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS github_url VARCHAR(1000)"))
+                    conn.commit()
+            except Exception:
+                pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
         except Exception as e:
             logger.error(f"DB init error: {e}")
