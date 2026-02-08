@@ -283,6 +283,85 @@
         .chat-suggestions { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
         .chat-suggestion { padding:8px 16px; background:var(--navy-card); border:1px solid var(--border); border-radius:20px; font-size:13px; color:var(--text-secondary); cursor:pointer; transition:var(--transition); font-family:inherit; }
         .chat-suggestion:hover { border-color:var(--accent); color:var(--accent-light); background:var(--accent-glow); }
+
+        /* ═══════ MODEL BUILDING ═══════ */
+        .mb-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:32px; flex-wrap:wrap; gap:16px; }
+        .mb-header h2 { font-size:24px; font-weight:700; color:var(--white); margin:0; }
+        .mb-header p { font-size:14px; color:var(--text-secondary); margin:4px 0 0; }
+        .mb-progress { display:flex; gap:4px; padding:16px 0; margin-bottom:28px; overflow-x:auto; }
+        .mb-step-dot { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:80px; cursor:pointer; }
+        .mb-step-num { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; border:2px solid var(--border); color:var(--text-muted); background:var(--navy-light); transition:var(--transition); }
+        .mb-step-dot.active .mb-step-num { border-color:var(--accent); color:var(--white); background:var(--accent); box-shadow:0 0 16px var(--accent-glow); }
+        .mb-step-dot.completed .mb-step-num { border-color:var(--success); color:var(--white); background:var(--success); }
+        .mb-step-dot.completed .mb-step-num::after { content:'✓'; }
+        .mb-step-label { font-size:10px; color:var(--text-muted); text-align:center; white-space:nowrap; transition:var(--transition); }
+        .mb-step-dot.active .mb-step-label { color:var(--accent-light); font-weight:600; }
+        .mb-step-dot.completed .mb-step-label { color:var(--success); }
+        .mb-step-line { flex:1; height:2px; background:var(--border); align-self:center; margin:0 -8px; margin-bottom:22px; }
+        .mb-step-line.completed { background:var(--success); }
+
+        .mb-panel { display:none; animation:fadeIn 0.3s ease; }
+        .mb-panel.active { display:block; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+        .mb-step-title { font-size:20px; font-weight:700; color:var(--white); margin-bottom:4px; }
+        .mb-step-desc { font-size:14px; color:var(--text-secondary); margin-bottom:24px; line-height:1.6; }
+
+        .mb-choices { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:24px; }
+        .mb-choice { padding:20px; background:var(--navy-light); border:2px solid var(--border); border-radius:var(--radius); cursor:pointer; transition:var(--transition); position:relative; }
+        .mb-choice:hover { border-color:var(--border-light); background:var(--navy-card); transform:translateY(-2px); }
+        .mb-choice.selected { border-color:var(--accent); background:rgba(91,138,245,0.06); box-shadow:0 0 0 3px var(--accent-glow); }
+        .mb-choice-num { position:absolute; top:12px; right:14px; width:24px; height:24px; border-radius:50%; background:var(--navy-mid); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:var(--text-muted); }
+        .mb-choice.selected .mb-choice-num { background:var(--accent); border-color:var(--accent); color:var(--white); }
+        .mb-choice-icon { font-size:24px; margin-bottom:10px; }
+        .mb-choice-title { font-size:15px; font-weight:700; color:var(--white); margin-bottom:6px; }
+        .mb-choice-desc { font-size:12px; color:var(--text-secondary); line-height:1.5; }
+        .mb-choice-meta { font-size:11px; color:var(--text-muted); margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+        .mb-choice.custom-choice { border-style:dashed; }
+
+        .mb-actions { display:flex; gap:12px; margin-top:24px; }
+        .mb-btn { padding:12px 28px; border-radius:var(--radius); font-size:14px; font-weight:600; cursor:pointer; transition:var(--transition); border:none; font-family:inherit; }
+        .mb-btn-primary { background:var(--accent); color:var(--white); }
+        .mb-btn-primary:hover { background:var(--accent-light); box-shadow:0 4px 16px rgba(91,138,245,0.3); }
+        .mb-btn-primary:disabled { opacity:0.4; cursor:not-allowed; }
+        .mb-btn-secondary { background:var(--navy-light); color:var(--text-secondary); border:1px solid var(--border); }
+        .mb-btn-secondary:hover { color:var(--white); border-color:var(--border-light); }
+        .mb-btn-back { background:none; color:var(--text-muted); border:1px solid var(--border); }
+
+        .mb-input { width:100%; padding:12px 16px; background:var(--navy-light); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-family:inherit; font-size:14px; outline:none; transition:var(--transition); margin-bottom:12px; }
+        .mb-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+        .mb-textarea { min-height:80px; resize:vertical; }
+        .mb-label { font-size:13px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; display:block; }
+
+        .mb-info-box { padding:16px 20px; background:rgba(91,138,245,0.06); border:1px solid rgba(91,138,245,0.15); border-radius:var(--radius); margin-bottom:20px; }
+        .mb-info-box p { font-size:13px; color:var(--text-secondary); line-height:1.6; margin:0; }
+        .mb-info-box strong { color:var(--accent-light); }
+
+        .mb-registry { display:grid; gap:12px; margin-top:20px; }
+        .mb-model-card { padding:16px 20px; background:var(--navy-light); border:1px solid var(--border); border-radius:var(--radius); display:flex; align-items:center; gap:16px; transition:var(--transition); cursor:pointer; }
+        .mb-model-card:hover { border-color:var(--border-light); background:var(--navy-card); }
+        .mb-model-id { font-size:11px; font-weight:700; color:var(--accent); background:var(--accent-glow); padding:4px 10px; border-radius:12px; white-space:nowrap; }
+        .mb-model-info { flex:1; }
+        .mb-model-name { font-size:14px; font-weight:600; color:var(--white); }
+        .mb-model-meta { font-size:12px; color:var(--text-muted); margin-top:2px; }
+        .mb-model-version { font-size:11px; color:var(--text-muted); background:var(--navy-mid); padding:3px 8px; border-radius:8px; }
+
+        .mb-summary { background:var(--navy-card); border:1px solid var(--border); border-radius:var(--radius); padding:24px; margin-bottom:20px; }
+        .mb-summary-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+        .mb-summary-row:last-child { border-bottom:none; }
+        .mb-summary-label { color:var(--text-muted); }
+        .mb-summary-value { color:var(--white); font-weight:600; }
+
+        .mb-mode-cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:28px; }
+        .mb-mode-card { padding:20px 16px; background:var(--navy-light); border:2px solid var(--border); border-radius:var(--radius); cursor:pointer; text-align:center; transition:var(--transition); }
+        .mb-mode-card:hover { border-color:var(--border-light); transform:translateY(-2px); }
+        .mb-mode-card.selected { border-color:var(--accent); background:rgba(91,138,245,0.06); }
+        .mb-mode-icon { font-size:28px; margin-bottom:10px; }
+        .mb-mode-name { font-size:14px; font-weight:700; color:var(--white); margin-bottom:4px; }
+        .mb-mode-time { font-size:11px; color:var(--accent-light); margin-bottom:6px; }
+        .mb-mode-desc { font-size:11px; color:var(--text-muted); line-height:1.4; }
+
+        @media (max-width:768px) { .mb-choices { grid-template-columns:1fr; } .mb-mode-cards { grid-template-columns:1fr 1fr; } }
         @media (max-width:768px) { .profile-grid { grid-template-columns:1fr; } .profile-row { grid-template-columns:1fr; } }
         @media (max-width:640px) {
             .nav { padding:0 16px; } .nav-links { display:none; } .hero { padding:48px 16px 40px; } .hero h1 { font-size:28px; }
@@ -368,6 +447,7 @@
         <a href="#" class="nav-brand" onclick="showSection('hero')"><img src="/logo.jpeg" alt="BEATRIX" class="nav-logo-img"><span class="nav-title">BEATRIX</span></a>
         <div class="nav-links">
             <a href="#" class="nav-link active" data-section="chat" onclick="showSection('chat',this)">Fragen</a>
+            <a href="#" class="nav-link" data-section="model" onclick="showSection('model',this)">Modell-Building</a>
             <a href="#" class="nav-link" data-section="upload" onclick="showSection('upload',this)">Upload</a>
             <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
             <a href="#" class="nav-link" data-section="profile" onclick="showSection('profile',this)">Profil</a>
@@ -468,6 +548,269 @@
 
     <section class="section" id="documents-section">
         <div class="container"><div class="section-header"><h2>Dokumente</h2><p>Übersicht aller indexierten Dokumente in der BEATRIX Knowledge Base.</p></div><div id="docTableWrapper"></div></div>
+    </section>
+
+    <!-- ═══════ MODEL BUILDING SECTION ═══════ -->
+    <section class="section" id="model-section">
+        <div class="container">
+            <div class="mb-header">
+                <div>
+                    <h2>Modell-Building</h2>
+                    <p>Evidenzbasierte Verhaltensmodelle mit dem EEE Workflow designen</p>
+                </div>
+                <button class="mb-btn mb-btn-secondary" onclick="mbShowRegistry()" id="mbRegistryBtn">📋 Modell-Registry (21)</button>
+            </div>
+
+            <!-- PROGRESS BAR -->
+            <div class="mb-progress" id="mbProgress" style="display:none">
+                <div class="mb-step-dot active" data-step="0"><div class="mb-step-num">0</div><div class="mb-step-label">Init</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-step="1"><div class="mb-step-num">1</div><div class="mb-step-label">Entry Point</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-step="2"><div class="mb-step-num">2</div><div class="mb-step-label">Scope</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-step="3"><div class="mb-step-num">3</div><div class="mb-step-label">Kontext Ψ</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-step="4"><div class="mb-step-num">4</div><div class="mb-step-label">Modell</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-step="5"><div class="mb-step-num">5</div><div class="mb-step-label">Parameter</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-step="6"><div class="mb-step-num">6</div><div class="mb-step-label">Ergebnis</div></div>
+            </div>
+
+            <!-- ═══ START: Mode Selection ═══ -->
+            <div class="mb-panel active" id="mbStart">
+                <div class="mb-step-title">Neues Verhaltensmodell designen</div>
+                <div class="mb-step-desc">Der EEE Workflow (Appendix EEE: METHOD-DESIGN) führt dich Schritt für Schritt zum evidenzbasierten Modell. Wähle deinen Modus:</div>
+
+                <div class="mb-mode-cards">
+                    <div class="mb-mode-card" onclick="mbSelectMode(this,'schnell')">
+                        <div class="mb-mode-icon">⚡</div>
+                        <div class="mb-mode-name">Schnell</div>
+                        <div class="mb-mode-time">~10 Minuten</div>
+                        <div class="mb-mode-desc">3 Fragen → komplettes 10C Modell via GGG Defaults</div>
+                    </div>
+                    <div class="mb-mode-card" onclick="mbSelectMode(this,'gefuehrt')">
+                        <div class="mb-mode-icon">🎯</div>
+                        <div class="mb-mode-name">Geführt</div>
+                        <div class="mb-mode-time">~45 Minuten</div>
+                        <div class="mb-mode-desc">Alle Steps mit Erklärungen & 3+1 Optionen</div>
+                    </div>
+                    <div class="mb-mode-card" onclick="mbSelectMode(this,'template')">
+                        <div class="mb-mode-icon">📦</div>
+                        <div class="mb-mode-name">Template</div>
+                        <div class="mb-mode-time">~20 Minuten</div>
+                        <div class="mb-mode-desc">Seed-Modell aus Registry anpassen</div>
+                    </div>
+                    <div class="mb-mode-card" onclick="mbSelectMode(this,'custom')">
+                        <div class="mb-mode-icon">🔧</div>
+                        <div class="mb-mode-name">Custom</div>
+                        <div class="mb-mode-time">Variabel</div>
+                        <div class="mb-mode-desc">Freie Gestaltung, maximale Kontrolle</div>
+                    </div>
+                </div>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-primary" id="mbStartBtn" disabled onclick="mbStartWorkflow()">Workflow starten →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 0: Session Init ═══ -->
+            <div class="mb-panel" id="mbStep0">
+                <div class="mb-step-title">Schritt 0: Session initialisieren</div>
+                <div class="mb-step-desc">Beschreibe deine Frage oder das Verhalten, das du modellieren möchtest. BEATRIX leitet daraus Domain, Scope und Lieferobjekte ab.</div>
+
+                <label class="mb-label">Deine Frage / Gestaltungsanlass</label>
+                <textarea class="mb-input mb-textarea" id="mbQuestion" placeholder="z.B. 'Wie können wir die Reskilling-Bereitschaft von Mitarbeitern erhöhen?' oder 'Ist das Alevitentum näher zum Zoroastrismus oder zum sunnitischen Islam?'"></textarea>
+
+                <div class="mb-info-box">
+                    <p><strong>Axiom MD-1:</strong> Jeder Schritt bietet 3+1 Choice Architecture — 3 kuratierte Optionen basierend auf Best Practices + 1 Custom Option für freie Gestaltung.</p>
+                </div>
+
+                <div id="mbStep0Result" style="display:none">
+                    <div class="mb-summary" id="mbSessionSummary"></div>
+                </div>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="mbGoToStart()">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="mbStep0Btn" onclick="mbProcessStep0()">Analysieren →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 1: Entry Point ═══ -->
+            <div class="mb-panel" id="mbStep1">
+                <div class="mb-step-title">Schritt 1: Entry Point</div>
+                <div class="mb-step-desc">Starte mit Theorie (EBF-Konzept anwenden) oder Praxis (konkretes Problem lösen)?</div>
+
+                <div class="mb-choices">
+                    <div class="mb-choice" onclick="mbSelect(this,'theory')">
+                        <div class="mb-choice-num">1</div>
+                        <div class="mb-choice-icon">📚</div>
+                        <div class="mb-choice-title">Theory-Driven</div>
+                        <div class="mb-choice-desc">Start mit existierenden CORE Appendices (AAA-AW). Passt, wenn du ein EBF-Konzept anwenden möchtest.</div>
+                        <div class="mb-choice-meta">→ Begin with EBF concept</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelect(this,'practice')">
+                        <div class="mb-choice-num">2</div>
+                        <div class="mb-choice-icon">🎯</div>
+                        <div class="mb-choice-title">Practice-Driven</div>
+                        <div class="mb-choice-desc">Start mit konkretem Problem oder Situation. Passt, wenn du ein reales Verhalten modellieren musst.</div>
+                        <div class="mb-choice-meta">→ Begin with Gestaltungsanlass</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelect(this,'hybrid')">
+                        <div class="mb-choice-num">3</div>
+                        <div class="mb-choice-icon">🔄</div>
+                        <div class="mb-choice-title">Hybrid</div>
+                        <div class="mb-choice-desc">Abwechselnde Theorie-Praxis-Zyklen. Passt, wenn Iteration erforderlich ist.</div>
+                        <div class="mb-choice-meta">→ Theory ↔ Practice Iteration</div>
+                    </div>
+                    <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
+                        <div class="mb-choice-num">4</div>
+                        <div class="mb-choice-icon">🔧</div>
+                        <div class="mb-choice-title">Custom</div>
+                        <div class="mb-choice-desc">Freie Wahl — du definierst den Entry Point selbst.</div>
+                    </div>
+                </div>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="mbGoStep(0)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" disabled id="mbStep1Btn" onclick="mbNextStep(2)">Weiter →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 2: Scope ═══ -->
+            <div class="mb-panel" id="mbStep2">
+                <div class="mb-step-title">Schritt 2: Scope Definition</div>
+                <div class="mb-step-desc">Welchen Verhaltenstyp modellierst du?</div>
+
+                <div class="mb-choices">
+                    <div class="mb-choice" onclick="mbSelect(this,'decision')">
+                        <div class="mb-choice-num">1</div>
+                        <div class="mb-choice-icon">⚖️</div>
+                        <div class="mb-choice-title">Decision</div>
+                        <div class="mb-choice-desc">Einmalentscheidung: Rentenmodell wählen, Impfung, Jobwechsel, Kaufentscheid.</div>
+                        <div class="mb-choice-meta">Mathematik: Logistic / Binary Choice</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelect(this,'continuous')">
+                        <div class="mb-choice-num">2</div>
+                        <div class="mb-choice-icon">📈</div>
+                        <div class="mb-choice-title">Continuous</div>
+                        <div class="mb-choice-desc">Wiederholtes Verhalten: Sparbetrag, Energieverbrauch, Trainingsfrequenz.</div>
+                        <div class="mb-choice-meta">Mathematik: Linear / CES Functional Form</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelect(this,'process')">
+                        <div class="mb-choice-num">3</div>
+                        <div class="mb-choice-icon">🔄</div>
+                        <div class="mb-choice-title">Process</div>
+                        <div class="mb-choice-desc">Veränderung über Zeit: Habit-Bildung, Learning, Adoption Journey.</div>
+                        <div class="mb-choice-meta">Mathematik: Dynamic / BCJ Models</div>
+                    </div>
+                    <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
+                        <div class="mb-choice-num">4</div>
+                        <div class="mb-choice-icon">🔧</div>
+                        <div class="mb-choice-title">Custom</div>
+                        <div class="mb-choice-desc">Spezifisch definieren — kombiniere oder erweitere die Typen.</div>
+                    </div>
+                </div>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="mbGoStep(1)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" disabled id="mbStep2Btn" onclick="mbNextStep(3)">Weiter →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 3: Context Ψ ═══ -->
+            <div class="mb-panel" id="mbStep3">
+                <div class="mb-step-title">Schritt 3: Kontext-Spezifikation (Ψ)</div>
+                <div class="mb-step-desc">Welche Kontextdimensionen sind relevant? BEATRIX schlägt basierend auf deiner Frage vor.</div>
+
+                <div class="mb-choices">
+                    <div class="mb-choice" onclick="mbSelect(this,'ggg-default')">
+                        <div class="mb-choice-num">1</div>
+                        <div class="mb-choice-icon">📊</div>
+                        <div class="mb-choice-title">GGG Defaults</div>
+                        <div class="mb-choice-desc">Vorkonfigurierte Ψ-Werte nach Domain & Level aus Tabelle GGG-1 (trust, digital_adoption, autonomy, risk_aversion).</div>
+                        <div class="mb-choice-meta">Empfohlen für Schnell-Modus</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelect(this,'custom-psi')">
+                        <div class="mb-choice-num">2</div>
+                        <div class="mb-choice-icon">🎛️</div>
+                        <div class="mb-choice-title">Custom Ψ-Dimensionen</div>
+                        <div class="mb-choice-desc">Du definierst explizit welche Ψ-Faktoren relevant sind (z.B. Saisonalität, Peer Effects, Availability).</div>
+                        <div class="mb-choice-meta">Für spezifische Kontexte</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelect(this,'full-8psi')">
+                        <div class="mb-choice-num">3</div>
+                        <div class="mb-choice-icon">🔬</div>
+                        <div class="mb-choice-title">Alle 8 Ψ-Dimensionen</div>
+                        <div class="mb-choice-desc">Vollständige Analyse: Ψ_I (Institutional), Ψ_S (Social), Ψ_K (Knowledge), Ψ_C (Cultural), Ψ_T (Temporal), Ψ_E (Economic), Ψ_M (Motivational), Ψ_F (Framing).</div>
+                        <div class="mb-choice-meta">Maximale Tiefe</div>
+                    </div>
+                    <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
+                        <div class="mb-choice-num">4</div>
+                        <div class="mb-choice-icon">🔧</div>
+                        <div class="mb-choice-title">Custom</div>
+                        <div class="mb-choice-desc">Eigene Kontext-Konfiguration mit freier Ψ-Auswahl.</div>
+                    </div>
+                </div>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="mbGoStep(2)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" disabled id="mbStep3Btn" onclick="mbProcessStep3()">BEATRIX analysieren lassen →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 4: Model ═══ -->
+            <div class="mb-panel" id="mbStep4">
+                <div class="mb-step-title">Schritt 4: Modell wählen</div>
+                <div class="mb-step-desc">BEATRIX sucht in der Modell-Registry oder baut ein neues 10C-Modell.</div>
+                <div id="mbModelResult">
+                    <div class="mb-info-box"><p>BEATRIX analysiert deine Eingaben und sucht nach passenden Modellen...</p></div>
+                </div>
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="mbGoStep(3)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="mbStep4Btn" onclick="mbNextStep(5)">Weiter →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 5: Parameters ═══ -->
+            <div class="mb-panel" id="mbStep5">
+                <div class="mb-step-title">Schritt 5: Parameter-Schätzung</div>
+                <div class="mb-step-desc">LLMMC Prior generieren und Bayesian Updating mit BCM2 & Papers.</div>
+                <div id="mbParamResult">
+                    <div class="mb-info-box"><p>BEATRIX generiert Parameter...</p></div>
+                </div>
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="mbGoStep(4)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="mbStep5Btn" onclick="mbNextStep(6)">Ergebnis berechnen →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 6: Result ═══ -->
+            <div class="mb-panel" id="mbStep6">
+                <div class="mb-step-title">Schritt 6: Ergebnis & Sensitivitätsanalyse</div>
+                <div class="mb-step-desc">Modell anwenden, Ergebnis berechnen, Robustheit prüfen.</div>
+                <div id="mbResultContent">
+                    <div class="mb-info-box"><p>BEATRIX berechnet das Ergebnis...</p></div>
+                </div>
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="mbGoStep(5)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" onclick="mbExportModel()">📄 Modell exportieren</button>
+                    <button class="mb-btn mb-btn-secondary" onclick="mbGoToStart()">Neues Modell</button>
+                </div>
+            </div>
+
+            <!-- ═══ REGISTRY VIEW ═══ -->
+            <div class="mb-panel" id="mbRegistry">
+                <div class="mb-step-title">Modell-Registry</div>
+                <div class="mb-step-desc">21 evidenzbasierte Modelle im EBF Framework.</div>
+                <div class="mb-registry" id="mbRegistryList"></div>
+                <div class="mb-actions" style="margin-top:20px">
+                    <button class="mb-btn mb-btn-back" onclick="mbGoToStart()">← Zurück zum Workflow</button>
+                </div>
+            </div>
+
+        </div>
     </section>
 
     <section class="section" id="admin-section">
@@ -1101,18 +1444,57 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        function showTyping() {
+        function showTyping(message) {
             const container = document.getElementById('chatMessages');
+            const existing = document.getElementById('typingIndicator');
+            if (existing) existing.remove();
             container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant" id="typingIndicator">
                 <div class="chat-msg-avatar">B</div>
-                <div class="chat-msg-body"><div class="chat-typing"><span></span><span></span><span></span></div></div>
+                <div class="chat-msg-body">
+                    <div style="display:flex;align-items:center;gap:10px;color:var(--text-muted);">
+                        <div class="chat-typing"><span></span><span></span><span></span></div>
+                        <span id="typingText">${message || 'BEATRIX denkt nach...'}</span>
+                    </div>
+                </div>
             </div>`);
             container.scrollTop = container.scrollHeight;
+        }
+
+        function updateTypingText(text) {
+            const el = document.getElementById('typingText');
+            if (el) el.textContent = text;
         }
 
         function removeTyping() {
             const el = document.getElementById('typingIndicator');
             if (el) el.remove();
+        }
+
+        async function pollForAnswer(issueNumber) {
+            const maxAttempts = 60; // 5 min max
+            const interval = 5000; // 5 seconds
+            const phases = [
+                'BEATRIX liest das Evidence-Based Framework...',
+                'Analysiert relevante Modelle und Axiome...',
+                'Prüft Ψ-Dimensionen und Kontextfaktoren...',
+                'Formuliert die Antwort...'
+            ];
+
+            for (let i = 0; i < maxAttempts; i++) {
+                // Update phase message
+                const phase = phases[Math.min(Math.floor(i / 5), phases.length - 1)];
+                updateTypingText(phase);
+
+                await new Promise(r => setTimeout(r, interval));
+                try {
+                    const r = await fetch(`${API}/chat/poll/${issueNumber}`, {headers:H()});
+                    if (r.status === 401) { doLogout(); return null; }
+                    const data = await r.json();
+                    if (data.status === 'done') return data;
+                    if (data.status === 'error') return {status:'error', answer: data.message};
+                } catch(e) { /* retry */ }
+            }
+            return {status: 'timeout', answer: 'Die Analyse dauert länger als erwartet. Die Antwort wird in Issue #' + issueNumber + ' auf GitHub erscheinen.'};
         }
 
         async function sendChat() {
@@ -1123,14 +1505,31 @@
             input.value = ''; autoResize(input);
             btn.disabled = true;
             appendMessage('user', question);
-            showTyping();
+            showTyping('BEATRIX sucht in der Wissensbasis...');
             try {
                 const r = await fetch(`${API}/chat`, {method:'POST', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({question})});
-                removeTyping();
                 if (r.status === 401) { doLogout(); return; }
                 const d = await r.json();
-                if (!r.ok) { appendMessage('assistant', d.detail || 'Entschuldigung, es gab einen Fehler.'); return; }
-                appendMessage('assistant', d.answer, d.sources);
+                if (!r.ok) { removeTyping(); appendMessage('assistant', d.detail || 'Entschuldigung, es gab einen Fehler.'); return; }
+
+                if (d.status === 'done' && d.path === 'fast') {
+                    // ⚡ FAST PATH: Instant answer from Knowledge Base
+                    removeTyping();
+                    appendMessage('assistant', d.answer, d.sources);
+                } else if (d.status === 'processing' && d.issue_number) {
+                    // 🔬 DEEP PATH: Claude Code analysis
+                    showTyping('Neue Frage! BEATRIX erarbeitet die Antwort mit dem EBF Framework (~3-5 Min)...');
+                    const result = await pollForAnswer(d.issue_number);
+                    removeTyping();
+                    if (result && result.answer) {
+                        appendMessage('assistant', result.answer, [{title: '🔬 EBF Deep Analysis', type: 'github', url: d.issue_url}]);
+                    } else {
+                        appendMessage('assistant', 'BEATRIX konnte keine Antwort generieren. Versuche es erneut.');
+                    }
+                } else if (d.answer) {
+                    removeTyping();
+                    appendMessage('assistant', d.answer, d.sources);
+                }
             } catch(e) {
                 removeTyping();
                 appendMessage('assistant', 'Verbindungsfehler. Bitte versuche es erneut.');
@@ -1159,6 +1558,262 @@
                 }
                 chatLoaded = true;
             } catch(e) { console.error('Chat history error:', e); }
+        }
+
+        // ═══════ MODEL BUILDING WORKFLOW ═══════
+        const mbState = { mode: null, step: 0, question: '', selections: {}, sessionId: null };
+
+        const MB_MODELS = [
+            { id:'MOD-001', name:'Religious Tradition Distance Model', v:'2.0', domain:'REL', type:'distance_comparison' },
+            { id:'MOD-REF-001', name:'Organic Referral Behavior Model', v:'1.0', domain:'ORG', type:'behavior' },
+            { id:'MOD-PSF', name:'Papal Succession Framework', v:'2.0', domain:'REL', type:'process' },
+            { id:'MOD-ESL', name:'Empirical Stability of Language Framework', v:'1.0', domain:'EDU', type:'analysis' },
+            { id:'MOD-NEAR-001', name:'Nearshoring Location Decision Model', v:'1.0', domain:'FIN', type:'decision' },
+            { id:'MOD-IDV-001', name:'Interdependence Understanding Model', v:'2.0', domain:'ORG', type:'analysis' },
+            { id:'MOD-PSM-001', name:'Philoro Strategy Model', v:'1.0', domain:'FIN', type:'strategy' },
+            { id:'MOD-MSR-001', name:'Mission Statement Resonance Model', v:'1.0', domain:'ORG', type:'analysis' },
+            { id:'MOD-ECHfP-001', name:'ECHfP Heating Replacement Behavioral Model', v:'1.0', domain:'ENV', type:'decision' },
+            { id:'MOD-CPS-001', name:'Complex Problem Solving 10C Mapping', v:'1.0', domain:'EDU', type:'analysis' },
+            { id:'MOD-TA-001', name:'Time-Intensive Goods Substitution Model', v:'1.0', domain:'FIN', type:'continuous' },
+            { id:'MOD-HMWM-001', name:'Holistic Migration Welfare Model', v:'3.3', domain:'POL', type:'process' },
+            { id:'MOD-012', name:'Fiscal Behavior Model (FBM-CH)', v:'1.0', domain:'FIN', type:'continuous' },
+            { id:'MOD-ZIN-001', name:'Kreislaufwirtschaft Behavior Dynamics ODE Model', v:'1.0', domain:'ENV', type:'process' },
+            { id:'MOD-PMWT-001', name:'Pharma-MFN Welfare Transfer Model', v:'1.0', domain:'HLT', type:'analysis' },
+            { id:'MOD-FIN-BUBBLE-001', name:'AI Bubble Diagnostic & Prognostic Model', v:'1.1', domain:'FIN', type:'analysis' },
+            { id:'MOD-ORG-BMW-001', name:'BMW Product Compliance Behavioral Model', v:'1.0', domain:'ORG', type:'decision' },
+            { id:'MOD-HLT-RES-001', name:'Health Reskilling Readiness Model', v:'1.0', domain:'HLT', type:'process' },
+            { id:'MOD-EDU-LLL-001', name:'Lifelong Learning Adoption Model', v:'1.0', domain:'EDU', type:'continuous' },
+            { id:'MOD-POL-TAX-001', name:'Tax Compliance Behavioral Model', v:'1.0', domain:'POL', type:'continuous' },
+            { id:'MOD-ENV-MOB-001', name:'Sustainable Mobility Transition Model', v:'1.0', domain:'ENV', type:'process' }
+        ];
+
+        const DOMAIN_LABELS = { REL:'Religion', FIN:'Finance', HLT:'Health', ENV:'Environment', POL:'Policy', ORG:'Organization', EDU:'Education', OTH:'Other' };
+        const DOMAIN_COLORS = { REL:'#a78bfa', FIN:'#34d399', HLT:'#f87171', ENV:'#60a5fa', POL:'#fbbf24', ORG:'#f472b6', EDU:'#38bdf8', OTH:'#94a3b8' };
+
+        function mbSelectMode(el, mode) {
+            document.querySelectorAll('.mb-mode-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            mbState.mode = mode;
+            document.getElementById('mbStartBtn').disabled = false;
+        }
+
+        function mbStartWorkflow() {
+            if (!mbState.mode) return;
+            mbState.step = 0;
+            mbShowPanel('mbStep0');
+            document.getElementById('mbProgress').style.display = 'flex';
+            mbUpdateProgress(0);
+        }
+
+        function mbGoToStart() {
+            mbState.step = 0;
+            mbState.selections = {};
+            mbState.question = '';
+            document.getElementById('mbProgress').style.display = 'none';
+            mbShowPanel('mbStart');
+            document.querySelectorAll('.mb-mode-card').forEach(c => c.classList.remove('selected'));
+            document.getElementById('mbStartBtn').disabled = true;
+        }
+
+        function mbShowPanel(panelId) {
+            document.querySelectorAll('#model-section .mb-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(panelId).classList.add('active');
+        }
+
+        function mbUpdateProgress(step) {
+            document.querySelectorAll('.mb-step-dot').forEach(d => {
+                const s = parseInt(d.dataset.step);
+                d.classList.remove('active','completed');
+                if (s < step) d.classList.add('completed');
+                else if (s === step) d.classList.add('active');
+            });
+            document.querySelectorAll('.mb-step-line').forEach((l, i) => {
+                l.classList.toggle('completed', i < step);
+            });
+        }
+
+        function mbGoStep(step) {
+            mbState.step = step;
+            mbUpdateProgress(step);
+            mbShowPanel('mbStep' + step);
+        }
+
+        function mbNextStep(step) {
+            mbState.step = step;
+            mbUpdateProgress(step);
+            mbShowPanel('mbStep' + step);
+        }
+
+        function mbSelect(el, value) {
+            const panel = el.closest('.mb-panel');
+            panel.querySelectorAll('.mb-choice').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            const stepId = panel.id;
+            mbState.selections[stepId] = value;
+            const btn = panel.querySelector('.mb-btn-primary');
+            if (btn) btn.disabled = false;
+        }
+
+        async function mbProcessStep0() {
+            const q = document.getElementById('mbQuestion').value.trim();
+            if (!q) { document.getElementById('mbQuestion').focus(); return; }
+            mbState.question = q;
+
+            const btn = document.getElementById('mbStep0Btn');
+            btn.disabled = true;
+            btn.textContent = 'BEATRIX analysiert...';
+
+            try {
+                const resp = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ question: `Analysiere diese Frage für den EEE Model-Building Workflow. Antworte NUR als JSON: {"domain":"REL/FIN/HLT/ENV/POL/ORG/EDU/OTH","domain_signals":["..."],"question_type":"analysis/decision/behavior_change/comparison","has_behavior_goal":true/false,"behavior_goal":"...oder null","scope_in":["..."],"scope_out":["..."],"suggested_mode":"schnell/gefuehrt/template/custom","session_id":"EBF-S-2026-02-08-XXX-001"}\n\nFrage: ${q}` })
+                });
+                const data = await resp.json();
+                let parsed = null;
+                if (data.answer) {
+                    try {
+                        const jsonMatch = data.answer.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+                    } catch(e) {}
+                }
+
+                if (!parsed) {
+                    parsed = {
+                        domain: 'OTH', domain_signals: [q.split(' ').slice(0,3).join(' ')],
+                        question_type: 'analysis', has_behavior_goal: false, behavior_goal: null,
+                        scope_in: ['Modell-Analyse'], scope_out: ['Interventionen'],
+                        suggested_mode: mbState.mode, session_id: `EBF-S-2026-02-08-OTH-001`
+                    };
+                }
+
+                mbState.sessionId = parsed.session_id;
+                mbState.selections.domain = parsed.domain;
+                mbState.selections.questionType = parsed.question_type;
+
+                const summaryEl = document.getElementById('mbSessionSummary');
+                const domainColor = DOMAIN_COLORS[parsed.domain] || '#94a3b8';
+                summaryEl.innerHTML = `
+                    <div class="mb-summary-row"><span class="mb-summary-label">Session-ID</span><span class="mb-summary-value" style="font-family:monospace">${parsed.session_id}</span></div>
+                    <div class="mb-summary-row"><span class="mb-summary-label">Domain</span><span class="mb-summary-value"><span style="color:${domainColor}">●</span> ${DOMAIN_LABELS[parsed.domain]||parsed.domain}</span></div>
+                    <div class="mb-summary-row"><span class="mb-summary-label">Signale</span><span class="mb-summary-value">${(parsed.domain_signals||[]).join(', ')}</span></div>
+                    <div class="mb-summary-row"><span class="mb-summary-label">Frage-Typ</span><span class="mb-summary-value">${parsed.question_type}</span></div>
+                    <div class="mb-summary-row"><span class="mb-summary-label">Verhaltensziel</span><span class="mb-summary-value">${parsed.has_behavior_goal ? '✅ ' + (parsed.behavior_goal||'Ja') : '❌ Keines'}</span></div>
+                    <div class="mb-summary-row"><span class="mb-summary-label">In Scope</span><span class="mb-summary-value">${(parsed.scope_in||[]).join(', ')}</span></div>
+                    <div class="mb-summary-row"><span class="mb-summary-label">Out of Scope</span><span class="mb-summary-value">${(parsed.scope_out||[]).join(', ')}</span></div>
+                `;
+                document.getElementById('mbStep0Result').style.display = 'block';
+
+                btn.textContent = 'Weiter zu Schritt 1 →';
+                btn.disabled = false;
+                btn.onclick = () => mbNextStep(1);
+
+            } catch(e) {
+                btn.textContent = 'Analysieren →';
+                btn.disabled = false;
+                console.error('Step 0 error:', e);
+            }
+        }
+
+        async function mbProcessStep3() {
+            const btn = document.getElementById('mbStep3Btn');
+            btn.disabled = true;
+            btn.textContent = 'BEATRIX analysiert Kontext...';
+
+            const psiChoice = mbState.selections.mbStep3 || 'ggg-default';
+
+            try {
+                const resp = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ question: `Für den EEE Model-Building Workflow Step 3 (Kontext Ψ). Frage: "${mbState.question}". Domain: ${mbState.selections.domain}. Modus: ${psiChoice}. Entry: ${mbState.selections.mbStep1||'practice'}. Scope: ${mbState.selections.mbStep2||'decision'}. Erstelle eine Kontext-Analyse mit den Ψ-Dimensionen. Antworte NUR als JSON: {"psi_dimensions":[{"id":"Ψ_I","name":"Institutional","value":0.7,"rationale":"..."},...],"domain_config":"...","level":"Individual/Household/Organization","10c_mapping":{"WHO":"...","WHAT":"...","HOW":"...","WHEN":"...","WHERE":"...","AWARE":"...","READY":"...","STAGE":"...","HIERARCHY":"...","EIT":"..."}}` })
+                });
+                const data = await resp.json();
+                let parsed = null;
+                if (data.answer) {
+                    try { const m = data.answer.match(/\{[\s\S]*\}/); if(m) parsed = JSON.parse(m[0]); } catch(e){}
+                }
+
+                const modelResult = document.getElementById('mbModelResult');
+                if (parsed && parsed.psi_dimensions) {
+                    mbState.selections.psi = parsed;
+                    let psiHtml = '<div class="mb-summary">';
+                    psiHtml += `<div class="mb-summary-row"><span class="mb-summary-label">Level</span><span class="mb-summary-value">${parsed.level||'Individual'}</span></div>`;
+                    for (const psi of parsed.psi_dimensions) {
+                        const pct = Math.round((psi.value||0.5)*100);
+                        psiHtml += `<div class="mb-summary-row"><span class="mb-summary-label">${psi.id} ${psi.name}</span><span class="mb-summary-value"><span style="display:inline-block;width:60px;height:6px;background:var(--navy-mid);border-radius:3px;overflow:hidden;vertical-align:middle;margin-right:8px"><span style="display:block;height:100%;width:${pct}%;background:var(--accent);border-radius:3px"></span></span>${pct}%</span></div>`;
+                    }
+                    if (parsed['10c_mapping']) {
+                        psiHtml += '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">';
+                        psiHtml += '<div style="font-size:12px;font-weight:700;color:var(--accent-light);margin-bottom:8px">10C CORE Mapping</div>';
+                        for (const [k,v] of Object.entries(parsed['10c_mapping'])) {
+                            psiHtml += `<div class="mb-summary-row"><span class="mb-summary-label">${k}</span><span class="mb-summary-value" style="font-size:12px;max-width:300px;text-align:right">${v}</span></div>`;
+                        }
+                        psiHtml += '</div>';
+                    }
+                    psiHtml += '</div>';
+                    modelResult.innerHTML = '<div class="mb-step-desc">BEATRIX sucht passende Modelle basierend auf deinem Kontext...</div>' + psiHtml;
+                } else {
+                    modelResult.innerHTML = '<div class="mb-info-box"><p>Kontext-Analyse abgeschlossen. Weiter zum Modell.</p></div>';
+                }
+
+                mbNextStep(4);
+
+            } catch(e) {
+                console.error('Step 3 error:', e);
+            } finally {
+                btn.textContent = 'BEATRIX analysieren lassen →';
+                btn.disabled = false;
+            }
+        }
+
+        function mbShowRegistry() {
+            mbShowPanel('mbRegistry');
+            document.getElementById('mbProgress').style.display = 'none';
+
+            const list = document.getElementById('mbRegistryList');
+            list.innerHTML = MB_MODELS.map(m => {
+                const color = DOMAIN_COLORS[m.domain] || '#94a3b8';
+                return `<div class="mb-model-card" onclick="mbUseTemplate('${m.id}')">
+                    <span class="mb-model-id" style="background:${color}22;color:${color}">${m.id}</span>
+                    <div class="mb-model-info">
+                        <div class="mb-model-name">${m.name}</div>
+                        <div class="mb-model-meta">${DOMAIN_LABELS[m.domain]||m.domain} · ${m.type}</div>
+                    </div>
+                    <span class="mb-model-version">v${m.v}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function mbUseTemplate(modelId) {
+            const model = MB_MODELS.find(m => m.id === modelId);
+            if (!model) return;
+            mbState.mode = 'template';
+            mbState.selections.templateModel = model;
+            document.getElementById('mbQuestion').value = `Basierend auf ${model.name} (${model.id})`;
+            mbShowPanel('mbStep0');
+            document.getElementById('mbProgress').style.display = 'flex';
+            mbUpdateProgress(0);
+        }
+
+        async function mbExportModel() {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Exportiert...';
+            try {
+                const resp = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ question: `Erstelle einen vollständigen Modell-Report für: "${mbState.question}". Session: ${mbState.sessionId}. Mode: ${mbState.mode}. Selections: ${JSON.stringify(mbState.selections)}. Formatiere als strukturierten Bericht mit Modell-ID, 10C Mapping, Ψ-Dimensionen, Parametern und Sensitivitätsanalyse.` })
+                });
+                const data = await resp.json();
+                if (data.answer) {
+                    const resultEl = document.getElementById('mbResultContent');
+                    resultEl.innerHTML = `<div class="mb-summary"><div style="white-space:pre-wrap;font-size:13px;color:var(--text);line-height:1.7">${data.answer}</div></div>`;
+                }
+            } catch(e) { console.error(e); }
+            btn.disabled = false;
+            btn.textContent = '📄 Modell exportieren';
         }
 
         checkAuth();
