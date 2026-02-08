@@ -126,7 +126,30 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
-class Document(Base):
+class UserInsight(Base):
+    __tablename__ = "user_insights"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_email = Column(String(320), nullable=False, index=True)
+    # Question & Answer
+    question_text = Column(Text, nullable=False)
+    question_category = Column(String(50), nullable=True)  # onboarding, login, voluntary
+    answer_text = Column(Text, nullable=True)
+    choice_index = Column(Integer, nullable=True)  # 1,2,3,4(custom),5(beatrix)
+    # Behavioral Metadata
+    latency_ms = Column(Integer, nullable=True)  # Time from question shown to answer
+    session_number = Column(Integer, default=1)  # nth login/session
+    question_number = Column(Integer, default=1)  # nth question in this session (1=mandatory, 2-3=nudged, 4+=voluntary)
+    was_mandatory = Column(Boolean, default=True)
+    was_nudged = Column(Boolean, default=False)
+    skipped = Column(Boolean, default=False)
+    # Extracted Insights
+    domain_signal = Column(String(20), nullable=True)  # REL/FIN/HLT/ENV/POL/ORG/EDU/OTH
+    thinking_style = Column(String(30), nullable=True)  # theoretical/practical/analytical/creative
+    abstraction_level = Column(String(20), nullable=True)  # abstract/concrete/mixed
+    autonomy_signal = Column(String(20), nullable=True)  # high(option4)/low(option5)/moderate(1-3)
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    context = Column(String(20), default="login")  # onboarding, login, model_building
     __tablename__ = "documents"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     title = Column(String(500), nullable=False)
@@ -179,6 +202,18 @@ def get_db():
                         id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
                         role VARCHAR(20) NOT NULL, content TEXT NOT NULL,
                         sources JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    # User insights / behavioral profiling table
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS user_insights (
+                        id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
+                        question_text TEXT NOT NULL, question_category VARCHAR(50),
+                        answer_text TEXT, choice_index INTEGER,
+                        latency_ms INTEGER, session_number INTEGER DEFAULT 1,
+                        question_number INTEGER DEFAULT 1, was_mandatory BOOLEAN DEFAULT TRUE,
+                        was_nudged BOOLEAN DEFAULT FALSE, skipped BOOLEAN DEFAULT FALSE,
+                        domain_signal VARCHAR(20), thinking_style VARCHAR(30),
+                        abstraction_level VARCHAR(20), autonomy_signal VARCHAR(20),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        context VARCHAR(20) DEFAULT 'login')"""))
                     # pgvector for semantic search (AlphaGo-style)
                     try:
                         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
@@ -810,6 +845,308 @@ async def disconnect_linkedin(user=Depends(require_auth)):
         u.linkedin_id = None
         db.commit()
         return {"message": "LinkedIn getrennt"}
+    finally: db.close()
+
+# ── Behavioral Insights / Ψ-Profiling ──────────────────────────────────
+
+INSIGHT_QUESTION_POOL = [
+    # Domain: diverse, covering BCM-relevant topics
+    {"id": "iq-001", "text": "Wenn du eine Entscheidung unter Unsicherheit triffst — verlässt du dich eher auf Daten oder auf dein Bauchgefühl?", "category": "decision_style", "domain": "ORG"},
+    {"id": "iq-002", "text": "Welches Verhaltensphänomen fasziniert dich am meisten: Warum Menschen nicht sparen, obwohl sie es wollen?", "category": "interest_probe", "domain": "FIN"},
+    {"id": "iq-003", "text": "Stell dir vor, du könntest ein Nudge-Experiment weltweit durchführen — in welchem Bereich: Gesundheit, Finanzen, Bildung oder Umwelt?", "category": "domain_preference", "domain": "HLT"},
+    {"id": "iq-004", "text": "Was ist für dich der wichtigste Hebel für Verhaltensänderung: die richtige Information, die richtige Architektur oder der richtige Zeitpunkt?", "category": "theory_preference", "domain": "ORG"},
+    {"id": "iq-005", "text": "Wenn du zwischen zwei Strategien wählen müsstest — eine mit 70% Erfolgswahrscheinlichkeit oder eine mit 30% aber 10x Impact — welche wählst du?", "category": "risk_preference", "domain": "FIN"},
+    {"id": "iq-006", "text": "Glaubst du, dass religiöse und kulturelle Werte stärker das wirtschaftliche Verhalten prägen als rationale Anreize?", "category": "worldview", "domain": "REL"},
+    {"id": "iq-007", "text": "Was wäre für dich der spannendere Auftrag: eine Regierung zu beraten oder ein Startup zu transformieren?", "category": "scope_preference", "domain": "POL"},
+    {"id": "iq-008", "text": "Wenn du an Willingness, Ability und Capacity denkst — wo scheitern die meisten Veränderungsprojekte?", "category": "bcm_understanding", "domain": "ORG"},
+    {"id": "iq-009", "text": "Wie wichtig ist dir, dass ein Verhaltensmodell mathematisch präzise ist vs. intuitiv verständlich?", "category": "abstraction_preference", "domain": "EDU"},
+    {"id": "iq-010", "text": "Welches Bias hältst du für das gefährlichste in strategischen Entscheidungen: Overconfidence, Status Quo Bias oder Sunk Cost?", "category": "bias_awareness", "domain": "ORG"},
+    {"id": "iq-011", "text": "Wenn du ein Behavioral Design Projekt starten könntest — würdest du mit der Zielgruppe beginnen oder mit dem gewünschten Verhalten?", "category": "design_approach", "domain": "ORG"},
+    {"id": "iq-012", "text": "Was treibt Unternehmen deiner Meinung nach mehr: der Wunsch nach Wachstum oder die Angst vor Verlust?", "category": "motivation_theory", "domain": "FIN"},
+]
+
+@app.get("/api/insight/question")
+async def get_insight_question(context: str = "login", user=Depends(require_auth)):
+    """Get next insight question for user. Returns question + metadata about what's expected."""
+    db = get_db()
+    try:
+        email = user["sub"]
+        # Count how many insights this user already has
+        total_insights = db.execute(text("SELECT COUNT(*) FROM user_insights WHERE user_email = :e"), {"e": email}).scalar() or 0
+        # Count insights in current session (last 10 minutes)
+        session_insights = db.execute(text(
+            "SELECT COUNT(*) FROM user_insights WHERE user_email = :e AND created_at > NOW() - INTERVAL '10 minutes'"
+        ), {"e": email}).scalar() or 0
+
+        # Determine question number and mandatory/nudge status
+        q_number = session_insights + 1
+        is_mandatory = q_number <= 1
+        is_nudged = q_number in [2, 3]
+        is_voluntary = q_number >= 4
+
+        # Get IDs of already-answered questions
+        answered = db.execute(text(
+            "SELECT question_text FROM user_insights WHERE user_email = :e AND skipped = FALSE"
+        ), {"e": email}).fetchall()
+        answered_texts = {r[0] for r in answered}
+
+        # Pick a question not yet answered, personalized by profile
+        profile = db.query(User).filter(User.email == email).first()
+        expertise = (profile.expertise or []) if profile else []
+
+        # Prioritize questions matching user expertise domains
+        domain_map = {
+            "Behavioral Economics": ["FIN", "ORG"],
+            "Strategy": ["ORG", "POL"],
+            "Decision Architecture": ["ORG", "FIN"],
+            "Healthcare": ["HLT"],
+            "Finance": ["FIN"],
+            "Education": ["EDU"],
+            "Religion": ["REL"],
+            "Environment": ["ENV"],
+            "Politics": ["POL"],
+        }
+        preferred_domains = set()
+        for exp in expertise:
+            for key, domains in domain_map.items():
+                if key.lower() in exp.lower():
+                    preferred_domains.update(domains)
+        if not preferred_domains:
+            preferred_domains = {"ORG", "FIN"}
+
+        # Sort: preferred domain first, then others
+        available = [q for q in INSIGHT_QUESTION_POOL if q["text"] not in answered_texts]
+        if not available:
+            available = INSIGHT_QUESTION_POOL  # Reset if all answered
+
+        preferred = [q for q in available if q["domain"] in preferred_domains]
+        other = [q for q in available if q["domain"] not in preferred_domains]
+
+        import random
+        random.shuffle(preferred)
+        random.shuffle(other)
+        ordered = preferred + other
+        question = ordered[0] if ordered else INSIGHT_QUESTION_POOL[0]
+
+        # Nudge messages
+        nudge_msg = None
+        if is_nudged:
+            nudges = [
+                "Noch eine Frage? Hilft BEATRIX, dich besser zu verstehen.",
+                "Eine weitere Frage stärkt dein Ψ-Profil.",
+                "Je mehr BEATRIX über deinen Denkstil weiss, desto besser die Modelle.",
+            ]
+            nudge_msg = random.choice(nudges)
+
+        return {
+            "question": question["text"],
+            "question_id": question["id"],
+            "category": question["category"],
+            "question_number": q_number,
+            "is_mandatory": is_mandatory,
+            "is_nudged": is_nudged,
+            "is_voluntary": is_voluntary,
+            "nudge_message": nudge_msg,
+            "total_answered": total_insights,
+            "can_skip": not is_mandatory,
+            "session_number": total_insights + 1,
+        }
+    except Exception as e:
+        logger.error(f"Insight question error: {e}")
+        # Fallback
+        return {
+            "question": INSIGHT_QUESTION_POOL[0]["text"],
+            "question_id": INSIGHT_QUESTION_POOL[0]["id"],
+            "category": INSIGHT_QUESTION_POOL[0]["category"],
+            "question_number": 1, "is_mandatory": True, "is_nudged": False,
+            "is_voluntary": False, "nudge_message": None, "total_answered": 0,
+            "can_skip": False, "session_number": 1,
+        }
+    finally: db.close()
+
+class InsightAnswer(BaseModel):
+    question_text: str
+    question_id: Optional[str] = None
+    answer_text: str
+    choice_index: Optional[int] = None
+    latency_ms: Optional[int] = None
+    question_number: int = 1
+    was_mandatory: bool = True
+    was_nudged: bool = False
+    skipped: bool = False
+    context: str = "login"
+
+@app.post("/api/insight/answer")
+async def submit_insight_answer(request: InsightAnswer, user=Depends(require_auth)):
+    """Submit answer to an insight question. Extracts behavioral metadata."""
+    db = get_db()
+    try:
+        email = user["sub"]
+
+        # Extract behavioral signals from the answer
+        domain_signal = None
+        thinking_style = None
+        abstraction_level = None
+        autonomy_signal = "moderate"
+
+        answer_lower = (request.answer_text or "").lower()
+
+        # Domain signal extraction
+        domain_keywords = {
+            "FIN": ["spar", "invest", "geld", "finan", "markt", "verlust", "gewinn", "rendite"],
+            "HLT": ["gesundheit", "health", "patient", "medizin", "therapie"],
+            "ORG": ["organisation", "unternehmen", "team", "führung", "manage", "strateg"],
+            "REL": ["religion", "glaub", "kultur", "wert", "ethik", "spiritu"],
+            "EDU": ["bildung", "lernen", "schule", "training", "wissen"],
+            "ENV": ["umwelt", "klima", "nachhaltig", "energie", "recycl"],
+            "POL": ["politik", "regierung", "gesetz", "demokrat", "wahl"],
+        }
+        for dom, keywords in domain_keywords.items():
+            if any(kw in answer_lower for kw in keywords):
+                domain_signal = dom; break
+
+        # Thinking style
+        theory_words = ["theorie", "modell", "framework", "konzept", "hypothese", "abstrakt"]
+        practice_words = ["praxis", "konkret", "beispiel", "projekt", "umsetz", "implementier"]
+        if any(w in answer_lower for w in theory_words):
+            thinking_style = "theoretical"
+        elif any(w in answer_lower for w in practice_words):
+            thinking_style = "practical"
+        else:
+            thinking_style = "mixed"
+
+        # Abstraction level (by answer length and structure)
+        if len(request.answer_text or "") > 200:
+            abstraction_level = "detailed"
+        elif len(request.answer_text or "") > 50:
+            abstraction_level = "moderate"
+        else:
+            abstraction_level = "concise"
+
+        # Autonomy signal from choice_index
+        if request.choice_index == 4:
+            autonomy_signal = "high"
+        elif request.choice_index == 5:
+            autonomy_signal = "delegating"
+        elif request.choice_index:
+            autonomy_signal = "moderate"
+
+        # Latency insight
+        if request.latency_ms and request.latency_ms < 3000:
+            thinking_style = (thinking_style or "") + "_fast"
+        elif request.latency_ms and request.latency_ms > 30000:
+            thinking_style = (thinking_style or "") + "_deliberate"
+
+        insight = UserInsight(
+            user_email=email,
+            question_text=request.question_text,
+            question_category=request.question_id,
+            answer_text=request.answer_text,
+            choice_index=request.choice_index,
+            latency_ms=request.latency_ms,
+            session_number=1,  # TODO: calculate from login count
+            question_number=request.question_number,
+            was_mandatory=request.was_mandatory,
+            was_nudged=request.was_nudged,
+            skipped=request.skipped,
+            domain_signal=domain_signal,
+            thinking_style=thinking_style,
+            abstraction_level=abstraction_level,
+            autonomy_signal=autonomy_signal,
+            context=request.context,
+        )
+        db.add(insight); db.commit()
+        logger.info(f"Insight recorded: {email} q#{request.question_number} domain={domain_signal} style={thinking_style}")
+        return {"status": "recorded", "domain_signal": domain_signal, "thinking_style": thinking_style}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Insight answer error: {e}")
+        raise HTTPException(500, f"Fehler: {e}")
+    finally: db.close()
+
+@app.get("/api/insight/profile")
+async def get_insight_profile(user=Depends(require_auth)):
+    """Get aggregated behavioral Ψ-profile for user."""
+    db = get_db()
+    try:
+        email = user["sub"]
+        insights = db.execute(text(
+            "SELECT * FROM user_insights WHERE user_email = :e ORDER BY created_at DESC"
+        ), {"e": email}).fetchall()
+
+        if not insights:
+            return {"has_profile": False, "total_insights": 0, "message": "Noch kein Ψ-Profil. Beantworte Fragen um dein Profil aufzubauen."}
+
+        # Aggregate signals
+        domains = {}
+        styles = {}
+        abstractions = {}
+        autonomy_signals = {}
+        total_latency = []
+        voluntary_count = 0
+
+        for row in insights:
+            r = dict(row._mapping)
+            if r.get("domain_signal"):
+                domains[r["domain_signal"]] = domains.get(r["domain_signal"], 0) + 1
+            if r.get("thinking_style"):
+                base_style = r["thinking_style"].split("_")[0]
+                styles[base_style] = styles.get(base_style, 0) + 1
+            if r.get("abstraction_level"):
+                abstractions[r["abstraction_level"]] = abstractions.get(r["abstraction_level"], 0) + 1
+            if r.get("autonomy_signal"):
+                autonomy_signals[r["autonomy_signal"]] = autonomy_signals.get(r["autonomy_signal"], 0) + 1
+            if r.get("latency_ms"):
+                total_latency.append(r["latency_ms"])
+            if not r.get("was_mandatory") and not r.get("was_nudged") and not r.get("skipped"):
+                voluntary_count += 1
+
+        # Primary signals
+        primary_domain = max(domains, key=domains.get) if domains else None
+        primary_style = max(styles, key=styles.get) if styles else None
+        avg_latency = sum(total_latency) / len(total_latency) if total_latency else None
+
+        # Engagement score (0-100)
+        engagement = min(100, len(insights) * 10 + voluntary_count * 15)
+
+        return {
+            "has_profile": True,
+            "total_insights": len(insights),
+            "primary_domain": primary_domain,
+            "domain_distribution": domains,
+            "primary_thinking_style": primary_style,
+            "thinking_styles": styles,
+            "abstraction_distribution": abstractions,
+            "autonomy_distribution": autonomy_signals,
+            "avg_decision_latency_ms": round(avg_latency) if avg_latency else None,
+            "voluntary_answers": voluntary_count,
+            "engagement_score": engagement,
+            "decision_speed": "fast" if avg_latency and avg_latency < 5000 else "deliberate" if avg_latency and avg_latency > 20000 else "moderate",
+        }
+    except Exception as e:
+        logger.error(f"Insight profile error: {e}")
+        return {"has_profile": False, "total_insights": 0, "error": str(e)}
+    finally: db.close()
+
+@app.post("/api/insight/skip")
+async def skip_insight_question(data: dict, user=Depends(require_auth)):
+    """Record that user skipped a question."""
+    db = get_db()
+    try:
+        insight = UserInsight(
+            user_email=user["sub"],
+            question_text=data.get("question_text", ""),
+            question_category=data.get("question_id"),
+            skipped=True,
+            question_number=data.get("question_number", 1),
+            was_mandatory=False,
+            context=data.get("context", "login"),
+        )
+        db.add(insight); db.commit()
+        return {"status": "skipped"}
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "detail": str(e)}
     finally: db.close()
 
 @app.post("/api/forgot-password")
