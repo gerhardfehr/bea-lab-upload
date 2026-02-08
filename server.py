@@ -37,6 +37,15 @@ ALLOWED_EMAIL_DOMAINS = [d.strip().lower() for d in os.getenv("ALLOWED_EMAIL_DOM
 # Example: "gerhard.fehr@fehradvice.com" → these users get admin on registration
 ADMIN_EMAILS = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
 
+# Email verification
+REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "true").lower() in ("true", "1", "yes")
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "") or SMTP_USER
+APP_URL = os.getenv("APP_URL", "https://bea-lab-upload-production.up.railway.app")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
 
@@ -97,6 +106,9 @@ class User(Base):
     password_salt = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
+    email_verified = Column(Boolean, default=False)
+    verification_token = Column(String(200), nullable=True)
+    verification_sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
@@ -132,6 +144,11 @@ def get_db():
                 with _engine.connect() as conn:
                     conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS github_url VARCHAR(1000)"))
                     conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(320)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR(200)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_sent_at TIMESTAMP"))
+                    # Auto-verify existing admin users
+                    conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -166,7 +183,50 @@ def push_to_github(filename, content_bytes):
         logger.error(f"GitHub push failed: {e}")
         return {"error": str(e)}
 
-app = FastAPI(title="BEA Lab Upload API", version="3.2.1")
+app = FastAPI(title="BEA Lab Upload API", version="3.3.0")
+
+def send_verification_email(email, name, token):
+    """Send verification email via SMTP"""
+    if not SMTP_USER or not SMTP_PASSWORD:
+        logger.warning("SMTP not configured, skipping verification email")
+        return False
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    verify_url = f"{APP_URL}/api/verify/{token}"
+    subject = "BEATRIX Lab – E-Mail bestätigen"
+    html = f"""<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:40px 24px">
+    <div style="text-align:center;margin-bottom:32px">
+        <h1 style="font-size:24px;font-weight:800;color:#0a1628;margin:0">BEATRIX <span style="color:#5b8af5">Lab</span></h1>
+        <p style="color:#666;font-size:14px;margin:8px 0 0">Strategic Intelligence Suite</p>
+    </div>
+    <p style="font-size:15px;color:#333">Hallo {name or 'dort'},</p>
+    <p style="font-size:15px;color:#333;line-height:1.6">Bitte bestätige deine E-Mail-Adresse, um dein BEATRIX Lab Konto zu aktivieren:</p>
+    <div style="text-align:center;margin:32px 0">
+        <a href="{verify_url}" style="display:inline-block;padding:14px 36px;background:#5b8af5;color:white;text-decoration:none;border-radius:10px;font-weight:700;font-size:15px">E-Mail bestätigen</a>
+    </div>
+    <p style="font-size:12px;color:#999;line-height:1.5">Falls der Button nicht funktioniert, kopiere diesen Link:<br>
+    <a href="{verify_url}" style="color:#5b8af5;word-break:break-all">{verify_url}</a></p>
+    <p style="font-size:12px;color:#999;margin-top:24px">Dieser Link ist 24 Stunden gültig.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:32px 0">
+    <p style="font-size:11px;color:#aaa;text-align:center">FehrAdvice & Partners AG · Zürich</p>
+</div>"""
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"BEATRIX Lab <{SMTP_FROM}>"
+        msg["To"] = email
+        msg.attach(MIMEText(f"Hallo {name},\n\nBitte bestätige deine E-Mail: {verify_url}\n\nDieser Link ist 24 Stunden gültig.", "plain"))
+        msg.attach(MIMEText(html, "html"))
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_FROM, email, msg.as_string())
+        logger.info(f"Verification email sent to {email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send verification email to {email}: {e}")
+        return False
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
@@ -230,10 +290,28 @@ async def register(request: RegisterRequest):
             raise HTTPException(409, "E-Mail bereits registriert")
         pw_hash, pw_salt = hash_password(request.password)
         is_admin = email in ADMIN_EMAILS
-        user = User(email=email, name=request.name or email.split('@')[0], password_hash=pw_hash, password_salt=pw_salt, is_admin=is_admin)
+        verification_token = base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip('=')
+        skip_verification = is_admin or not REQUIRE_EMAIL_VERIFICATION or not SMTP_USER
+        user = User(
+            email=email, name=request.name or email.split('@')[0],
+            password_hash=pw_hash, password_salt=pw_salt, is_admin=is_admin,
+            email_verified=skip_verification,
+            verification_token=None if skip_verification else verification_token,
+            verification_sent_at=None if skip_verification else datetime.utcnow()
+        )
         db.add(user); db.commit(); db.refresh(user)
+        if not skip_verification:
+            sent = send_verification_email(email, user.name, verification_token)
+            if not sent:
+                # Fallback: auto-verify if SMTP fails
+                user.email_verified = True; user.verification_token = None; db.commit()
+                logger.warning(f"SMTP failed, auto-verified {email}")
+            else:
+                logger.info(f"Verification email sent to {email}")
+                return JSONResponse({"status": "verification_required", "message": "Registrierung erfolgreich! Bitte prüfe dein E-Mail-Postfach und bestätige deine E-Mail-Adresse."})
+        # Admin or no verification required → direct login
         token = create_jwt({"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY})
-        logger.info(f"New user: {email}")
+        logger.info(f"New user: {email} (verified={user.email_verified})")
         resp = JSONResponse({"token": token, "expires_in": JWT_EXPIRY, "user": {"email": user.email, "name": user.name}})
         resp.set_cookie(key="bea_token", value=token, max_age=JWT_EXPIRY, httponly=True, samesite="lax")
         return resp
@@ -250,6 +328,8 @@ async def login(request: LoginRequest):
         if not user or not verify_password(request.password, user.password_hash, user.password_salt):
             raise HTTPException(401, "E-Mail oder Passwort falsch")
         if not user.is_active: raise HTTPException(403, "Konto deaktiviert")
+        if REQUIRE_EMAIL_VERIFICATION and not user.email_verified:
+            raise HTTPException(403, "E-Mail noch nicht bestätigt. Bitte prüfe dein Postfach.")
         user.last_login = datetime.utcnow(); db.commit()
         token = create_jwt({"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY})
         logger.info(f"Login: {email}")
@@ -259,6 +339,83 @@ async def login(request: LoginRequest):
     except HTTPException: raise
     except Exception as e: raise HTTPException(500, f"Login-Fehler: {e}")
     finally: db.close()
+
+@app.get("/api/verify/{token}")
+async def verify_email(token: str):
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.verification_token == token).first()
+        if not user:
+            html = _verify_page("Ungültiger Link", "Dieser Bestätigungslink ist ungültig oder wurde bereits verwendet.", False)
+            return HTMLResponse(html)
+        # Check 24h expiry
+        if user.verification_sent_at and (datetime.utcnow() - user.verification_sent_at).total_seconds() > 86400:
+            html = _verify_page("Link abgelaufen", "Dieser Bestätigungslink ist abgelaufen. Bitte melde dich an und fordere einen neuen Link an.", False)
+            return HTMLResponse(html)
+        user.email_verified = True
+        user.verification_token = None
+        db.commit()
+        logger.info(f"Email verified: {user.email}")
+        html = _verify_page("E-Mail bestätigt!", f"Deine E-Mail-Adresse ({user.email}) wurde erfolgreich bestätigt. Du kannst dich jetzt anmelden.", True)
+        return HTMLResponse(html)
+    except Exception as e:
+        logger.error(f"Verify error: {e}")
+        html = _verify_page("Fehler", "Ein Fehler ist aufgetreten. Bitte versuche es erneut.", False)
+        return HTMLResponse(html)
+    finally: db.close()
+
+@app.post("/api/resend-verification")
+async def resend_verification(request: LoginRequest):
+    email = request.email.strip().lower()
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        if not user: raise HTTPException(404, "E-Mail nicht gefunden")
+        if not verify_password(request.password, user.password_hash, user.password_salt):
+            raise HTTPException(401, "E-Mail oder Passwort falsch")
+        if user.email_verified: raise HTTPException(400, "E-Mail bereits bestätigt")
+        # Rate limit: max once every 2 minutes
+        if user.verification_sent_at and (datetime.utcnow() - user.verification_sent_at).total_seconds() < 120:
+            raise HTTPException(429, "Bitte warte 2 Minuten, bevor du einen neuen Link anforderst.")
+        new_token = base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip('=')
+        user.verification_token = new_token
+        user.verification_sent_at = datetime.utcnow()
+        db.commit()
+        sent = send_verification_email(email, user.name, new_token)
+        if not sent: raise HTTPException(500, "E-Mail konnte nicht gesendet werden")
+        return {"message": "Neuer Bestätigungslink wurde gesendet."}
+    except HTTPException: raise
+    except Exception as e: raise HTTPException(500, f"Fehler: {e}")
+    finally: db.close()
+
+@app.put("/api/admin/users/{user_id}/verify")
+async def admin_verify_user(user_id: str, user=Depends(require_auth)):
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        target = db.query(User).filter(User.id == user_id).first()
+        if not target: raise HTTPException(404, "Benutzer nicht gefunden")
+        target.email_verified = True; target.verification_token = None; db.commit()
+        return {"email": target.email, "email_verified": True}
+    finally: db.close()
+
+def _verify_page(title, message, success):
+    color = "#34d399" if success else "#f87171"
+    icon = "✓" if success else "✗"
+    return f"""<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>{title} – BEATRIX Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+<style>body{{font-family:'Plus Jakarta Sans',sans-serif;background:#0a1628;color:#e4e9f2;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
+.card{{max-width:440px;padding:48px 40px;text-align:center}}
+.icon{{font-size:56px;margin-bottom:20px;color:{color}}}
+h1{{font-size:24px;font-weight:800;margin-bottom:12px}}h1 span{{color:#5b8af5}}
+p{{font-size:15px;color:#8899b8;line-height:1.6;margin-bottom:28px}}
+a{{display:inline-block;padding:14px 36px;background:#5b8af5;color:white;text-decoration:none;border-radius:10px;font-weight:700;font-size:15px}}
+a:hover{{background:#7ba3ff}}</style></head>
+<body><div class="card"><div class="icon">{icon}</div><h1>BEATRIX <span>Lab</span></h1><h2>{title}</h2><p>{message}</p>
+<a href="{APP_URL}">Zum Login →</a></div></body></html>"""
+
+from fastapi.responses import HTMLResponse
 
 @app.get("/api/auth/check")
 async def check_auth(user=Depends(require_auth)):
@@ -274,7 +431,7 @@ async def health():
 @app.get("/api/admin/settings")
 async def admin_settings(user=Depends(require_auth)):
     if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
-    return {"allowed_email_domains": ALLOWED_EMAIL_DOMAINS or ["*"], "registration": "restricted" if ALLOWED_EMAIL_DOMAINS else "open", "jwt_expiry_hours": JWT_EXPIRY // 3600}
+    return {"allowed_email_domains": ALLOWED_EMAIL_DOMAINS or ["*"], "registration": "restricted" if ALLOWED_EMAIL_DOMAINS else "open", "jwt_expiry_hours": JWT_EXPIRY // 3600, "email_verification": REQUIRE_EMAIL_VERIFICATION, "smtp_configured": bool(SMTP_USER)}
 
 @app.get("/api/admin/users")
 async def admin_users(user=Depends(require_auth)):
@@ -282,7 +439,7 @@ async def admin_users(user=Depends(require_auth)):
     db = get_db()
     try:
         users = db.query(User).order_by(User.created_at.desc()).all()
-        return [{"id": u.id, "email": u.email, "name": u.name, "is_active": u.is_active, "is_admin": u.is_admin, "created_at": u.created_at.isoformat() if u.created_at else None, "last_login": u.last_login.isoformat() if u.last_login else None} for u in users]
+        return [{"id": u.id, "email": u.email, "name": u.name, "is_active": u.is_active, "is_admin": u.is_admin, "email_verified": u.email_verified, "created_at": u.created_at.isoformat() if u.created_at else None, "last_login": u.last_login.isoformat() if u.last_login else None} for u in users]
     finally: db.close()
 
 @app.put("/api/admin/users/{user_id}/toggle-active")
