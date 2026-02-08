@@ -150,6 +150,8 @@ class UserInsight(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     context = Column(String(20), default="login")  # onboarding, login, model_building
+
+class Document(Base):
     __tablename__ = "documents"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     title = Column(String(500), nullable=False)
