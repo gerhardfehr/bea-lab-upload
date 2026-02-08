@@ -621,30 +621,13 @@
                 <div class="mb-step-desc">Wähle eine Problemstellung oder definiere deine eigene. BEATRIX leitet daraus Domain, Scope und Lieferobjekte ab.</div>
 
                 <div class="mb-info-box" style="margin-bottom:20px">
-                    <p><strong>Axiom MD-1:</strong> 3+1+1 Choice Architecture — 3 kuratierte Problemstellungen + eigene Definition + BEATRIX-generierte Problemstellung.</p>
+                    <p><strong>Axiom MD-1:</strong> 3+1+1 Choice Architecture — 3 kuratierte Problemstellungen basierend auf deinem Profil + eigene Definition + BEATRIX-generierte Problemstellung.</p>
                 </div>
 
                 <div class="mb-choices" id="mbStep0Choices">
-                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Wie können wir die Reskilling-Bereitschaft von Mitarbeitern in der digitalen Transformation erhöhen?')">
-                        <div class="mb-choice-num">1</div>
-                        <div class="mb-choice-icon">🏢</div>
-                        <div class="mb-choice-title">Reskilling & Transformation</div>
-                        <div class="mb-choice-desc">Wie können wir die Reskilling-Bereitschaft von Mitarbeitern in der digitalen Transformation erhöhen?</div>
-                        <div class="mb-choice-meta">Domain: ORG · Behavior Change</div>
-                    </div>
-                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Warum sparen Haushalte mit mittlerem Einkommen trotz steigender Inflation nicht mehr, und wie kann man das ändern?')">
-                        <div class="mb-choice-num">2</div>
-                        <div class="mb-choice-icon">💰</div>
-                        <div class="mb-choice-title">Sparverhalten & Inflation</div>
-                        <div class="mb-choice-desc">Warum sparen Haushalte mit mittlerem Einkommen trotz steigender Inflation nicht mehr, und wie kann man das ändern?</div>
-                        <div class="mb-choice-meta">Domain: FIN · Decision Architecture</div>
-                    </div>
-                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Ist das Alevitentum als Glaubenssystem näher zum Zoroastrismus oder zum sunnitischen Islam?')">
-                        <div class="mb-choice-num">3</div>
-                        <div class="mb-choice-icon">🕊️</div>
-                        <div class="mb-choice-title">Religiöse Komplementarität</div>
-                        <div class="mb-choice-desc">Ist das Alevitentum als Glaubenssystem näher zum Zoroastrismus oder zum sunnitischen Islam?</div>
-                        <div class="mb-choice-meta">Domain: REL · Comparative Analysis</div>
+                    <div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,255,255,0.5)">
+                        <div style="font-size:24px;margin-bottom:8px">⏳</div>
+                        Lade personalisierte Vorschläge basierend auf deinem Profil...
                     </div>
                 </div>
 
@@ -659,7 +642,7 @@
                         <div class="mb-choice-num">5</div>
                         <div class="mb-choice-icon">🤖</div>
                         <div class="mb-choice-title">BEATRIX definiert für dich</div>
-                        <div class="mb-choice-desc">BEATRIX generiert eine Problemstellung basierend auf deinem gewählten Modus und aktuellen Themen.</div>
+                        <div class="mb-choice-desc">BEATRIX generiert eine Problemstellung basierend auf deinem Profil und aktuellen Themen.</div>
                     </div>
                 </div>
 
@@ -1641,9 +1624,94 @@
         function mbStartWorkflow() {
             if (!mbState.mode) return;
             mbState.step = 0;
+            mbState.selectedProblem = null;
             mbShowPanel('mbStep0');
             document.getElementById('mbProgress').style.display = 'flex';
             mbUpdateProgress(0);
+            mbLoadPersonalizedQuestions();
+        }
+
+        async function mbLoadPersonalizedQuestions() {
+            const container = document.getElementById('mbStep0Choices');
+            try {
+                // 1. Load user profile
+                const profResp = await fetch('/api/profile', {
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
+                const profile = await profResp.json();
+                const expertise = (profile.expertise || []).join(', ') || 'Behavioral Economics';
+                const userName = profile.name || 'User';
+                const position = profile.position || '';
+                const company = profile.company || '';
+
+                // 2. Ask BEATRIX to generate 3 personalized questions
+                const resp = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                    body: JSON.stringify({ question: `Generiere genau 3 Problemstellungen für den EEE Model-Building Workflow, personalisiert für dieses Profil:
+- Name: ${userName}
+- Position: ${position}
+- Unternehmen: ${company}
+- Expertise: ${expertise}
+
+Jede Problemstellung soll:
+1. Zum Interessensgebiet des Users passen
+2. Ein reales, aktuelles Verhaltensphänomen beschreiben
+3. Mit dem BCM modellierbar sein
+4. Unterschiedliche Domains abdecken
+
+Antworte NUR als JSON Array:
+[{"icon":"emoji","title":"Kurztitel max 4 Worte","question":"Die vollständige Problemstellung als Frage, 1-2 Sätze","domain":"REL/FIN/HLT/ENV/POL/ORG/EDU/OTH","type":"Behavior Change/Decision Architecture/Comparative Analysis/Strategy"}]` })
+                });
+                const data = await resp.json();
+
+                let questions = null;
+                if (data.answer) {
+                    try {
+                        const jsonMatch = data.answer.match(/\[[\s\S]*\]/);
+                        if (jsonMatch) questions = JSON.parse(jsonMatch[0]);
+                    } catch(e) { console.error('Parse error:', e); }
+                }
+
+                // 3. Fallback if generation failed
+                if (!questions || questions.length < 3) {
+                    questions = [
+                        { icon: '🏢', title: 'Strategie & Verhalten', question: `Wie beeinflusst Behavioral Economics die strategische Entscheidungsfindung in Beratungsunternehmen wie ${company || 'FehrAdvice'}?`, domain: 'ORG', type: 'Strategy' },
+                        { icon: '🧠', title: 'Decision Architecture', question: 'Wie kann Choice Architecture eingesetzt werden, um die Akzeptanz von Veränderungsprozessen in Organisationen zu erhöhen?', domain: 'ORG', type: 'Decision Architecture' },
+                        { icon: '💰', title: 'Finanzentscheidungen', question: 'Warum weichen Anlageentscheidungen von Privatinvestoren systematisch von rationalen Benchmarks ab, und wie kann Decision Architecture das korrigieren?', domain: 'FIN', type: 'Behavior Change' }
+                    ];
+                }
+
+                // 4. Render personalized choices
+                container.innerHTML = questions.slice(0, 3).map((q, i) => `
+                    <div class="mb-choice" onclick="mbSelectProblem(this, '${q.question.replace(/'/g, "\\'")}')">
+                        <div class="mb-choice-num">${i + 1}</div>
+                        <div class="mb-choice-icon">${q.icon || '📋'}</div>
+                        <div class="mb-choice-title">${q.title}</div>
+                        <div class="mb-choice-desc">${q.question}</div>
+                        <div class="mb-choice-meta">Domain: ${q.domain} · ${q.type}</div>
+                    </div>
+                `).join('');
+
+            } catch(e) {
+                console.error('Load questions error:', e);
+                container.innerHTML = `
+                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Wie beeinflusst Behavioral Economics strategische Entscheidungen in Organisationen?')">
+                        <div class="mb-choice-num">1</div><div class="mb-choice-icon">🧠</div>
+                        <div class="mb-choice-title">Behavioral Strategy</div>
+                        <div class="mb-choice-desc">Wie beeinflusst Behavioral Economics strategische Entscheidungen in Organisationen?</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Wie kann Decision Architecture die Akzeptanz von Change-Prozessen erhöhen?')">
+                        <div class="mb-choice-num">2</div><div class="mb-choice-icon">🏗️</div>
+                        <div class="mb-choice-title">Change & Architecture</div>
+                        <div class="mb-choice-desc">Wie kann Decision Architecture die Akzeptanz von Change-Prozessen erhöhen?</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Warum weichen Anlageentscheidungen systematisch von rationalen Benchmarks ab?')">
+                        <div class="mb-choice-num">3</div><div class="mb-choice-icon">💰</div>
+                        <div class="mb-choice-title">Investment Biases</div>
+                        <div class="mb-choice-desc">Warum weichen Anlageentscheidungen systematisch von rationalen Benchmarks ab?</div>
+                    </div>`;
+            }
         }
 
         function mbGoToStart() {
