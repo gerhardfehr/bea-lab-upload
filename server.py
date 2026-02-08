@@ -1373,9 +1373,9 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
         if existing:
             raise HTTPException(409, f"Duplikat: Dieser Text wurde bereits gespeichert als \"{existing.title}\" ({existing.created_at.strftime('%d.%m.%Y %H:%M')})")
         filename = f"{request.title.replace(' ', '_').replace('/', '-')}.txt"
-        gh_result = push_to_github(filename, request.content.encode("utf-8"))
-        github_url = gh_result.get("url", None)
-        doc = Document(title=request.title, content=request.content, source_type="text", database_target=request.database or "knowledge_base", category=request.category, language=request.language, tags=request.tags, status="indexed+github" if github_url else "indexed", github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash, doc_metadata={"content_length": len(request.content), "github": gh_result})
+        gh_result = push_to_github(filename, request.content.encode("utf-8")) or {}
+        github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
+        doc = Document(title=request.title, content=request.content, source_type="text", database_target=request.database or "knowledge_base", category=request.category, language=request.language, tags=request.tags, status="indexed+github" if github_url else "indexed", github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash, doc_metadata={"content_length": len(request.content), "github": gh_result or {}})
         db.add(doc); db.commit(); db.refresh(doc)
         # Auto-embed for vector search
         embed_document(db, doc.id)
