@@ -167,6 +167,34 @@
         @keyframes spin { to{transform:rotate(360deg)} }
         .footer { position:relative; z-index:1; text-align:center; padding:32px 24px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); }
         .footer a { color:var(--accent); text-decoration:none; }
+
+        /* ── Admin Dashboard ───────────────────────────────── */
+        .admin-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:32px; }
+        .admin-card { padding:24px; background:var(--navy-card); border:1px solid var(--border); border-radius:var(--radius); }
+        .admin-card-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px; }
+        .admin-card-value { font-size:28px; font-weight:800; color:var(--white); }
+        .admin-card-sub { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+        .admin-section-title { font-size:16px; font-weight:700; color:var(--white); margin-bottom:16px; display:flex; align-items:center; gap:10px; }
+        .admin-section-title .badge { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; background:var(--accent-glow); color:var(--accent-light); border:1px solid rgba(91,138,245,0.2); }
+        .user-table { width:100%; border-collapse:collapse; margin-bottom:32px; }
+        .user-table th { text-align:left; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); padding:10px 14px; border-bottom:1px solid var(--border); }
+        .user-table td { padding:12px 14px; font-size:13px; border-bottom:1px solid rgba(37,53,86,0.5); color:var(--text-secondary); }
+        .user-table tr:hover td { background:var(--navy-light); }
+        .user-email { color:var(--white); font-weight:500; }
+        .user-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:3px 8px; border-radius:4px; text-transform:uppercase; letter-spacing:0.3px; }
+        .user-badge.admin { background:rgba(251,191,36,0.12); color:var(--warning); border:1px solid rgba(251,191,36,0.2); }
+        .user-badge.user { background:var(--navy-light); color:var(--text-muted); border:1px solid var(--border); }
+        .user-badge.active { background:var(--success-bg); color:var(--success); border:1px solid rgba(52,211,153,0.2); }
+        .user-badge.inactive { background:var(--error-bg); color:var(--error); border:1px solid rgba(248,113,113,0.2); }
+        .btn-toggle { padding:5px 12px; font-size:11px; font-weight:600; font-family:inherit; cursor:pointer; border-radius:6px; transition:var(--transition); border:1px solid var(--border); background:var(--navy-light); color:var(--text-secondary); }
+        .btn-toggle:hover { background:var(--navy-hover); color:var(--white); border-color:var(--border-light); }
+        .btn-toggle.deactivate:hover { color:var(--error); border-color:rgba(248,113,113,0.3); background:var(--error-bg); }
+        .btn-toggle.activate:hover { color:var(--success); border-color:rgba(52,211,153,0.3); background:var(--success-bg); }
+        .settings-row { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--navy-card); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:10px; }
+        .settings-label { font-size:13px; color:var(--text); font-weight:500; }
+        .settings-value { font-size:13px; color:var(--accent-light); font-weight:600; font-family:'JetBrains Mono',monospace; }
+        .nav-link.admin-link { color:var(--warning); }
+        .nav-link.admin-link:hover,.nav-link.admin-link.active { color:var(--warning); background:rgba(251,191,36,0.08); }
         @media (max-width:640px) {
             .nav { padding:0 16px; } .nav-links { display:none; } .hero { padding:48px 16px 40px; } .hero h1 { font-size:28px; }
             .hero-stats { gap:20px; } .container { padding:24px 16px 60px; } .db-selector { grid-template-columns:1fr; }
@@ -233,6 +261,7 @@
         <div class="nav-links">
             <a href="#" class="nav-link active" data-section="upload" onclick="showSection('upload',this)">Upload</a>
             <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
+            <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">⚙ Admin</a>
         </div>
         <div class="nav-right">
             <div class="nav-status"><span class="dot"></span> Online</div>
@@ -300,6 +329,21 @@
         <div class="container"><div class="section-header"><h2>Dokumente</h2><p>Übersicht aller indexierten Dokumente in der BEATRIX Knowledge Base.</p></div><div id="docTableWrapper"></div></div>
     </section>
 
+    <section class="section" id="admin-section">
+        <div class="container">
+            <div class="section-header"><h2>⚙ Administration</h2><p>Benutzer verwalten und Systemeinstellungen konfigurieren.</p></div>
+            <div class="admin-cards" id="adminCards">
+                <div class="admin-card"><div class="admin-card-label">Benutzer</div><div class="admin-card-value" id="adminStatUsers">–</div><div class="admin-card-sub">Registriert</div></div>
+                <div class="admin-card"><div class="admin-card-label">Registrierung</div><div class="admin-card-value" id="adminStatReg" style="font-size:18px">–</div><div class="admin-card-sub" id="adminStatRegSub"></div></div>
+                <div class="admin-card"><div class="admin-card-label">Dokumente</div><div class="admin-card-value" id="adminStatDocs">–</div><div class="admin-card-sub">In Datenbank</div></div>
+            </div>
+            <div class="admin-section-title">Benutzer <span class="badge" id="adminUserCount">0</span></div>
+            <div id="adminUserTable"></div>
+            <div class="admin-section-title" style="margin-top:32px">Einstellungen</div>
+            <div id="adminSettings"></div>
+        </div>
+    </section>
+
     <footer class="footer">BEATRIX – The Strategic Intelligence Suite · <a href="https://fehradvice.com" target="_blank">FehrAdvice & Partners AG</a> · Zürich</footer>
     <div class="toast-container" id="toastContainer"></div>
 
@@ -327,6 +371,7 @@
                         currentUser = user ? JSON.parse(user) : (await r.json());
                         document.getElementById('authOverlay').classList.add('hidden');
                         document.getElementById('navUser').textContent = currentUser.name || currentUser.email;
+                        if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
                         loadStats();
                         return;
                     }
@@ -340,10 +385,13 @@
         function onAuthSuccess(data) {
             authToken = data.token;
             currentUser = data.user;
+            // Decode JWT to get admin status
+            try { const p = JSON.parse(atob(data.token.split('.')[1])); currentUser.admin = p.admin || false; } catch(e) { currentUser.admin = false; }
             sessionStorage.setItem('bea_token', authToken);
-            sessionStorage.setItem('bea_user', JSON.stringify(data.user));
+            sessionStorage.setItem('bea_user', JSON.stringify(currentUser));
             document.getElementById('authOverlay').classList.add('hidden');
             document.getElementById('navUser').textContent = data.user.name || data.user.email;
+            if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
             loadStats();
             showToast(`Willkommen, ${data.user.name || data.user.email}!`, 'success');
         }
@@ -400,6 +448,7 @@
             document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
             const sec=document.getElementById(name+'-section'); if(sec) sec.classList.add('active');
             if(name==='documents') loadDocuments();
+            if(name==='admin') loadAdminData();
         }
         function switchTab(tab,el) { currentTab=tab; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); document.getElementById('file-section').classList.toggle('active',tab==='file'); document.getElementById('text-section').classList.toggle('active',tab==='text'); updateCount(); }
         function selectDB(el) { document.querySelectorAll('.db-option').forEach(o=>o.classList.remove('selected')); el.classList.add('selected'); selectedDB=el.dataset.db; }
@@ -454,6 +503,79 @@
         function showToast(msg,type='info'){const c=document.getElementById('toastContainer'),t=document.createElement('div');t.className=`toast ${type}`;t.innerHTML=`<span>${{success:'✓',error:'✗',info:'ℹ'}[type]||''}</span> ${msg}`;c.appendChild(t);setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(20px)';t.style.transition='0.3s';setTimeout(()=>t.remove(),300);},4000);}
         function clearAll(){files=[];tags=[];renderFileList();renderTags();document.getElementById('textTitle').value='';document.getElementById('textContent').value='';updateCount();}
         document.getElementById('textContent').addEventListener('input',updateCount);
+
+        // ── Admin Dashboard ──────────────────────────────
+        async function loadAdminData() {
+            if (!currentUser || !currentUser.admin) return;
+            try {
+                const [usersR, settingsR, docsR] = await Promise.all([
+                    fetch(`${API}/admin/users`, {headers:H()}),
+                    fetch(`${API}/admin/settings`, {headers:H()}),
+                    fetch(`${API}/documents`, {headers:H()})
+                ]);
+                if (usersR.status===401) { doLogout(); return; }
+                const users = usersR.ok ? await usersR.json() : [];
+                const settings = settingsR.ok ? await settingsR.json() : {};
+                const docs = docsR.ok ? await docsR.json() : [];
+
+                // Stats
+                document.getElementById('adminStatUsers').textContent = users.length;
+                document.getElementById('adminStatDocs').textContent = docs.length;
+                const regMode = settings.registration === 'open' ? 'Offen' : 'Eingeschränkt';
+                document.getElementById('adminStatReg').textContent = regMode;
+                const domains = settings.allowed_email_domains || [];
+                document.getElementById('adminStatRegSub').textContent = domains.includes('*') ? 'Alle Domains' : domains.map(d => '@'+d).join(', ') || 'Alle Domains';
+
+                // User count badge
+                document.getElementById('adminUserCount').textContent = users.length;
+
+                // User table
+                const tbody = users.map(u => {
+                    const created = u.created_at ? new Date(u.created_at).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',year:'numeric'}) : '–';
+                    const lastLogin = u.last_login ? new Date(u.last_login).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Nie';
+                    const roleBadge = u.is_admin ? '<span class="user-badge admin">Admin</span>' : '<span class="user-badge user">User</span>';
+                    const statusBadge = u.is_active ? '<span class="user-badge active">Aktiv</span>' : '<span class="user-badge inactive">Inaktiv</span>';
+                    const toggleBtn = u.is_active
+                        ? `<button class="btn-toggle deactivate" onclick="toggleUserActive('${u.id}','${u.email}')">Deaktivieren</button>`
+                        : `<button class="btn-toggle activate" onclick="toggleUserActive('${u.id}','${u.email}')">Aktivieren</button>`;
+                    return `<tr>
+                        <td><span class="user-email">${u.name || '–'}</span><br><span style="font-size:11px;color:var(--text-muted)">${u.email}</span></td>
+                        <td>${roleBadge}</td>
+                        <td>${statusBadge}</td>
+                        <td>${created}</td>
+                        <td>${lastLogin}</td>
+                        <td>${toggleBtn}</td>
+                    </tr>`;
+                }).join('');
+
+                document.getElementById('adminUserTable').innerHTML = `<table class="user-table">
+                    <thead><tr><th>Benutzer</th><th>Rolle</th><th>Status</th><th>Registriert</th><th>Letzter Login</th><th>Aktion</th></tr></thead>
+                    <tbody>${tbody}</tbody>
+                </table>`;
+
+                // Settings
+                document.getElementById('adminSettings').innerHTML = `
+                    <div class="settings-row"><span class="settings-label">Registrierung</span><span class="settings-value">${regMode}</span></div>
+                    <div class="settings-row"><span class="settings-label">Erlaubte Domains</span><span class="settings-value">${domains.includes('*') ? 'Alle (*)' : domains.map(d=>'@'+d).join(', ') || 'Alle (*)'}</span></div>
+                    <div class="settings-row"><span class="settings-label">JWT Gültigkeit</span><span class="settings-value">${settings.jwt_expiry_hours || 24}h</span></div>
+                    <div class="settings-row"><span class="settings-label">Tipp: Domain einschränken</span><span class="settings-value" style="font-size:11px;color:var(--text-muted)">ALLOWED_EMAIL_DOMAINS in Railway setzen</span></div>
+                `;
+            } catch(e) {
+                document.getElementById('adminUserTable').innerHTML = '<p style="color:var(--error)">Fehler beim Laden der Admin-Daten.</p>';
+            }
+        }
+
+        async function toggleUserActive(userId, email) {
+            if (!confirm(`Benutzer ${email} wirklich umschalten?`)) return;
+            try {
+                const r = await fetch(`${API}/admin/users/${userId}/toggle-active`, {method:'PUT', headers:H()});
+                if (!r.ok) { showToast('Fehler beim Ändern', 'error'); return; }
+                const data = await r.json();
+                showToast(`${email}: ${data.is_active ? 'aktiviert' : 'deaktiviert'}`, data.is_active ? 'success' : 'info');
+                loadAdminData();
+            } catch(e) { showToast('Verbindungsfehler', 'error'); }
+        }
+
         checkAuth();
     </script>
 </body>
