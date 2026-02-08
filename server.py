@@ -536,8 +536,9 @@ async def linkedin_auth(user=Depends(require_auth)):
 
 @app.get("/api/auth/linkedin/callback")
 async def linkedin_callback(code: str = "", state: str = "", error: str = ""):
+    err_msg = error or "cancelled"
     if error or not code:
-        return HTMLResponse(f"<script>window.opener.postMessage({{type:'linkedin_error',error:'{error or \"cancelled\"}'}},'*');window.close();</script>")
+        return HTMLResponse(f"<script>window.opener.postMessage({{type:'linkedin_error',error:'{err_msg}'}},'*');window.close();</script>")
     redirect_uri = f"{APP_URL}/api/auth/linkedin/callback"
     import urllib.request, urllib.parse, ssl
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
