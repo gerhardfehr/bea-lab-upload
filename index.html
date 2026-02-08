@@ -904,6 +904,13 @@
                             </div>
                         </div>
                     </div>
+                    <!-- ═══ Ψ-PROFILE CARD ═══ -->
+                    <div class="profile-card" style="margin-top:16px" id="psiProfileCard">
+                        <div style="text-align:left">
+                            <div style="font-size:12px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px">🧠 Ψ-Profil</div>
+                            <div id="psiProfileContent" style="color:var(--text-secondary);font-size:13px">Lade Ψ-Profil...</div>
+                        </div>
+                    </div>
                 </div>
                 <div class="profile-form">
                     <h3>Profil bearbeiten</h3>
@@ -937,21 +944,20 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <!-- ═══ INSIGHT QUESTION MODAL ═══ -->
-    <div id="insightModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:20px">
-        <div style="background:var(--card);border-radius:20px;max-width:600px;width:100%;padding:40px;position:relative;border:1px solid rgba(139,170,255,0.15)">
-            <div style="text-align:center;margin-bottom:24px">
-                <div style="font-size:32px;margin-bottom:8px" id="insightIcon">🧠</div>
+    <div id="insightModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:20px">
+        <div style="background:var(--card);border-radius:20px;max-width:640px;width:100%;padding:36px;position:relative;border:1px solid rgba(139,170,255,0.15);max-height:90vh;overflow-y:auto">
+            <div style="text-align:center;margin-bottom:20px">
+                <div style="font-size:28px;margin-bottom:6px">🧠</div>
                 <div style="font-size:14px;color:var(--accent);font-weight:600;letter-spacing:1px" id="insightLabel">Ψ-PROFILING</div>
                 <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="insightCounter">Frage 1</div>
             </div>
-            <div style="font-size:18px;line-height:1.6;color:rgba(255,255,255,0.9);text-align:center;margin-bottom:24px" id="insightQuestion"></div>
-            <div id="insightNudge" style="display:none;text-align:center;font-size:13px;color:var(--accent);margin-bottom:16px;font-style:italic"></div>
-            <textarea id="insightAnswer" style="width:100%;min-height:80px;padding:14px;background:rgba(255,255,255,0.05);border:1px solid rgba(139,170,255,0.2);border-radius:12px;color:white;font-size:15px;resize:vertical;font-family:inherit" placeholder="Deine Antwort..."></textarea>
+            <div style="font-size:17px;line-height:1.5;color:rgba(255,255,255,0.9);text-align:center;margin-bottom:20px;font-weight:500" id="insightQuestion"></div>
+            <div id="insightNudge" style="display:none;text-align:center;font-size:13px;color:var(--accent);margin-bottom:12px;font-style:italic"></div>
+            <div id="insightChoices" style="display:flex;flex-direction:column;gap:8px"></div>
             <div style="display:flex;gap:12px;margin-top:20px;justify-content:center">
-                <button id="insightSkipBtn" style="display:none;padding:12px 24px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:rgba(255,255,255,0.5);cursor:pointer;font-size:14px" onclick="insightSkip()">Überspringen</button>
-                <button id="insightSubmitBtn" style="padding:12px 32px;border-radius:12px;border:none;background:var(--accent);color:white;cursor:pointer;font-size:15px;font-weight:600" onclick="insightSubmit()">Antworten</button>
+                <button id="insightSkipBtn" style="display:none;padding:10px 24px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:rgba(255,255,255,0.5);cursor:pointer;font-size:14px" onclick="insightSkip()">Überspringen</button>
             </div>
-            <div style="text-align:center;margin-top:16px">
+            <div style="text-align:center;margin-top:14px">
                 <div style="display:flex;gap:6px;justify-content:center" id="insightDots"></div>
             </div>
         </div>
@@ -1023,7 +1029,7 @@
             setTimeout(() => insightStart('login'), 800);
         }
 
-        // ── Insight / Ψ-Profiling ──────────────────────────────
+        // ── Insight / Ψ-Profiling (5-Choice Architecture) ──────────
         let insightState = { questionNum: 0, currentQuestion: null, startTime: null, context: 'login' };
 
         async function insightStart(context = 'login') {
@@ -1040,15 +1046,12 @@
                 insightState.startTime = Date.now();
                 insightState.questionNum = data.question_number;
 
-                // Update UI
                 const modal = document.getElementById('insightModal');
                 modal.style.display = 'flex';
                 document.getElementById('insightQuestion').textContent = data.question;
-                document.getElementById('insightAnswer').value = '';
-                document.getElementById('insightAnswer').focus();
-                document.getElementById('insightCounter').textContent = `Frage ${data.question_number}` + (data.total_answered > 0 ? ` · ${data.total_answered} bisherige Antworten` : '');
+                document.getElementById('insightCounter').textContent = `Frage ${data.question_number}` + (data.total_answered > 0 ? ` · ${data.total_answered} bisherige` : '');
 
-                // Label
+                // Label: mandatory / nudged / voluntary
                 const label = document.getElementById('insightLabel');
                 if (data.is_mandatory) {
                     label.textContent = 'Ψ-PROFILING · PFLICHTFRAGE';
@@ -1063,14 +1066,26 @@
 
                 // Nudge message
                 const nudgeEl = document.getElementById('insightNudge');
-                if (data.nudge_message) {
-                    nudgeEl.textContent = data.nudge_message;
-                    nudgeEl.style.display = 'block';
+                if (data.nudge_message) { nudgeEl.textContent = data.nudge_message; nudgeEl.style.display = 'block'; }
+                else { nudgeEl.style.display = 'none'; }
+
+                // Render 5 choice cards
+                const choicesEl = document.getElementById('insightChoices');
+                if (data.choices && data.choices.length > 0) {
+                    choicesEl.innerHTML = data.choices.map((c, i) => `
+                        <div onclick="insightSelectChoice(this, ${i + 1}, '${(c.label || '').replace(/'/g, "\\'")}')"
+                             style="display:flex;align-items:center;gap:14px;padding:14px 18px;border-radius:14px;border:1px solid rgba(139,170,255,0.12);background:rgba(255,255,255,0.03);cursor:pointer;transition:all 0.2s"
+                             onmouseover="this.style.borderColor='rgba(139,170,255,0.4)';this.style.background='rgba(139,170,255,0.08)'"
+                             onmouseout="if(!this.classList.contains('ins-selected')){this.style.borderColor='rgba(139,170,255,0.12)';this.style.background='rgba(255,255,255,0.03)'}">
+                            <div style="font-size:22px;flex-shrink:0">${c.icon || '○'}</div>
+                            <div style="font-size:15px;color:rgba(255,255,255,0.85);line-height:1.4">${c.label}</div>
+                        </div>
+                    `).join('');
                 } else {
-                    nudgeEl.style.display = 'none';
+                    choicesEl.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.4);padding:20px">Keine Optionen verfügbar</div>';
                 }
 
-                // Skip button (visible for non-mandatory)
+                // Skip button
                 document.getElementById('insightSkipBtn').style.display = data.can_skip ? 'block' : 'none';
 
                 // Progress dots
@@ -1079,24 +1094,28 @@
                 for (let i = 1; i <= Math.max(3, data.question_number); i++) {
                     const active = i === data.question_number;
                     const done = i < data.question_number;
-                    const color = done ? 'var(--accent)' : active ? 'white' : 'rgba(255,255,255,0.2)';
-                    dots += `<div style="width:8px;height:8px;border-radius:50%;background:${color}"></div>`;
+                    dots += `<div style="width:8px;height:8px;border-radius:50%;background:${done ? 'var(--accent)' : active ? 'white' : 'rgba(255,255,255,0.2)'}"></div>`;
                 }
                 dotsEl.innerHTML = dots;
-
             } catch(e) {
                 console.error('Insight load error:', e);
                 insightClose();
             }
         }
 
-        async function insightSubmit() {
-            const answer = document.getElementById('insightAnswer').value.trim();
-            if (!answer) { document.getElementById('insightAnswer').focus(); return; }
+        async function insightSelectChoice(el, choiceIndex, choiceLabel) {
+            // Visual selection
+            el.parentElement.querySelectorAll('div[onclick]').forEach(c => {
+                c.classList.remove('ins-selected');
+                c.style.borderColor = 'rgba(139,170,255,0.12)';
+                c.style.background = 'rgba(255,255,255,0.03)';
+            });
+            el.classList.add('ins-selected');
+            el.style.borderColor = 'var(--accent)';
+            el.style.background = 'rgba(139,170,255,0.15)';
 
-            const btn = document.getElementById('insightSubmitBtn');
-            btn.disabled = true;
-            btn.textContent = 'Wird gespeichert...';
+            // Brief delay for visual feedback
+            await new Promise(r => setTimeout(r, 400));
 
             const latency = Date.now() - insightState.startTime;
             const q = insightState.currentQuestion;
@@ -1108,7 +1127,8 @@
                     body: JSON.stringify({
                         question_text: q.question,
                         question_id: q.question_id,
-                        answer_text: answer,
+                        answer_text: choiceLabel,
+                        choice_index: choiceIndex,
                         latency_ms: latency,
                         question_number: q.question_number,
                         was_mandatory: q.is_mandatory,
@@ -1118,27 +1138,15 @@
                     })
                 });
 
-                btn.disabled = false;
-                btn.textContent = 'Antworten';
-
-                // After mandatory (1): always show next (nudge)
-                // After nudged (2-3): show next with "Noch eine?"
-                // After voluntary (4+): show next but easy to skip
+                // Flow: mandatory→next, nudged→next, voluntary→ask
                 if (q.question_number < 3) {
                     await insightNext();
                 } else {
-                    // Ask if they want to continue
-                    const wantMore = confirm('Danke! Möchtest du noch eine Frage beantworten? Das stärkt dein Ψ-Profil.');
-                    if (wantMore) {
-                        await insightNext();
-                    } else {
-                        insightClose();
-                    }
+                    insightClose();
+                    showToast('Ψ-Profil aktualisiert ✓', 'success');
                 }
             } catch(e) {
                 console.error('Insight submit error:', e);
-                btn.disabled = false;
-                btn.textContent = 'Antworten';
             }
         }
 
@@ -1149,14 +1157,13 @@
                     method: 'POST',
                     headers: { ...H(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        question_text: q.question,
-                        question_id: q.question_id,
-                        question_number: q.question_number,
-                        context: insightState.context,
+                        question_text: q.question, question_id: q.question_id,
+                        question_number: q.question_number, context: insightState.context,
                     })
                 });
             } catch(e) {}
             insightClose();
+            showToast('Ψ-Profiling übersprungen', 'info');
         }
 
         function insightClose() {
@@ -1504,7 +1511,85 @@
                 }
                 // Expertise tags
                 renderExpertise();
+                // Load Ψ-Profile
+                loadPsiProfile();
             } catch(e) { console.error('Profile load error:', e); }
+        }
+
+        async function loadPsiProfile() {
+            try {
+                const r = await fetch(`${API}/insight/profile`, { headers: H() });
+                if (!r.ok) return;
+                const psi = await r.json();
+                const el = document.getElementById('psiProfileContent');
+
+                if (!psi.has_profile || psi.total_insights === 0) {
+                    el.innerHTML = `
+                        <div style="text-align:center;padding:12px 0;color:rgba(255,255,255,0.4)">
+                            <div style="font-size:20px;margin-bottom:8px">○</div>
+                            <div>Noch kein Ψ-Profil vorhanden.</div>
+                            <div style="margin-top:4px;font-size:12px">Beantworte Login-Fragen um dein Profil aufzubauen.</div>
+                        </div>`;
+                    return;
+                }
+
+                // Engagement bar
+                const engColor = psi.engagement_score > 60 ? '#22c55e' : psi.engagement_score > 30 ? '#f59e0b' : 'var(--accent)';
+
+                // Domain labels
+                const domainLabels = { FIN: '💰 Finanzen', HLT: '🏥 Gesundheit', ORG: '🏢 Organisation', REL: '🕊️ Religion', EDU: '🎓 Bildung', ENV: '🌱 Umwelt', POL: '🏛️ Politik', OTH: '📋 Andere' };
+
+                // Speed icon
+                const speedIcon = psi.decision_speed === 'fast' ? '⚡' : psi.decision_speed === 'deliberate' ? '🧘' : '⚖️';
+
+                // Build answer list
+                let answersHtml = '';
+                if (psi.answers && psi.answers.length > 0) {
+                    answersHtml = '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">' +
+                        '<div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Deine Antworten</div>' +
+                        psi.answers.map(a => {
+                            const domBadge = a.domain ? `<span style="font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(139,170,255,0.1);color:var(--accent)">${a.domain}</span>` : '';
+                            const styleBadge = a.style ? `<span style="font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,0.05);color:var(--text-secondary)">${a.style.split('_')[0]}</span>` : '';
+                            const latency = a.latency_ms ? `<span style="font-size:10px;color:var(--text-muted)">${(a.latency_ms/1000).toFixed(1)}s</span>` : '';
+                            return `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+                                <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:3px">${a.question}</div>
+                                <div style="font-size:13px;color:rgba(255,255,255,0.85);font-weight:500">${a.choice_index ? '●' : '○'} ${a.answer}</div>
+                                <div style="display:flex;gap:6px;margin-top:4px;align-items:center">${domBadge}${styleBadge}${latency}</div>
+                            </div>`;
+                        }).join('') + '</div>';
+                }
+
+                el.innerHTML = `
+                    <div style="margin-bottom:14px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                            <span style="font-size:12px;color:var(--text-muted)">Engagement</span>
+                            <span style="font-size:12px;font-weight:700;color:${engColor}">${psi.engagement_score}/100</span>
+                        </div>
+                        <div style="height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden">
+                            <div style="height:100%;width:${psi.engagement_score}%;background:${engColor};border-radius:3px;transition:width 0.5s"></div>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+                        <div style="background:rgba(255,255,255,0.03);border-radius:10px;padding:10px;text-align:center">
+                            <div style="font-size:18px">${domainLabels[psi.primary_domain] || '📋'}</div>
+                            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">Primary Domain</div>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.03);border-radius:10px;padding:10px;text-align:center">
+                            <div style="font-size:18px">${speedIcon}</div>
+                            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${psi.decision_speed}</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+                        ${Object.entries(psi.thinking_styles || {}).map(([s, c]) =>
+                            '<span style="font-size:11px;padding:3px 8px;border-radius:8px;background:rgba(139,170,255,0.1);color:var(--accent)">' + s + ' (' + c + ')</span>'
+                        ).join('')}
+                    </div>
+                    <div style="font-size:12px;color:var(--text-muted)">
+                        ${psi.total_insights} Insights · ${psi.avg_decision_latency_ms ? (psi.avg_decision_latency_ms/1000).toFixed(1)+'s ø Entscheidungszeit' : ''}
+                    </div>
+                    ${answersHtml}
+                `;
+            } catch(e) { console.error('Ψ-Profile load error:', e); }
         }
 
         function renderExpertise() {
