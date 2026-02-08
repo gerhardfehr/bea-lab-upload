@@ -807,7 +807,7 @@ class ChatRequest(BaseModel):
     database: Optional[str] = None
 
 def search_knowledge_base(db, query: str, database: Optional[str] = None, limit: int = 8):
-    """Search documents by keyword matching for RAG context."""
+    """Search documents by keyword matching for RAG context. EBF answers get priority."""
     words = [w.lower() for w in query.split() if len(w) > 2]
     if not words: return []
     docs = db.query(Document).filter(Document.content.isnot(None))
@@ -826,6 +826,9 @@ def search_knowledge_base(db, query: str, database: Optional[str] = None, limit:
         if doc.tags:
             tags_lower = " ".join(doc.tags).lower()
             score += sum(5 for w in words if w in tags_lower)
+        # Boost EBF cached answers (from Claude Code deep analysis)
+        if doc.source_type == "ebf_answer" or (doc.tags and "ebf-answer" in doc.tags):
+            score = int(score * 3)  # 3x boost for pre-computed EBF answers
         if score > 0:
             scored.append((score, doc))
     scored.sort(key=lambda x: -x[0])
