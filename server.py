@@ -166,7 +166,7 @@ def push_to_github(filename, content_bytes):
         logger.error(f"GitHub push failed: {e}")
         return {"error": str(e)}
 
-app = FastAPI(title="BEA Lab Upload API", version="3.2.0")
+app = FastAPI(title="BEA Lab Upload API", version="3.2.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
