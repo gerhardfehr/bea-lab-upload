@@ -1,7 +1,8 @@
 """
 BEA Lab - Document Upload API
+Uploads are automatically pushed to GitHub: papers/evaluated/integrated/
 """
-import os, uuid, json
+import os, uuid, json, base64, logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -18,6 +19,14 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MAX_FILE_SIZE = 50 * 1024 * 1024
 PORT = int(os.getenv("PORT", "8000"))
+
+# GitHub config
+GH_TOKEN = os.getenv("GH_TOKEN", "")
+GH_REPO = os.getenv("GH_REPO", "FehrAdvice-Partners-AG/complementarity-context-framework")
+GH_UPLOAD_PATH = os.getenv("GH_UPLOAD_PATH", "papers/evaluated/integrated")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("bea-lab")
 
 Base = declarative_base()
 _engine = None
@@ -40,6 +49,7 @@ class Document(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     status = Column(String(20), default="indexed")
+    github_url = Column(String(1000), nullable=True)
 
 def get_db():
     global _engine, _SessionLocal
@@ -48,15 +58,46 @@ def get_db():
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
         try:
             Base.metadata.create_all(bind=_engine)
-            print(f"DB connected: {DATABASE_URL[:50]}...")
+            logger.info(f"DB connected: {DATABASE_URL[:50]}...")
         except Exception as e:
-            print(f"DB init error: {e}")
+            logger.error(f"DB init error: {e}")
             _engine = None
             _SessionLocal = None
             raise HTTPException(503, "Datenbank nicht bereit")
     return _SessionLocal()
 
-app = FastAPI(title="BEA Lab Upload API", version="1.0.0")
+def push_to_github(filename, content_bytes):
+    if not GH_TOKEN:
+        logger.warning("GH_TOKEN not set, skipping GitHub push")
+        return {"error": "GH_TOKEN not configured"}
+    import urllib.request, ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    path = f"{GH_UPLOAD_PATH}/{filename}"
+    url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+    sha = None
+    try:
+        req = urllib.request.Request(url, headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"})
+        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+        sha = resp.get("sha")
+    except Exception:
+        pass
+    payload = {"message": f"Upload via BEA Lab: {filename}", "content": base64.b64encode(content_bytes).decode(), "branch": "main"}
+    if sha:
+        payload["sha"] = sha
+    try:
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="PUT", headers={"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json"})
+        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+        html_url = resp.get("content", {}).get("html_url", "")
+        result_sha = resp.get("content", {}).get("sha", "")
+        logger.info(f"GitHub push OK: {path}")
+        return {"url": html_url, "sha": result_sha, "path": path}
+    except Exception as e:
+        logger.error(f"GitHub push failed: {e}")
+        return {"error": str(e)}
+
+app = FastAPI(title="BEA Lab Upload API", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
@@ -76,8 +117,9 @@ class DocumentResponse(BaseModel):
     database_target: str
     status: str
     created_at: str
+    github_url: Optional[str] = None
 
-def extract_text(file_path: str, file_type: str) -> str:
+def extract_text(file_path, file_type):
     try:
         if file_type == "pdf":
             import fitz
@@ -104,12 +146,11 @@ async def root():
     return {"message": "BEA Lab Upload API", "docs": "/docs"}
 
 @app.get("/static/{filepath:path}")
-async def static_files(filepath: str):
+async def static_files(filepath):
     file_path = FRONTEND_DIR / filepath
     if file_path.exists() and file_path.is_file():
         return FileResponse(str(file_path))
     raise HTTPException(404, "Not found")
-
 
 @app.get("/api/health")
 async def health():
@@ -120,7 +161,7 @@ async def health():
         db_ok = True
     except Exception:
         pass
-    return {"status": "ok" if db_ok else "degraded", "database": "connected" if db_ok else "unavailable", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok" if db_ok else "degraded", "database": "connected" if db_ok else "unavailable", "github": "configured" if GH_TOKEN else "not configured", "github_repo": GH_REPO, "timestamp": datetime.utcnow().isoformat()}
 
 @app.post("/api/upload", response_model=DocumentResponse)
 async def upload_file(file: UploadFile = File(...), database: str = Form("knowledge_base")):
@@ -135,13 +176,16 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
     with open(file_path, "wb") as f:
         f.write(content_bytes)
     text_content = extract_text(str(file_path), ext)
+    gh_result = push_to_github(file.filename, content_bytes)
+    github_url = gh_result.get("url", None)
+    gh_status = "indexed+github" if github_url else "indexed"
     db = get_db()
     try:
-        doc = Document(id=file_id, title=file.filename or "Unnamed", content=text_content, source_type="file", file_type=ext, file_path=str(file_path), file_size=len(content_bytes), database_target=database, status="indexed", doc_metadata={"original_filename": file.filename, "content_length": len(text_content)})
+        doc = Document(id=file_id, title=file.filename or "Unnamed", content=text_content, source_type="file", file_type=ext, file_path=str(file_path), file_size=len(content_bytes), database_target=database, status=gh_status, github_url=github_url, doc_metadata={"original_filename": file.filename, "content_length": len(text_content), "github": gh_result})
         db.add(doc)
         db.commit()
         db.refresh(doc)
-        return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat())
+        return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=doc.github_url)
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Datenbankfehler: {e}")
@@ -152,13 +196,16 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
 async def upload_text(request: TextUploadRequest):
     if not request.content.strip():
         raise HTTPException(400, "Inhalt darf nicht leer sein")
+    filename = f"{request.title.replace(' ', '_').replace('/', '-')}.txt"
+    gh_result = push_to_github(filename, request.content.encode("utf-8"))
+    github_url = gh_result.get("url", None)
     db = get_db()
     try:
-        doc = Document(title=request.title, content=request.content, source_type="text", database_target=request.database or "knowledge_base", category=request.category, language=request.language, tags=request.tags, status="indexed", doc_metadata={"content_length": len(request.content)})
+        doc = Document(title=request.title, content=request.content, source_type="text", database_target=request.database or "knowledge_base", category=request.category, language=request.language, tags=request.tags, status="indexed+github" if github_url else "indexed", github_url=github_url, doc_metadata={"content_length": len(request.content), "github": gh_result})
         db.add(doc)
         db.commit()
         db.refresh(doc)
-        return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=None, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat())
+        return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=None, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=doc.github_url)
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Datenbankfehler: {e}")
@@ -172,7 +219,7 @@ async def list_documents(database: Optional[str] = None, limit: int = 50):
         query = db.query(Document).order_by(Document.created_at.desc())
         if database:
             query = query.filter(Document.database_target == database)
-        return [DocumentResponse(id=d.id, title=d.title, source_type=d.source_type, file_type=d.file_type, database_target=d.database_target, status=d.status, created_at=d.created_at.isoformat()) for d in query.limit(limit).all()]
+        return [DocumentResponse(id=d.id, title=d.title, source_type=d.source_type, file_type=d.file_type, database_target=d.database_target, status=d.status, created_at=d.created_at.isoformat(), github_url=d.github_url) for d in query.limit(limit).all()]
     finally:
         db.close()
 
