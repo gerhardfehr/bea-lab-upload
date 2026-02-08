@@ -44,6 +44,7 @@ EMAIL_FROM = os.getenv("EMAIL_FROM", "BEATRIX Lab <noreply@bea-lab.io>")
 APP_URL = os.getenv("APP_URL", "https://www.bea-lab.io")
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
@@ -170,6 +171,11 @@ def get_db():
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_id VARCHAR(100)"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url VARCHAR(1000)"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS expertise JSON"))
+                    # Chat messages table
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS chat_messages (
+                        id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
+                        role VARCHAR(20) NOT NULL, content TEXT NOT NULL,
+                        sources JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     # Auto-verify existing admin users
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
                     conn.commit()
@@ -206,7 +212,7 @@ def push_to_github(filename, content_bytes):
         logger.error(f"GitHub push failed: {e}")
         return {"error": str(e)}
 
-app = FastAPI(title="BEA Lab Upload API", version="3.6.0")
+app = FastAPI(title="BEA Lab Upload API", version="3.7.0")
 
 def send_verification_email(email, name, token):
     """Send verification email via Resend API"""
@@ -783,6 +789,161 @@ async def toggle_user_active(user_id: str, user=Depends(require_auth)):
         if not target: raise HTTPException(404, "Benutzer nicht gefunden")
         target.is_active = not target.is_active; db.commit()
         return {"email": target.email, "is_active": target.is_active}
+    finally: db.close()
+
+# ── BEATRIX Chat (RAG) ──────────────────────────────────────────────────
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_email = Column(String(320), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # "user" or "assistant"
+    content = Column(Text, nullable=False)
+    sources = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class ChatRequest(BaseModel):
+    question: str
+    database: Optional[str] = None
+
+def search_knowledge_base(db, query: str, database: Optional[str] = None, limit: int = 8):
+    """Search documents by keyword matching for RAG context."""
+    words = [w.lower() for w in query.split() if len(w) > 2]
+    if not words: return []
+    docs = db.query(Document).filter(Document.content.isnot(None))
+    if database: docs = docs.filter(Document.database_target == database)
+    docs = docs.all()
+    scored = []
+    for doc in docs:
+        if not doc.content: continue
+        text_lower = doc.content.lower()
+        score = sum(text_lower.count(w) for w in words)
+        # Boost title matches
+        if doc.title:
+            title_lower = doc.title.lower()
+            score += sum(10 for w in words if w in title_lower)
+        # Boost tag matches
+        if doc.tags:
+            tags_lower = " ".join(doc.tags).lower()
+            score += sum(5 for w in words if w in tags_lower)
+        if score > 0:
+            scored.append((score, doc))
+    scored.sort(key=lambda x: -x[0])
+    return scored[:limit]
+
+def build_context(results, max_chars=12000):
+    """Build context string from search results."""
+    context_parts = []
+    total = 0
+    for score, doc in results:
+        text = doc.content or ""
+        available = max_chars - total
+        if available <= 0: break
+        chunk = text[:available]
+        source_info = f"[Quelle: {doc.title}"
+        if doc.category: source_info += f", Kategorie: {doc.category}"
+        if doc.tags: source_info += f", Tags: {', '.join(doc.tags)}"
+        source_info += f", Typ: {doc.source_type}]"
+        context_parts.append(f"{source_info}\n{chunk}")
+        total += len(chunk) + len(source_info)
+    return "\n\n---\n\n".join(context_parts)
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest, user=Depends(require_auth)):
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(501, "BEATRIX Chat ist noch nicht konfiguriert (API Key fehlt)")
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(400, "Bitte stelle eine Frage")
+    if len(question) > 5000:
+        raise HTTPException(400, "Frage zu lang (max 5000 Zeichen)")
+
+    db = get_db()
+    try:
+        # 1. Search knowledge base
+        results = search_knowledge_base(db, question, request.database)
+        context = build_context(results) if results else ""
+        sources = [{"title": doc.title, "id": doc.id, "type": doc.source_type, "category": doc.category} for _, doc in results[:5]]
+
+        # 2. Build system prompt
+        system_prompt = """Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
+Du bist spezialisiert auf Behavioral Economics, Verhaltensökonomie, Decision Architecture und das Behavioral Competence Model (BCM).
+
+Deine Aufgabe:
+- Beantworte Fragen basierend auf dem bereitgestellten Kontext aus der BEATRIX Knowledge Base
+- Antworte präzise, wissenschaftlich fundiert und praxisorientiert
+- Wenn du etwas aus dem Kontext zitierst, nenne die Quelle
+- Wenn der Kontext keine relevanten Informationen enthält, sage das ehrlich und antworte basierend auf deinem allgemeinen Wissen über Behavioral Economics
+- Antworte auf Deutsch, es sei denn, die Frage ist auf Englisch
+
+Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
+
+        user_message = question
+        if context:
+            user_message = f"""Hier ist relevanter Kontext aus der BEATRIX Knowledge Base:
+
+{context}
+
+---
+
+Frage: {question}"""
+        else:
+            user_message = f"""Es wurden keine direkt relevanten Dokumente in der Knowledge Base gefunden.
+
+Frage: {question}
+
+Bitte antworte basierend auf deinem allgemeinen Wissen über Behavioral Economics und verwandte Themen."""
+
+        # 3. Call Claude API
+        import urllib.request, ssl
+        ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 2000,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_message}]
+        }).encode()
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+                "User-Agent": "BEATRIXLab/3.7"
+            })
+        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+        answer = resp["content"][0]["text"]
+
+        # 4. Store in chat history
+        user_msg = ChatMessage(user_email=user["sub"], role="user", content=question)
+        assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=answer, sources=sources)
+        db.add(user_msg); db.add(assistant_msg); db.commit()
+
+        return {
+            "answer": answer,
+            "sources": sources,
+            "has_context": bool(context),
+            "documents_searched": len(results)
+        }
+    except HTTPException: raise
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(500, f"BEATRIX konnte die Frage nicht beantworten: {str(e)}")
+    finally: db.close()
+
+@app.get("/api/chat/history")
+async def chat_history(limit: int = 50, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        msgs = db.query(ChatMessage).filter(ChatMessage.user_email == user["sub"]).order_by(ChatMessage.created_at.desc()).limit(limit).all()
+        return [{"id": m.id, "role": m.role, "content": m.content, "sources": m.sources, "created_at": m.created_at.isoformat()} for m in reversed(msgs)]
+    finally: db.close()
+
+@app.delete("/api/chat/history")
+async def clear_chat_history(user=Depends(require_auth)):
+    db = get_db()
+    try:
+        db.query(ChatMessage).filter(ChatMessage.user_email == user["sub"]).delete()
+        db.commit()
+        return {"message": "Chat-Verlauf gelöscht"}
     finally: db.close()
 
 @app.post("/api/upload", response_model=DocumentResponse)
