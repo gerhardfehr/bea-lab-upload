@@ -183,12 +183,18 @@ def get_db():
                     try:
                         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS embedding vector(512)"))
-                        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 10)"))
+                        conn.commit()
                         logger.info("pgvector enabled with embedding column")
                     except Exception as ve:
-                        logger.warning(f"pgvector setup (non-critical): {ve}")
-                        try: conn.rollback()
-                        except: pass
+                        logger.warning(f"pgvector not available: {ve}")
+                        conn.rollback()
+                        # Fallback: use TEXT column to store embeddings as JSON
+                        try:
+                            conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS embedding_json TEXT"))
+                            conn.commit()
+                            logger.info("Using JSON embedding fallback (no pgvector)")
+                        except:
+                            conn.rollback()
                     # Auto-verify existing admin users
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
                     conn.commit()
@@ -241,41 +247,56 @@ def embed_document(db, doc_id: str):
     from sqlalchemy import text as sql_text
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc or not doc.content: return False
-    # Create embedding text from title + content
     embed_input = f"{doc.title or ''}\n{doc.content[:15000]}"
     vec = embed_single(embed_input, "document")
     if not vec: return False
-    # Store as pgvector
     try:
+        # Try pgvector first
         vec_str = f"[{','.join(str(v) for v in vec)}]"
         db.execute(sql_text("UPDATE documents SET embedding = :vec WHERE id = :id"), {"vec": vec_str, "id": doc_id})
         db.commit()
-        logger.info(f"Embedded doc: {doc.title[:50]}")
+        logger.info(f"Embedded doc (pgvector): {doc.title[:50]}")
         return True
-    except Exception as e:
-        logger.error(f"Store embedding error: {e}")
+    except Exception:
         db.rollback()
-        return False
+        try:
+            # Fallback: store as JSON text
+            vec_json = json.dumps(vec)
+            db.execute(sql_text("UPDATE documents SET embedding_json = :vec WHERE id = :id"), {"vec": vec_json, "id": doc_id})
+            db.commit()
+            logger.info(f"Embedded doc (JSON): {doc.title[:50]}")
+            return True
+        except Exception as e:
+            logger.error(f"Store embedding error: {e}")
+            db.rollback()
+            return False
 
 def embed_all_documents(db):
-    """Embed all documents that don't have embeddings yet. Called on startup."""
+    """Embed all documents that don't have embeddings yet."""
     if not VOYAGE_API_KEY:
         logger.info("No VOYAGE_API_KEY, skipping embeddings")
         return 0
     from sqlalchemy import text as sql_text
-    # Find docs without embeddings
+    # Find docs without embeddings - try pgvector column first, then JSON
     try:
         result = db.execute(sql_text("SELECT id, title, content FROM documents WHERE embedding IS NULL AND content IS NOT NULL"))
         rows = result.fetchall()
-    except Exception as e:
-        logger.warning(f"Cannot query embeddings (pgvector not ready?): {e}")
-        return 0
+        use_pgvector = True
+    except Exception:
+        db.rollback()
+        try:
+            result = db.execute(sql_text("SELECT id, title, content FROM documents WHERE (embedding_json IS NULL OR embedding_json = '') AND content IS NOT NULL"))
+            rows = result.fetchall()
+            use_pgvector = False
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"Cannot query embeddings: {e}")
+            return 0
     if not rows:
         logger.info("All documents already embedded")
         return 0
-    logger.info(f"Embedding {len(rows)} documents...")
+    logger.info(f"Embedding {len(rows)} documents (pgvector={use_pgvector})...")
     count = 0
-    # Batch embed (max 8 at a time for Voyage API)
     batch_size = 8
     for i in range(0, len(rows), batch_size):
         batch = rows[i:i+batch_size]
@@ -284,8 +305,11 @@ def embed_all_documents(db):
         for j, vec in enumerate(vectors):
             if vec:
                 try:
-                    vec_str = f"[{','.join(str(v) for v in vec)}]"
-                    db.execute(sql_text("UPDATE documents SET embedding = :vec WHERE id = :id"), {"vec": vec_str, "id": batch[j][0]})
+                    if use_pgvector:
+                        vec_str = f"[{','.join(str(v) for v in vec)}]"
+                        db.execute(sql_text("UPDATE documents SET embedding = :vec WHERE id = :id"), {"vec": vec_str, "id": batch[j][0]})
+                    else:
+                        db.execute(sql_text("UPDATE documents SET embedding_json = :vec WHERE id = :id"), {"vec": json.dumps(vec), "id": batch[j][0]})
                     count += 1
                 except: pass
         db.commit()
@@ -293,29 +317,54 @@ def embed_all_documents(db):
     return count
 
 def vector_search(db, query: str, limit: int = 8) -> list:
-    """Semantic search using pgvector cosine similarity. Returns [(score, doc), ...]"""
+    """Semantic search. Tries pgvector, falls back to JSON + Python cosine similarity."""
     if not VOYAGE_API_KEY: return []
     from sqlalchemy import text as sql_text
     query_vec = embed_single(query, "query")
     if not query_vec: return []
-    vec_str = f"[{','.join(str(v) for v in query_vec)}]"
+    # Try pgvector first
     try:
+        vec_str = f"[{','.join(str(v) for v in query_vec)}]"
         result = db.execute(sql_text("""
             SELECT id, 1 - (embedding <=> :vec::vector) as similarity
-            FROM documents
-            WHERE embedding IS NOT NULL AND content IS NOT NULL
-            ORDER BY embedding <=> :vec::vector
-            LIMIT :lim
+            FROM documents WHERE embedding IS NOT NULL AND content IS NOT NULL
+            ORDER BY embedding <=> :vec::vector LIMIT :lim
         """), {"vec": vec_str, "lim": limit})
         rows = result.fetchall()
         scored = []
         for row in rows:
             doc = db.query(Document).filter(Document.id == row[0]).first()
-            if doc:
-                scored.append((float(row[1]) * 100, doc))
-        return scored
+            if doc: scored.append((float(row[1]) * 100, doc))
+        if scored:
+            logger.info(f"Vector search (pgvector): {len(scored)} results")
+            return scored
+    except Exception:
+        db.rollback()
+    # Fallback: JSON embeddings + Python cosine similarity
+    try:
+        result = db.execute(sql_text("SELECT id, embedding_json FROM documents WHERE embedding_json IS NOT NULL AND embedding_json != '' AND content IS NOT NULL"))
+        rows = result.fetchall()
+        if not rows: return []
+        import math
+        def cosine_sim(a, b):
+            dot = sum(x*y for x,y in zip(a,b))
+            na = math.sqrt(sum(x*x for x in a))
+            nb = math.sqrt(sum(x*x for x in b))
+            return dot / (na * nb) if na and nb else 0
+        scored = []
+        for row in rows:
+            try:
+                doc_vec = json.loads(row[1])
+                sim = cosine_sim(query_vec, doc_vec)
+                doc = db.query(Document).filter(Document.id == row[0]).first()
+                if doc and sim > 0.3:
+                    scored.append((sim * 100, doc))
+            except: continue
+        scored.sort(key=lambda x: -x[0])
+        logger.info(f"Vector search (JSON cosine): {len(scored)} results")
+        return scored[:limit]
     except Exception as e:
-        logger.warning(f"Vector search error (fallback to keyword): {e}")
+        logger.warning(f"Vector search error: {e}")
         return []
 
 def fulltext_search(db, query: str, limit: int = 8) -> list:
@@ -1381,7 +1430,12 @@ async def embedding_stats(user=Depends(require_auth)):
         try:
             embedded = db.execute(sql_text("SELECT COUNT(*) FROM documents WHERE embedding IS NOT NULL")).scalar()
         except:
-            embedded = 0
+            db.rollback()
+            try:
+                embedded = db.execute(sql_text("SELECT COUNT(*) FROM documents WHERE embedding_json IS NOT NULL AND embedding_json != ''")).scalar()
+            except:
+                db.rollback()
+                embedded = 0
         return {
             "total_documents": total,
             "embedded": embedded,
