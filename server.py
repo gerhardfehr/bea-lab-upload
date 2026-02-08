@@ -591,11 +591,25 @@ async def check_auth(user=Depends(require_auth)):
 @app.get("/api/debug/test-reset-email")
 async def debug_test_reset():
     """Temporary debug endpoint"""
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    payload = json.dumps({
+        "from": EMAIL_FROM,
+        "to": ["gerhard.fehr@fehradvice.com"],
+        "subject": "Debug Reset Test",
+        "html": "<p>Debug test</p>"
+    }).encode()
     try:
-        result = send_reset_email("gerhard.fehr@fehradvice.com", "Gerhard", "debug-test-token-123")
-        return {"sent": result, "api_key_set": bool(RESEND_API_KEY), "email_from": EMAIL_FROM, "app_url": APP_URL}
+        req = urllib.request.Request("https://api.resend.com/emails", data=payload, method="POST",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"})
+        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+        return {"direct_send": True, "resend_id": resp.get("id"), "api_key_prefix": RESEND_API_KEY[:10]}
     except Exception as e:
-        return {"error": str(e), "api_key_set": bool(RESEND_API_KEY)}
+        error_body = ""
+        if hasattr(e, 'read'):
+            try: error_body = e.read().decode()
+            except: pass
+        return {"direct_send": False, "error": str(e), "error_body": error_body, "api_key_prefix": RESEND_API_KEY[:10]}
 
 @app.get("/api/health")
 async def health():
