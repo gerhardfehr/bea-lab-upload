@@ -296,7 +296,6 @@ def vector_search(db, query: str, limit: int = 8) -> list:
     """Semantic search using pgvector cosine similarity. Returns [(score, doc), ...]"""
     if not VOYAGE_API_KEY: return []
     from sqlalchemy import text as sql_text
-    # Embed the query
     query_vec = embed_single(query, "query")
     if not query_vec: return []
     vec_str = f"[{','.join(str(v) for v in query_vec)}]"
@@ -313,10 +312,48 @@ def vector_search(db, query: str, limit: int = 8) -> list:
         for row in rows:
             doc = db.query(Document).filter(Document.id == row[0]).first()
             if doc:
-                scored.append((float(row[1]) * 100, doc))  # Scale to 0-100
+                scored.append((float(row[1]) * 100, doc))
         return scored
     except Exception as e:
         logger.warning(f"Vector search error (fallback to keyword): {e}")
+        return []
+
+def fulltext_search(db, query: str, limit: int = 8) -> list:
+    """PostgreSQL full-text search with ts_rank. Much better than keyword matching."""
+    from sqlalchemy import text as sql_text
+    try:
+        # Use plainto_tsquery for natural language queries (handles German + English)
+        result = db.execute(sql_text("""
+            SELECT id, 
+                   ts_rank_cd(
+                       setweight(to_tsvector('simple', COALESCE(title, '')), 'A') ||
+                       setweight(to_tsvector('simple', COALESCE(category, '')), 'B') ||
+                       setweight(to_tsvector('simple', COALESCE(content, '')), 'C'),
+                       plainto_tsquery('simple', :query)
+                   ) as rank
+            FROM documents
+            WHERE content IS NOT NULL
+              AND (
+                  to_tsvector('simple', COALESCE(title, '')) ||
+                  to_tsvector('simple', COALESCE(content, ''))
+              ) @@ plainto_tsquery('simple', :query)
+            ORDER BY rank DESC
+            LIMIT :lim
+        """), {"query": query, "lim": limit})
+        rows = result.fetchall()
+        scored = []
+        for row in rows:
+            doc = db.query(Document).filter(Document.id == row[0]).first()
+            if doc:
+                # Scale rank to 0-100 range, boost EBF answers
+                score = float(row[1]) * 1000
+                if doc.source_type == "ebf_answer":
+                    score *= 3
+                scored.append((score, doc))
+        logger.info(f"Fulltext search for '{query[:30]}': {len(scored)} results")
+        return scored
+    except Exception as e:
+        logger.warning(f"Fulltext search error: {e}")
         return []
 
 # ========== END VECTOR EMBEDDING ==========
@@ -934,11 +971,15 @@ class ChatRequest(BaseModel):
     database: Optional[str] = None
 
 def search_knowledge_base(db, query: str, database: Optional[str] = None, limit: int = 8):
-    """Hybrid search: Vector (semantic) + Keyword combined. Like AlphaGo: Neural Net + Tree Search."""
-    # === VECTOR SEARCH (Neural Network - semantic understanding) ===
+    """Three-tier hybrid search: Vector (if available) + PostgreSQL Fulltext + Keyword fallback."""
+    
+    # === TIER 1: Vector search via Voyage AI (best, if available) ===
     vector_results = vector_search(db, query, limit=limit) if VOYAGE_API_KEY else []
 
-    # === KEYWORD SEARCH (Tree Search - exact matching) ===
+    # === TIER 2: PostgreSQL full-text search (great, always available) ===
+    ft_results = fulltext_search(db, query, limit=limit)
+
+    # === TIER 3: Keyword fallback (basic, always works) ===
     words = [w.lower() for w in query.split() if len(w) > 2]
     keyword_results = []
     if words:
@@ -954,39 +995,42 @@ def search_knowledge_base(db, query: str, database: Optional[str] = None, limit:
             if doc.tags:
                 tags_lower = " ".join(doc.tags).lower()
                 score += sum(5 for w in words if w in tags_lower)
-            if doc.source_type == "ebf_answer" or (doc.tags and "ebf-answer" in doc.tags):
+            if doc.source_type == "ebf_answer":
                 score = int(score * 3)
             if score > 0:
                 keyword_results.append((score, doc))
         keyword_results.sort(key=lambda x: -x[0])
 
-    # === HYBRID: Combine both result sets ===
-    if vector_results and keyword_results:
-        # Merge: vector scores (0-100) dominate, keyword adds bonus
-        merged = {}
-        for score, doc in vector_results:
-            merged[doc.id] = {"doc": doc, "vector_score": score, "keyword_score": 0}
-        for score, doc in keyword_results:
-            if doc.id in merged:
-                merged[doc.id]["keyword_score"] = score
-            else:
-                merged[doc.id] = {"doc": doc, "vector_score": 0, "keyword_score": score}
-        # Combined score: 70% vector + 30% keyword (normalized)
-        max_kw = max((m["keyword_score"] for m in merged.values()), default=1) or 1
-        combined = []
-        for m in merged.values():
-            hybrid_score = 0.7 * m["vector_score"] + 0.3 * (m["keyword_score"] / max_kw * 100)
-            # EBF answer boost
-            if m["doc"].source_type == "ebf_answer":
-                hybrid_score *= 1.5
-            combined.append((hybrid_score, m["doc"]))
-        combined.sort(key=lambda x: -x[0])
-        logger.info(f"Hybrid search: {len(vector_results)} vector + {len(keyword_results)} keyword = {len(combined)} results")
-        return combined[:limit]
-    elif vector_results:
-        return vector_results[:limit]
-    else:
-        return keyword_results[:limit]
+    # === MERGE: Combine all tiers ===
+    merged = {}
+    # Vector gets highest weight
+    for score, doc in vector_results:
+        merged[doc.id] = {"doc": doc, "score": score * 2.0}
+    # Fulltext second
+    for score, doc in ft_results:
+        if doc.id in merged:
+            merged[doc.id]["score"] += score
+        else:
+            merged[doc.id] = {"doc": doc, "score": score}
+    # Keyword third
+    max_kw = max((s for s, _ in keyword_results), default=1) or 1
+    for score, doc in keyword_results:
+        normalized = (score / max_kw) * 50  # Scale keyword to max 50
+        if doc.id in merged:
+            merged[doc.id]["score"] += normalized * 0.3
+        else:
+            merged[doc.id] = {"doc": doc, "score": normalized * 0.3}
+
+    combined = [(m["score"], m["doc"]) for m in merged.values()]
+    combined.sort(key=lambda x: -x[0])
+    
+    tiers_used = []
+    if vector_results: tiers_used.append(f"vector:{len(vector_results)}")
+    if ft_results: tiers_used.append(f"fulltext:{len(ft_results)}")
+    if keyword_results: tiers_used.append(f"keyword:{len(keyword_results)}")
+    logger.info(f"Hybrid search: {' + '.join(tiers_used)} → {len(combined)} combined results")
+    
+    return combined[:limit]
 
 def build_context(results, max_chars=12000):
     """Build context string from search results."""
