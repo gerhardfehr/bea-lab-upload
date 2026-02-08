@@ -979,13 +979,23 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
         # === PATH DECISION: Search KB for existing EBF answers ===
         results = search_knowledge_base(db, question)
         top_score = results[0][0] if results else 0
-        ebf_results = [(s, d) for s, d in results if d.source_type == "ebf_answer"]
+        ebf_results = [(s, d) for s, d in results if d.source_type == "ebf_answer" or (d.tags and "ebf-answer" in d.tags)]
         ebf_score = ebf_results[0][0] if ebf_results else 0
 
-        logger.info(f"Chat: q='{question[:50]}' | top_score={top_score} | ebf_score={ebf_score} | threshold={FAST_PATH_THRESHOLD}")
+        # Decision: Use fast path only if we have a strong EBF answer match
+        # or if there's a very strong general match AND an EBF answer exists at all
+        use_fast_path = (ebf_score >= FAST_PATH_THRESHOLD) or (top_score >= FAST_PATH_THRESHOLD * 3 and ebf_score > 0)
+
+        # If fast path uses general docs (not EBF answers), prioritize EBF answers in context
+        if use_fast_path and ebf_results:
+            # Put EBF answers first in results
+            non_ebf = [(s, d) for s, d in results if d not in [d2 for _, d2 in ebf_results]]
+            results = ebf_results + non_ebf
+
+        logger.info(f"Chat: q='{question[:50]}' | top={top_score} | ebf={ebf_score} | fast={use_fast_path}")
 
         # === FAST PATH: Good KB match exists → Claude API with context (3 sec) ===
-        if top_score >= FAST_PATH_THRESHOLD and ANTHROPIC_API_KEY:
+        if use_fast_path and ANTHROPIC_API_KEY:
             context = build_context(results)
             sources = [{"title": doc.title, "id": doc.id, "type": doc.source_type, "category": doc.category} for _, doc in results[:5]]
             try:
