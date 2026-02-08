@@ -45,6 +45,7 @@ APP_URL = os.getenv("APP_URL", "https://www.bea-lab.io")
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GH_CONTEXT_REPO = os.getenv("GH_CONTEXT_REPO", "FehrAdvice-Partners-AG/complementarity-context-framework")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
@@ -847,87 +848,93 @@ def build_context(results, max_chars=12000):
         total += len(chunk) + len(source_info)
     return "\n\n---\n\n".join(context_parts)
 
+def create_github_issue(question: str, user_email: str) -> dict:
+    """Create a GitHub Issue on the context repo to trigger Claude Code."""
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    payload = json.dumps({
+        "title": f"BEATRIX: {question[:100]}",
+        "body": f"**Frage von:** {user_email}\n\n@claude {question}",
+        "labels": ["beatrix-question"]
+    }).encode()
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{GH_CONTEXT_REPO}/issues",
+        data=payload, method="POST",
+        headers={"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json"})
+    resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+    return {"issue_number": resp["number"], "html_url": resp["html_url"]}
+
+def poll_github_answer(issue_number: int) -> dict:
+    """Poll a GitHub Issue for Claude Code's answer."""
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{GH_CONTEXT_REPO}/issues/{issue_number}/comments",
+        headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"})
+    comments = json.loads(urllib.request.urlopen(req, context=ctx).read())
+    # Find Claude's final answer (last comment from claude[bot], not a progress update)
+    for comment in reversed(comments):
+        login = comment.get("user", {}).get("login", "")
+        body = comment.get("body", "")
+        if login == "claude[bot]" and not body.startswith("### Aufgabe"):
+            # Claude's real answer - strip any markdown task list headers
+            return {"status": "done", "answer": body, "comment_url": comment.get("html_url")}
+        if login == "claude[bot]":
+            return {"status": "processing", "progress": body[:200]}
+    return {"status": "waiting"}
+
 @app.post("/api/chat")
 async def chat(request: ChatRequest, user=Depends(require_auth)):
-    if not ANTHROPIC_API_KEY:
-        raise HTTPException(501, "BEATRIX Chat ist noch nicht konfiguriert (API Key fehlt)")
     question = request.question.strip()
     if not question:
         raise HTTPException(400, "Bitte stelle eine Frage")
     if len(question) > 5000:
         raise HTTPException(400, "Frage zu lang (max 5000 Zeichen)")
+    if not GH_TOKEN:
+        raise HTTPException(501, "GitHub-Integration nicht konfiguriert")
 
     db = get_db()
     try:
-        # 1. Search knowledge base
-        results = search_knowledge_base(db, question, request.database)
-        context = build_context(results) if results else ""
-        sources = [{"title": doc.title, "id": doc.id, "type": doc.source_type, "category": doc.category} for _, doc in results[:5]]
-
-        # 2. Build system prompt
-        system_prompt = """Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
-Du bist spezialisiert auf Behavioral Economics, Verhaltensökonomie, Decision Architecture und das Behavioral Competence Model (BCM).
-
-Deine Aufgabe:
-- Beantworte Fragen basierend auf dem bereitgestellten Kontext aus der BEATRIX Knowledge Base
-- Antworte präzise, wissenschaftlich fundiert und praxisorientiert
-- Wenn du etwas aus dem Kontext zitierst, nenne die Quelle
-- Wenn der Kontext keine relevanten Informationen enthält, sage das ehrlich und antworte basierend auf deinem allgemeinen Wissen über Behavioral Economics
-- Antworte auf Deutsch, es sei denn, die Frage ist auf Englisch
-
-Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
-
-        user_message = question
-        if context:
-            user_message = f"""Hier ist relevanter Kontext aus der BEATRIX Knowledge Base:
-
-{context}
-
----
-
-Frage: {question}"""
-        else:
-            user_message = f"""Es wurden keine direkt relevanten Dokumente in der Knowledge Base gefunden.
-
-Frage: {question}
-
-Bitte antworte basierend auf deinem allgemeinen Wissen über Behavioral Economics und verwandte Themen."""
-
-        # 3. Call Claude API
-        import urllib.request, ssl
-        ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-        payload = json.dumps({
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 2000,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user_message}]
-        }).encode()
-        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-                "User-Agent": "BEATRIXLab/3.7"
-            })
-        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
-        answer = resp["content"][0]["text"]
-
-        # 4. Store in chat history
+        # Store user message
         user_msg = ChatMessage(user_email=user["sub"], role="user", content=question)
-        assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=answer, sources=sources)
-        db.add(user_msg); db.add(assistant_msg); db.commit()
+        db.add(user_msg); db.commit()
+
+        # Create GitHub Issue → triggers Claude Code Action
+        gh = create_github_issue(question, user["sub"])
+        logger.info(f"GitHub Issue #{gh['issue_number']} created for: {question[:60]}")
 
         return {
-            "answer": answer,
-            "sources": sources,
-            "has_context": bool(context),
-            "documents_searched": len(results)
+            "status": "processing",
+            "issue_number": gh["issue_number"],
+            "issue_url": gh["html_url"],
+            "message": "BEATRIX analysiert deine Frage mit dem Evidence-Based Framework..."
         }
     except HTTPException: raise
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        raise HTTPException(500, f"BEATRIX konnte die Frage nicht beantworten: {str(e)}")
+        raise HTTPException(500, f"Konnte Frage nicht verarbeiten: {str(e)}")
     finally: db.close()
+
+@app.get("/api/chat/poll/{issue_number}")
+async def chat_poll(issue_number: int, user=Depends(require_auth)):
+    """Poll for Claude Code's answer on a GitHub Issue."""
+    try:
+        result = poll_github_answer(issue_number)
+        if result["status"] == "done":
+            # Store answer in chat history
+            db = get_db()
+            try:
+                assistant_msg = ChatMessage(
+                    user_email=user["sub"], role="assistant",
+                    content=result["answer"],
+                    sources=[{"type": "github", "url": result.get("comment_url", "")}]
+                )
+                db.add(assistant_msg); db.commit()
+            finally: db.close()
+        return result
+    except Exception as e:
+        logger.error(f"Poll error: {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.get("/api/chat/history")
 async def chat_history(limit: int = 50, user=Depends(require_auth)):
