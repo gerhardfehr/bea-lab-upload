@@ -1666,7 +1666,7 @@
             try {
                 const resp = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
                     body: JSON.stringify({ question: `Analysiere diese Frage für den EEE Model-Building Workflow. Antworte NUR als JSON: {"domain":"REL/FIN/HLT/ENV/POL/ORG/EDU/OTH","domain_signals":["..."],"question_type":"analysis/decision/behavior_change/comparison","has_behavior_goal":true/false,"behavior_goal":"...oder null","scope_in":["..."],"scope_out":["..."],"suggested_mode":"schnell/gefuehrt/template/custom","session_id":"EBF-S-2026-02-08-XXX-001"}\n\nFrage: ${q}` })
                 });
                 const data = await resp.json();
@@ -1725,7 +1725,7 @@
             try {
                 const resp = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
                     body: JSON.stringify({ question: `Für den EEE Model-Building Workflow Step 3 (Kontext Ψ). Frage: "${mbState.question}". Domain: ${mbState.selections.domain}. Modus: ${psiChoice}. Entry: ${mbState.selections.mbStep1||'practice'}. Scope: ${mbState.selections.mbStep2||'decision'}. Erstelle eine Kontext-Analyse mit den Ψ-Dimensionen. Antworte NUR als JSON: {"psi_dimensions":[{"id":"Ψ_I","name":"Institutional","value":0.7,"rationale":"..."},...],"domain_config":"...","level":"Individual/Household/Organization","10c_mapping":{"WHO":"...","WHAT":"...","HOW":"...","WHEN":"...","WHERE":"...","AWARE":"...","READY":"...","STAGE":"...","HIERARCHY":"...","EIT":"..."}}` })
                 });
                 const data = await resp.json();
@@ -1803,7 +1803,7 @@
             try {
                 const resp = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
                     body: JSON.stringify({ question: `Erstelle einen vollständigen Modell-Report für: "${mbState.question}". Session: ${mbState.sessionId}. Mode: ${mbState.mode}. Selections: ${JSON.stringify(mbState.selections)}. Formatiere als strukturierten Bericht mit Modell-ID, 10C Mapping, Ψ-Dimensionen, Parametern und Sensitivitätsanalyse.` })
                 });
                 const data = await resp.json();
