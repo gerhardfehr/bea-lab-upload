@@ -180,7 +180,7 @@ def push_to_github(filename, content_bytes):
         logger.error(f"GitHub push failed: {e}")
         return {"error": str(e)}
 
-app = FastAPI(title="BEA Lab Upload API", version="3.3.1")
+app = FastAPI(title="BEA Lab Upload API", version="3.4.0")
 
 def send_verification_email(email, name, token):
     """Send verification email via Resend API"""
@@ -233,6 +233,10 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 class TextUploadRequest(BaseModel):
     title: str = "Untitled"
@@ -392,6 +396,24 @@ async def admin_verify_user(user_id: str, user=Depends(require_auth)):
         if not target: raise HTTPException(404, "Benutzer nicht gefunden")
         target.email_verified = True; target.verification_token = None; db.commit()
         return {"email": target.email, "email_verified": True}
+    finally: db.close()
+
+@app.post("/api/change-password")
+async def change_password(request: ChangePasswordRequest, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        db_user = db.query(User).filter(User.email == user["sub"]).first()
+        if not db_user: raise HTTPException(404, "Benutzer nicht gefunden")
+        if not verify_password(request.current_password, db_user.password_hash, db_user.password_salt):
+            raise HTTPException(401, "Aktuelles Passwort ist falsch")
+        if len(request.new_password) < 6:
+            raise HTTPException(400, "Neues Passwort muss mindestens 6 Zeichen haben")
+        pw_hash, pw_salt = hash_password(request.new_password)
+        db_user.password_hash = pw_hash; db_user.password_salt = pw_salt; db.commit()
+        logger.info(f"Password changed: {user['sub']}")
+        return {"message": "Passwort erfolgreich geändert"}
+    except HTTPException: raise
+    except Exception as e: raise HTTPException(500, f"Fehler: {e}")
     finally: db.close()
 
 def _verify_page(title, message, success):
