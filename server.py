@@ -588,6 +588,15 @@ from fastapi.responses import HTMLResponse
 async def check_auth(user=Depends(require_auth)):
     return {"authenticated": True, "email": user.get("sub"), "name": user.get("name")}
 
+@app.get("/api/debug/test-reset-email")
+async def debug_test_reset():
+    """Temporary debug endpoint"""
+    try:
+        result = send_reset_email("gerhard.fehr@fehradvice.com", "Gerhard", "debug-test-token-123")
+        return {"sent": result, "api_key_set": bool(RESEND_API_KEY), "email_from": EMAIL_FROM, "app_url": APP_URL}
+    except Exception as e:
+        return {"error": str(e), "api_key_set": bool(RESEND_API_KEY)}
+
 @app.get("/api/health")
 async def health():
     db_ok = False
