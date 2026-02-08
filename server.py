@@ -29,6 +29,10 @@ GH_UPLOAD_PATH = os.getenv("GH_UPLOAD_PATH", "papers/evaluated/integrated")
 JWT_SECRET = os.getenv("JWT_SECRET", "bea-lab-secret-key-change-me-2026")
 JWT_EXPIRY = int(os.getenv("JWT_EXPIRY", "86400"))
 
+# Registration domain restriction (comma-separated, empty = all allowed)
+# Example: "fehradvice.com,bea-lab.io" → only these domains can register
+ALLOWED_EMAIL_DOMAINS = [d.strip().lower() for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "").split(",") if d.strip()]
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
 
@@ -158,7 +162,7 @@ def push_to_github(filename, content_bytes):
         logger.error(f"GitHub push failed: {e}")
         return {"error": str(e)}
 
-app = FastAPI(title="BEA Lab Upload API", version="3.1.0")
+app = FastAPI(title="BEA Lab Upload API", version="3.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
@@ -211,6 +215,11 @@ async def register(request: RegisterRequest):
     email = request.email.strip().lower()
     if not email or '@' not in email: raise HTTPException(400, "Ungültige E-Mail-Adresse")
     if len(request.password) < 6: raise HTTPException(400, "Passwort muss mindestens 6 Zeichen haben")
+    if ALLOWED_EMAIL_DOMAINS:
+        domain = email.split('@')[-1]
+        if domain not in ALLOWED_EMAIL_DOMAINS:
+            allowed = ", ".join(f"@{d}" for d in ALLOWED_EMAIL_DOMAINS)
+            raise HTTPException(403, f"Registrierung nur mit folgenden E-Mail-Domains erlaubt: {allowed}")
     db = get_db()
     try:
         if db.query(User).filter(User.email == email).first():
@@ -256,6 +265,31 @@ async def health():
     try: db = get_db(); db.close(); db_ok = True
     except: pass
     return {"status": "ok" if db_ok else "degraded", "database": "connected" if db_ok else "unavailable", "github": "configured" if GH_TOKEN else "not configured", "github_repo": GH_REPO, "timestamp": datetime.utcnow().isoformat()}
+
+@app.get("/api/admin/settings")
+async def admin_settings(user=Depends(require_auth)):
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    return {"allowed_email_domains": ALLOWED_EMAIL_DOMAINS or ["*"], "registration": "restricted" if ALLOWED_EMAIL_DOMAINS else "open", "jwt_expiry_hours": JWT_EXPIRY // 3600}
+
+@app.get("/api/admin/users")
+async def admin_users(user=Depends(require_auth)):
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        users = db.query(User).order_by(User.created_at.desc()).all()
+        return [{"id": u.id, "email": u.email, "name": u.name, "is_active": u.is_active, "is_admin": u.is_admin, "created_at": u.created_at.isoformat() if u.created_at else None, "last_login": u.last_login.isoformat() if u.last_login else None} for u in users]
+    finally: db.close()
+
+@app.put("/api/admin/users/{user_id}/toggle-active")
+async def toggle_user_active(user_id: str, user=Depends(require_auth)):
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        target = db.query(User).filter(User.id == user_id).first()
+        if not target: raise HTTPException(404, "Benutzer nicht gefunden")
+        target.is_active = not target.is_active; db.commit()
+        return {"email": target.email, "is_active": target.is_active}
+    finally: db.close()
 
 @app.post("/api/upload", response_model=DocumentResponse)
 async def upload_file(file: UploadFile = File(...), database: str = Form("knowledge_base"), user=Depends(require_auth)):
