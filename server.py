@@ -106,6 +106,8 @@ class User(Base):
     email_verified = Column(Boolean, default=False)
     verification_token = Column(String(200), nullable=True)
     verification_sent_at = Column(DateTime, nullable=True)
+    reset_token = Column(String(200), nullable=True)
+    reset_sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
@@ -144,6 +146,8 @@ def get_db():
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR(200)"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_sent_at TIMESTAMP"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(200)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_sent_at TIMESTAMP"))
                     # Auto-verify existing admin users
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
                     conn.commit()
@@ -236,6 +240,13 @@ class LoginRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
+    new_password: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordConfirm(BaseModel):
+    token: str
     new_password: str
 
 class TextUploadRequest(BaseModel):
@@ -416,6 +427,65 @@ async def change_password(request: ChangePasswordRequest, user=Depends(require_a
     except Exception as e: raise HTTPException(500, f"Fehler: {e}")
     finally: db.close()
 
+@app.post("/api/forgot-password")
+async def forgot_password(request: ResetPasswordRequest):
+    email = request.email.strip().lower()
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        # Always return success to prevent email enumeration
+        if not user:
+            return {"message": "Falls ein Konto mit dieser E-Mail existiert, wurde ein Reset-Link gesendet."}
+        if not user.is_active:
+            return {"message": "Falls ein Konto mit dieser E-Mail existiert, wurde ein Reset-Link gesendet."}
+        # Rate limit: max once every 2 minutes
+        if user.reset_sent_at and (datetime.utcnow() - user.reset_sent_at).total_seconds() < 120:
+            raise HTTPException(429, "Bitte warte 2 Minuten, bevor du einen neuen Link anforderst.")
+        reset_token = base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip('=')
+        user.reset_token = reset_token
+        user.reset_sent_at = datetime.utcnow()
+        db.commit()
+        sent = send_reset_email(email, user.name, reset_token)
+        if not sent:
+            logger.warning(f"Reset email failed for {email}")
+        return {"message": "Falls ein Konto mit dieser E-Mail existiert, wurde ein Reset-Link gesendet."}
+    except HTTPException: raise
+    except Exception as e: raise HTTPException(500, f"Fehler: {e}")
+    finally: db.close()
+
+@app.get("/api/reset/{token}")
+async def reset_page(token: str):
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.reset_token == token).first()
+        if not user:
+            html = _verify_page("Ungültiger Link", "Dieser Reset-Link ist ungültig oder wurde bereits verwendet.", False)
+            return HTMLResponse(html)
+        if user.reset_sent_at and (datetime.utcnow() - user.reset_sent_at).total_seconds() > 3600:
+            html = _verify_page("Link abgelaufen", "Dieser Reset-Link ist abgelaufen. Bitte fordere einen neuen an.", False)
+            return HTMLResponse(html)
+        return HTMLResponse(_reset_page(token))
+    finally: db.close()
+
+@app.post("/api/reset-password")
+async def reset_password(request: ResetPasswordConfirm):
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.reset_token == request.token).first()
+        if not user: raise HTTPException(400, "Ungültiger oder abgelaufener Link")
+        if user.reset_sent_at and (datetime.utcnow() - user.reset_sent_at).total_seconds() > 3600:
+            raise HTTPException(400, "Link abgelaufen. Bitte fordere einen neuen an.")
+        if len(request.new_password) < 6:
+            raise HTTPException(400, "Passwort muss mindestens 6 Zeichen haben")
+        pw_hash, pw_salt = hash_password(request.new_password)
+        user.password_hash = pw_hash; user.password_salt = pw_salt
+        user.reset_token = None; user.reset_sent_at = None; db.commit()
+        logger.info(f"Password reset: {user.email}")
+        return {"message": "Passwort erfolgreich zurückgesetzt"}
+    except HTTPException: raise
+    except Exception as e: raise HTTPException(500, f"Fehler: {e}")
+    finally: db.close()
+
 def _verify_page(title, message, success):
     color = "#34d399" if success else "#f87171"
     icon = "✓" if success else "✗"
@@ -431,6 +501,86 @@ a{{display:inline-block;padding:14px 36px;background:#5b8af5;color:white;text-de
 a:hover{{background:#7ba3ff}}</style></head>
 <body><div class="card"><div class="icon">{icon}</div><h1>BEATRIX <span>Lab</span></h1><h2>{title}</h2><p>{message}</p>
 <a href="{APP_URL}">Zum Login →</a></div></body></html>"""
+
+def _reset_page(token):
+    return f"""<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Passwort zurücksetzen – BEATRIX Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+<style>body{{font-family:'Plus Jakarta Sans',sans-serif;background:#0a1628;color:#e4e9f2;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
+.card{{max-width:440px;padding:48px 40px;text-align:center}}
+h1{{font-size:24px;font-weight:800;margin-bottom:8px}}h1 span{{color:#5b8af5}}
+p{{font-size:14px;color:#8899b8;margin-bottom:24px}}
+input{{width:100%;padding:14px;background:#111d33;border:1px solid #1e2d4a;border-radius:10px;color:#e4e9f2;font-family:inherit;font-size:15px;outline:none;margin-bottom:12px;box-sizing:border-box}}
+input:focus{{border-color:#5b8af5;box-shadow:0 0 0 3px rgba(91,138,245,0.15)}}
+button{{width:100%;padding:14px;background:#5b8af5;color:white;border:none;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}}
+button:hover{{background:#7ba3ff}}
+.msg{{font-size:13px;padding:10px;border-radius:8px;margin-bottom:12px;display:none}}
+.msg.error{{display:block;color:#f87171;background:rgba(248,113,113,0.08)}}
+.msg.success{{display:block;color:#34d399;background:rgba(52,211,153,0.08)}}
+</style></head>
+<body><div class="card">
+<h1>BEATRIX <span>Lab</span></h1>
+<p>Neues Passwort festlegen</p>
+<div class="msg" id="msg"></div>
+<input type="password" id="pw1" placeholder="Neues Passwort (mind. 6 Zeichen)">
+<input type="password" id="pw2" placeholder="Passwort bestätigen">
+<button onclick="resetPw()">Passwort speichern</button>
+<script>
+async function resetPw() {{
+    const pw1=document.getElementById('pw1').value, pw2=document.getElementById('pw2').value, msg=document.getElementById('msg');
+    msg.className='msg';
+    if(pw1.length<6){{msg.className='msg error';msg.textContent='Mind. 6 Zeichen';return}}
+    if(pw1!==pw2){{msg.className='msg error';msg.textContent='Passwörter stimmen nicht überein';return}}
+    try{{
+        const r=await fetch('/api/reset-password',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{token:'{token}',new_password:pw1}})}});
+        const d=await r.json();
+        if(r.ok){{msg.className='msg success';msg.textContent='✓ Passwort geändert! Du wirst weitergeleitet...';setTimeout(()=>window.location.href='{APP_URL}',2000)}}
+        else{{msg.className='msg error';msg.textContent=d.detail||'Fehler'}}
+    }}catch(e){{msg.className='msg error';msg.textContent='Verbindungsfehler'}}
+}}
+</script>
+</div></body></html>"""
+
+def send_reset_email(email, name, token):
+    """Send password reset email via Resend API"""
+    if not RESEND_API_KEY:
+        logger.warning("RESEND_API_KEY not set, skipping reset email")
+        return False
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    reset_url = f"{APP_URL}/api/reset/{token}"
+    html = f"""<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:40px 24px">
+    <div style="text-align:center;margin-bottom:32px">
+        <h1 style="font-size:24px;font-weight:800;color:#0a1628;margin:0">BEATRIX <span style="color:#5b8af5">Lab</span></h1>
+        <p style="color:#666;font-size:14px;margin:8px 0 0">Strategic Intelligence Suite</p>
+    </div>
+    <p style="font-size:15px;color:#333">Hallo {name or 'dort'},</p>
+    <p style="font-size:15px;color:#333;line-height:1.6">Du hast ein neues Passwort für dein BEATRIX Lab Konto angefordert:</p>
+    <div style="text-align:center;margin:32px 0">
+        <a href="{reset_url}" style="display:inline-block;padding:14px 36px;background:#5b8af5;color:white;text-decoration:none;border-radius:10px;font-weight:700;font-size:15px">Passwort zurücksetzen</a>
+    </div>
+    <p style="font-size:12px;color:#999;line-height:1.5">Falls du kein neues Passwort angefordert hast, ignoriere diese E-Mail.<br>
+    <a href="{reset_url}" style="color:#5b8af5;word-break:break-all">{reset_url}</a></p>
+    <p style="font-size:12px;color:#999;margin-top:24px">Dieser Link ist 1 Stunde gültig.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:32px 0">
+    <p style="font-size:11px;color:#aaa;text-align:center">FehrAdvice &amp; Partners AG · Zürich</p>
+</div>"""
+    payload = json.dumps({
+        "from": EMAIL_FROM,
+        "to": [email],
+        "subject": "BEATRIX Lab – Passwort zurücksetzen",
+        "html": html,
+        "text": f"Hallo {name},\n\nSetze dein Passwort zurück: {reset_url}\n\nDieser Link ist 1 Stunde gültig."
+    }).encode()
+    try:
+        req = urllib.request.Request("https://api.resend.com/emails", data=payload, method="POST",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"})
+        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+        logger.info(f"Reset email sent to {email} via Resend: {resp.get('id','?')}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send reset email to {email}: {e}")
+        return False
 
 from fastapi.responses import HTMLResponse
 
