@@ -618,13 +618,54 @@
             <!-- ═══ STEP 0: Session Init ═══ -->
             <div class="mb-panel" id="mbStep0">
                 <div class="mb-step-title">Schritt 0: Session initialisieren</div>
-                <div class="mb-step-desc">Beschreibe deine Frage oder das Verhalten, das du modellieren möchtest. BEATRIX leitet daraus Domain, Scope und Lieferobjekte ab.</div>
+                <div class="mb-step-desc">Wähle eine Problemstellung oder definiere deine eigene. BEATRIX leitet daraus Domain, Scope und Lieferobjekte ab.</div>
 
-                <label class="mb-label">Deine Frage / Gestaltungsanlass</label>
-                <textarea class="mb-input mb-textarea" id="mbQuestion" placeholder="z.B. 'Wie können wir die Reskilling-Bereitschaft von Mitarbeitern erhöhen?' oder 'Ist das Alevitentum näher zum Zoroastrismus oder zum sunnitischen Islam?'"></textarea>
+                <div class="mb-info-box" style="margin-bottom:20px">
+                    <p><strong>Axiom MD-1:</strong> 3+1+1 Choice Architecture — 3 kuratierte Problemstellungen + eigene Definition + BEATRIX-generierte Problemstellung.</p>
+                </div>
 
-                <div class="mb-info-box">
-                    <p><strong>Axiom MD-1:</strong> Jeder Schritt bietet 3+1 Choice Architecture — 3 kuratierte Optionen basierend auf Best Practices + 1 Custom Option für freie Gestaltung.</p>
+                <div class="mb-choices" id="mbStep0Choices">
+                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Wie können wir die Reskilling-Bereitschaft von Mitarbeitern in der digitalen Transformation erhöhen?')">
+                        <div class="mb-choice-num">1</div>
+                        <div class="mb-choice-icon">🏢</div>
+                        <div class="mb-choice-title">Reskilling & Transformation</div>
+                        <div class="mb-choice-desc">Wie können wir die Reskilling-Bereitschaft von Mitarbeitern in der digitalen Transformation erhöhen?</div>
+                        <div class="mb-choice-meta">Domain: ORG · Behavior Change</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Warum sparen Haushalte mit mittlerem Einkommen trotz steigender Inflation nicht mehr, und wie kann man das ändern?')">
+                        <div class="mb-choice-num">2</div>
+                        <div class="mb-choice-icon">💰</div>
+                        <div class="mb-choice-title">Sparverhalten & Inflation</div>
+                        <div class="mb-choice-desc">Warum sparen Haushalte mit mittlerem Einkommen trotz steigender Inflation nicht mehr, und wie kann man das ändern?</div>
+                        <div class="mb-choice-meta">Domain: FIN · Decision Architecture</div>
+                    </div>
+                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Ist das Alevitentum als Glaubenssystem näher zum Zoroastrismus oder zum sunnitischen Islam?')">
+                        <div class="mb-choice-num">3</div>
+                        <div class="mb-choice-icon">🕊️</div>
+                        <div class="mb-choice-title">Religiöse Komplementarität</div>
+                        <div class="mb-choice-desc">Ist das Alevitentum als Glaubenssystem näher zum Zoroastrismus oder zum sunnitischen Islam?</div>
+                        <div class="mb-choice-meta">Domain: REL · Comparative Analysis</div>
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap">
+                    <div class="mb-choice" style="flex:1;min-width:250px;border:1px dashed rgba(139,170,255,0.3)" onclick="mbShowCustomInput()">
+                        <div class="mb-choice-num">4</div>
+                        <div class="mb-choice-icon">✏️</div>
+                        <div class="mb-choice-title">Eigene Problemstellung</div>
+                        <div class="mb-choice-desc">Definiere deine Frage oder deinen Gestaltungsanlass selbst.</div>
+                    </div>
+                    <div class="mb-choice" style="flex:1;min-width:250px;border:1px dashed rgba(139,170,255,0.3)" onclick="mbLetBeatrixDefine()">
+                        <div class="mb-choice-num">5</div>
+                        <div class="mb-choice-icon">🤖</div>
+                        <div class="mb-choice-title">BEATRIX definiert für dich</div>
+                        <div class="mb-choice-desc">BEATRIX generiert eine Problemstellung basierend auf deinem gewählten Modus und aktuellen Themen.</div>
+                    </div>
+                </div>
+
+                <div id="mbCustomInput" style="display:none;margin-top:20px">
+                    <label class="mb-label">Deine Frage / Gestaltungsanlass</label>
+                    <textarea class="mb-input mb-textarea" id="mbQuestion" placeholder="Beschreibe das Verhalten, die Entscheidung oder das Phänomen, das du modellieren möchtest..."></textarea>
                 </div>
 
                 <div id="mbStep0Result" style="display:none">
@@ -1561,7 +1602,7 @@
         }
 
         // ═══════ MODEL BUILDING WORKFLOW ═══════
-        const mbState = { mode: null, step: 0, question: '', selections: {}, sessionId: null };
+        const mbState = { mode: null, step: 0, question: '', selections: {}, sessionId: null, selectedProblem: null };
 
         const MB_MODELS = [
             { id:'MOD-001', name:'Religious Tradition Distance Model', v:'2.0', domain:'REL', type:'distance_comparison' },
@@ -1654,10 +1695,63 @@
             if (btn) btn.disabled = false;
         }
 
+        function mbSelectProblem(el, question) {
+            // Deselect all choices in Step 0
+            document.querySelectorAll('#mbStep0Choices .mb-choice, #mbStep0 .mb-choice').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            mbState.selectedProblem = question;
+            // Hide custom input if shown
+            document.getElementById('mbCustomInput').style.display = 'none';
+            // Auto-trigger analysis
+            mbProcessStep0();
+        }
+
+        function mbShowCustomInput() {
+            document.querySelectorAll('#mbStep0Choices .mb-choice, #mbStep0 .mb-choice').forEach(c => c.classList.remove('selected'));
+            mbState.selectedProblem = null;
+            const ci = document.getElementById('mbCustomInput');
+            ci.style.display = 'block';
+            document.getElementById('mbQuestion').focus();
+        }
+
+        async function mbLetBeatrixDefine() {
+            document.querySelectorAll('#mbStep0Choices .mb-choice, #mbStep0 .mb-choice').forEach(c => c.classList.remove('selected'));
+            const btn = document.getElementById('mbStep0Btn');
+            btn.disabled = true;
+            btn.textContent = 'BEATRIX generiert Problemstellung...';
+            try {
+                const resp = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                    body: JSON.stringify({ question: `Generiere eine spannende, aktuelle Problemstellung für den EEE Model-Building Workflow (Modus: ${mbState.mode || 'gefuehrt'}). Die Problemstellung soll ein reales Verhaltensphänomen beschreiben, das mit dem BCM modelliert werden kann. Antworte NUR mit der Problemstellung als Text, max 2 Sätze, kein JSON.` })
+                });
+                const data = await resp.json();
+                const generated = (data.answer || '').replace(/```[^`]*```/g, '').replace(/["""]/g, '').trim();
+                if (generated) {
+                    mbState.selectedProblem = generated;
+                    const ci = document.getElementById('mbCustomInput');
+                    ci.style.display = 'block';
+                    document.getElementById('mbQuestion').value = generated;
+                    btn.textContent = 'Analysieren →';
+                    btn.disabled = false;
+                }
+            } catch(e) {
+                console.error('Generate error:', e);
+                btn.textContent = 'Analysieren →';
+                btn.disabled = false;
+            }
+        }
+
         async function mbProcessStep0() {
-            const q = document.getElementById('mbQuestion').value.trim();
-            if (!q) { document.getElementById('mbQuestion').focus(); return; }
-            mbState.question = q;
+            const q = document.getElementById('mbQuestion') ? document.getElementById('mbQuestion').value.trim() : '';
+            const selectedQ = mbState.selectedProblem || q;
+            if (!selectedQ) { 
+                // Highlight choices
+                document.getElementById('mbStep0Choices').style.animation = 'shake 0.3s';
+                setTimeout(() => document.getElementById('mbStep0Choices').style.animation = '', 300);
+                return; 
+            }
+            mbState.question = selectedQ;
 
             const btn = document.getElementById('mbStep0Btn');
             btn.disabled = true;
