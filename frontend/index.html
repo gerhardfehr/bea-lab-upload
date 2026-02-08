@@ -222,7 +222,14 @@
     <!-- ═══════ AUTH OVERLAY ═══════ -->
     <div class="auth-overlay" id="authOverlay">
         <div class="auth-card">
-            <img src="/static/logo.jpeg" alt="BEATRIX" class="auth-logo">
+            <div class="auth-logo" style="display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#111d33,#1a2a47);border:1px solid rgba(91,138,245,0.3)">
+                <svg width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M50 10L15 30V70L50 90L85 70V30L50 10Z" stroke="#5b8af5" stroke-width="3" fill="none"/>
+                    <path d="M50 20L25 35V65L50 80L75 65V35L50 20Z" stroke="#5b8af5" stroke-width="2" fill="rgba(91,138,245,0.08)"/>
+                    <path d="M50 32L33 42V58L50 68L67 58V42L50 32Z" fill="rgba(91,138,245,0.15)" stroke="#5b8af5" stroke-width="1.5"/>
+                    <text x="50" y="55" text-anchor="middle" fill="#5b8af5" font-family="system-ui" font-size="14" font-weight="800">B</text>
+                </svg>
+            </div>
             <h1 class="auth-title">BEATRIX <span>Lab</span></h1>
             <p class="auth-subtitle">Strategic Intelligence Suite</p>
 
@@ -290,7 +297,7 @@
 
     <!-- ═══════ MAIN APP ═══════ -->
     <nav class="nav">
-        <a href="#" class="nav-brand" onclick="showSection('hero')"><img src="/static/logo.jpeg" alt="BEATRIX" class="nav-logo-img"><span class="nav-title">BEATRIX</span></a>
+        <a href="#" class="nav-brand" onclick="showSection('hero')"><svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="border-radius:6px"><rect width="100" height="100" rx="16" fill="#111d33"/><path d="M50 15L20 32V68L50 85L80 68V32L50 15Z" stroke="#5b8af5" stroke-width="3" fill="none"/><path d="M50 28L30 40V60L50 72L70 60V40L50 28Z" fill="rgba(91,138,245,0.12)" stroke="#5b8af5" stroke-width="2"/><text x="50" y="56" text-anchor="middle" fill="#5b8af5" font-family="system-ui" font-size="18" font-weight="800">B</text></svg><span class="nav-title">BEATRIX</span></a>
         <div class="nav-links">
             <a href="#" class="nav-link active" data-section="upload" onclick="showSection('upload',this)">Upload</a>
             <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
@@ -307,7 +314,14 @@
     </nav>
 
     <section class="hero" id="hero-section">
-        <img src="/static/logo.jpeg" alt="BEATRIX Logo" class="hero-logo">
+        <div class="hero-logo" style="display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#111d33,#1a2a47);border:1px solid rgba(91,138,245,0.2)">
+            <svg width="64" height="64" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M50 10L15 30V70L50 90L85 70V30L50 10Z" stroke="#5b8af5" stroke-width="3" fill="none"/>
+                <path d="M50 20L25 35V65L50 80L75 65V35L50 20Z" stroke="#5b8af5" stroke-width="2" fill="rgba(91,138,245,0.08)"/>
+                <path d="M50 32L33 42V58L50 68L67 58V42L50 32Z" fill="rgba(91,138,245,0.15)" stroke="#5b8af5" stroke-width="1.5"/>
+                <text x="50" y="55" text-anchor="middle" fill="#5b8af5" font-family="system-ui" font-size="14" font-weight="800">B</text>
+            </svg>
+        </div>
         <h1>BEATRIX <span>Intelligence Suite</span></h1>
         <p class="subtitle">Knowledge Base für Behavioral Economics. Lade Dokumente, Axiome und Research Papers in die BEATRIX-Datenbank.</p>
         <div class="hero-stats">
