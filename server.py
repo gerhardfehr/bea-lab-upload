@@ -872,24 +872,92 @@ def poll_github_answer(issue_number: int) -> dict:
         f"https://api.github.com/repos/{GH_CONTEXT_REPO}/issues/{issue_number}/comments",
         headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"})
     comments = json.loads(urllib.request.urlopen(req, context=ctx).read())
-    # Find Claude's answer - check from newest to oldest
     for comment in reversed(comments):
         login = comment.get("user", {}).get("login", "")
         body = comment.get("body", "")
         if login != "claude[bot]": continue
-        # Final answer contains "Claude finished"
         if "Claude finished" in body:
-            # Extract the actual answer (after the --- separator)
             parts = body.split("---", 1)
             answer = parts[1].strip() if len(parts) > 1 else body
             return {"status": "done", "answer": answer, "comment_url": comment.get("html_url")}
-        # Error
         if "encountered an error" in body:
-            return {"status": "error", "answer": "BEATRIX konnte die Analyse nicht abschließen. Bitte versuche es erneut."}
-        # Still processing
+            return {"status": "error", "answer": "BEATRIX konnte die Analyse nicht abschliessen. Bitte versuche es erneut."}
         if "working" in body.lower() or "Working" in body:
             return {"status": "processing", "progress": body[:300]}
     return {"status": "waiting"}
+
+def store_ebf_answer(db, question: str, answer: str, issue_url: str = ""):
+    """Store a Claude Code EBF answer back into the Knowledge Base for fast retrieval."""
+    # Extract keywords from question for tags
+    stop_words = {"was", "ist", "das", "die", "der", "den", "dem", "ein", "eine", "wie", "und", "oder",
+                  "von", "mit", "für", "auf", "aus", "bei", "nach", "über", "unter", "sind", "wird",
+                  "kann", "hat", "haben", "sein", "werden", "nicht", "auch", "aber", "als", "nur",
+                  "the", "what", "how", "are", "is", "in", "of", "and", "for", "to", "a", "an"}
+    words = [w.strip("?!.,;:()[]") for w in question.split()]
+    tags = list(set(w for w in words if len(w) > 2 and w.lower() not in stop_words))[:10]
+    tags.append("ebf-answer")
+    tags.append("claude-code")
+
+    doc = Document(
+        title=f"EBF: {question[:200]}",
+        content=f"FRAGE: {question}\n\nANTWORT:\n{answer}",
+        source_type="ebf_answer",
+        database_target="knowledge_base",
+        category="EBF Framework",
+        tags=tags,
+        status="indexed",
+        github_url=issue_url,
+        doc_metadata={"type": "ebf_cached_answer", "question": question, "generated_at": datetime.utcnow().isoformat()}
+    )
+    db.add(doc); db.commit()
+    logger.info(f"EBF answer stored in KB: {question[:60]}")
+    return doc.id
+
+def fast_path_answer(question: str, context: str, sources: list) -> str:
+    """Fast path: Use Claude API with existing KB context for instant answer."""
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    system_prompt = """Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
+Du bist spezialisiert auf das Evidence-Based Framework (EBF), Behavioral Economics, das Behavioral Competence Model (BCM) und Decision Architecture.
+
+Dir steht vorhandenes Wissen aus der BEATRIX Knowledge Base zur Verfügung. Dieses Wissen wurde zuvor durch tiefgehende Analyse des EBF-Frameworks erarbeitet.
+
+Deine Aufgabe:
+- Beantworte Fragen basierend auf dem bereitgestellten Kontext
+- Antworte präzise, wissenschaftlich fundiert und praxisorientiert
+- Nenne Quellen wenn du aus dem Kontext zitierst
+- Wenn der Kontext nicht ausreicht, sage das ehrlich
+- Antworte auf Deutsch, es sei denn die Frage ist auf Englisch
+
+Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
+
+    user_message = f"""Hier ist relevanter Kontext aus der BEATRIX Knowledge Base (vorberechnetes EBF-Wissen):
+
+{context}
+
+---
+
+Frage: {question}"""
+
+    payload = json.dumps({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 3000,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": user_message}]
+    }).encode()
+    req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+        headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            "User-Agent": "BEATRIXLab/3.8"
+        })
+    resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+    return resp["content"][0]["text"]
+
+# Relevance threshold: minimum score to use fast path
+FAST_PATH_THRESHOLD = 15
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest, user=Depends(require_auth)):
@@ -898,8 +966,6 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
         raise HTTPException(400, "Bitte stelle eine Frage")
     if len(question) > 5000:
         raise HTTPException(400, "Frage zu lang (max 5000 Zeichen)")
-    if not GH_TOKEN:
-        raise HTTPException(501, "GitHub-Integration nicht konfiguriert")
 
     db = get_db()
     try:
@@ -907,15 +973,47 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
         user_msg = ChatMessage(user_email=user["sub"], role="user", content=question)
         db.add(user_msg); db.commit()
 
-        # Create GitHub Issue → triggers Claude Code Action
+        # === PATH DECISION: Search KB for existing EBF answers ===
+        results = search_knowledge_base(db, question)
+        top_score = results[0][0] if results else 0
+        ebf_results = [(s, d) for s, d in results if d.source_type == "ebf_answer"]
+        ebf_score = ebf_results[0][0] if ebf_results else 0
+
+        logger.info(f"Chat: q='{question[:50]}' | top_score={top_score} | ebf_score={ebf_score} | threshold={FAST_PATH_THRESHOLD}")
+
+        # === FAST PATH: Good KB match exists → Claude API with context (3 sec) ===
+        if top_score >= FAST_PATH_THRESHOLD and ANTHROPIC_API_KEY:
+            context = build_context(results)
+            sources = [{"title": doc.title, "id": doc.id, "type": doc.source_type, "category": doc.category} for _, doc in results[:5]]
+            try:
+                answer = fast_path_answer(question, context, sources)
+                assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=answer, sources=sources)
+                db.add(assistant_msg); db.commit()
+                logger.info(f"FAST PATH answer for: {question[:50]}")
+                return {
+                    "status": "done",
+                    "answer": answer,
+                    "sources": sources,
+                    "path": "fast",
+                    "knowledge_score": top_score
+                }
+            except Exception as e:
+                logger.warning(f"Fast path failed, falling through to deep path: {e}")
+
+        # === DEEP PATH: No good match → GitHub Claude Code (4-5 min) ===
+        if not GH_TOKEN:
+            raise HTTPException(501, "Kein ausreichendes Wissen vorhanden und GitHub-Integration nicht konfiguriert")
+
         gh = create_github_issue(question, user["sub"])
-        logger.info(f"GitHub Issue #{gh['issue_number']} created for: {question[:60]}")
+        logger.info(f"DEEP PATH: GitHub Issue #{gh['issue_number']} for: {question[:50]}")
 
         return {
             "status": "processing",
             "issue_number": gh["issue_number"],
             "issue_url": gh["html_url"],
-            "message": "BEATRIX analysiert deine Frage mit dem Evidence-Based Framework..."
+            "path": "deep",
+            "knowledge_score": top_score,
+            "message": "Neue Frage! BEATRIX erarbeitet die Antwort mit dem Evidence-Based Framework..."
         }
     except HTTPException: raise
     except Exception as e:
@@ -925,19 +1023,35 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
 
 @app.get("/api/chat/poll/{issue_number}")
 async def chat_poll(issue_number: int, user=Depends(require_auth)):
-    """Poll for Claude Code's answer on a GitHub Issue."""
+    """Poll for Claude Code's answer on a GitHub Issue. Stores answer in KB when done."""
     try:
         result = poll_github_answer(issue_number)
         if result["status"] == "done":
-            # Store answer in chat history
             db = get_db()
             try:
+                # 1. Store in chat history
                 assistant_msg = ChatMessage(
                     user_email=user["sub"], role="assistant",
                     content=result["answer"],
                     sources=[{"type": "github", "url": result.get("comment_url", "")}]
                 )
                 db.add(assistant_msg); db.commit()
+
+                # 2. Store in Knowledge Base for future fast path!
+                # Get the original question from the issue
+                import urllib.request, ssl
+                ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+                req = urllib.request.Request(
+                    f"https://api.github.com/repos/{GH_CONTEXT_REPO}/issues/{issue_number}",
+                    headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"})
+                issue = json.loads(urllib.request.urlopen(req, context=ctx2).read())
+                # Extract question from issue body (after @claude)
+                body = issue.get("body", "")
+                q_parts = body.split("@claude", 1)
+                original_question = q_parts[1].strip() if len(q_parts) > 1 else issue.get("title", "").replace("BEATRIX: ", "")
+
+                store_ebf_answer(db, original_question, result["answer"], result.get("comment_url", ""))
+                logger.info(f"EBF answer cached from Issue #{issue_number}")
             finally: db.close()
         return result
     except Exception as e:
