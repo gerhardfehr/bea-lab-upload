@@ -37,14 +37,11 @@ ALLOWED_EMAIL_DOMAINS = [d.strip().lower() for d in os.getenv("ALLOWED_EMAIL_DOM
 # Example: "gerhard.fehr@fehradvice.com" → these users get admin on registration
 ADMIN_EMAILS = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
 
-# Email verification
+# Email verification via Resend API (resend.com)
 REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "true").lower() in ("true", "1", "yes")
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "") or SMTP_USER
-APP_URL = os.getenv("APP_URL", "https://bea-lab-upload-production.up.railway.app")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "BEATRIX Lab <noreply@bea-lab.io>")
+APP_URL = os.getenv("APP_URL", "https://www.bea-lab.io")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
@@ -183,18 +180,16 @@ def push_to_github(filename, content_bytes):
         logger.error(f"GitHub push failed: {e}")
         return {"error": str(e)}
 
-app = FastAPI(title="BEA Lab Upload API", version="3.3.0")
+app = FastAPI(title="BEA Lab Upload API", version="3.3.1")
 
 def send_verification_email(email, name, token):
-    """Send verification email via SMTP"""
-    if not SMTP_USER or not SMTP_PASSWORD:
-        logger.warning("SMTP not configured, skipping verification email")
+    """Send verification email via Resend API"""
+    if not RESEND_API_KEY:
+        logger.warning("RESEND_API_KEY not set, skipping verification email")
         return False
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
     verify_url = f"{APP_URL}/api/verify/{token}"
-    subject = "BEATRIX Lab – E-Mail bestätigen"
     html = f"""<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:40px 24px">
     <div style="text-align:center;margin-bottom:32px">
         <h1 style="font-size:24px;font-weight:800;color:#0a1628;margin:0">BEATRIX <span style="color:#5b8af5">Lab</span></h1>
@@ -209,20 +204,20 @@ def send_verification_email(email, name, token):
     <a href="{verify_url}" style="color:#5b8af5;word-break:break-all">{verify_url}</a></p>
     <p style="font-size:12px;color:#999;margin-top:24px">Dieser Link ist 24 Stunden gültig.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0">
-    <p style="font-size:11px;color:#aaa;text-align:center">FehrAdvice & Partners AG · Zürich</p>
+    <p style="font-size:11px;color:#aaa;text-align:center">FehrAdvice &amp; Partners AG · Zürich</p>
 </div>"""
+    payload = json.dumps({
+        "from": EMAIL_FROM,
+        "to": [email],
+        "subject": "BEATRIX Lab – E-Mail bestätigen",
+        "html": html,
+        "text": f"Hallo {name},\n\nBitte bestätige deine E-Mail: {verify_url}\n\nDieser Link ist 24 Stunden gültig."
+    }).encode()
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"BEATRIX Lab <{SMTP_FROM}>"
-        msg["To"] = email
-        msg.attach(MIMEText(f"Hallo {name},\n\nBitte bestätige deine E-Mail: {verify_url}\n\nDieser Link ist 24 Stunden gültig.", "plain"))
-        msg.attach(MIMEText(html, "html"))
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_FROM, email, msg.as_string())
-        logger.info(f"Verification email sent to {email}")
+        req = urllib.request.Request("https://api.resend.com/emails", data=payload, method="POST",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"})
+        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+        logger.info(f"Verification email sent to {email} via Resend: {resp.get('id','?')}")
         return True
     except Exception as e:
         logger.error(f"Failed to send verification email to {email}: {e}")
@@ -291,7 +286,7 @@ async def register(request: RegisterRequest):
         pw_hash, pw_salt = hash_password(request.password)
         is_admin = email in ADMIN_EMAILS
         verification_token = base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip('=')
-        skip_verification = is_admin or not REQUIRE_EMAIL_VERIFICATION or not SMTP_USER
+        skip_verification = is_admin or not REQUIRE_EMAIL_VERIFICATION or not RESEND_API_KEY
         user = User(
             email=email, name=request.name or email.split('@')[0],
             password_hash=pw_hash, password_salt=pw_salt, is_admin=is_admin,
@@ -431,7 +426,7 @@ async def health():
 @app.get("/api/admin/settings")
 async def admin_settings(user=Depends(require_auth)):
     if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
-    return {"allowed_email_domains": ALLOWED_EMAIL_DOMAINS or ["*"], "registration": "restricted" if ALLOWED_EMAIL_DOMAINS else "open", "jwt_expiry_hours": JWT_EXPIRY // 3600, "email_verification": REQUIRE_EMAIL_VERIFICATION, "smtp_configured": bool(SMTP_USER)}
+    return {"allowed_email_domains": ALLOWED_EMAIL_DOMAINS or ["*"], "registration": "restricted" if ALLOWED_EMAIL_DOMAINS else "open", "jwt_expiry_hours": JWT_EXPIRY // 3600, "email_verification": REQUIRE_EMAIL_VERIFICATION, "smtp_configured": bool(RESEND_API_KEY)}
 
 @app.get("/api/admin/users")
 async def admin_users(user=Depends(require_auth)):
