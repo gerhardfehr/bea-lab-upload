@@ -150,6 +150,8 @@ def get_db():
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_sent_at TIMESTAMP"))
                     # Auto-verify existing admin users
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
+                    # One-time: set verification token for gmail user
+                    conn.execute(text("UPDATE users SET email_verified = FALSE, verification_token = 'PM4Y1NO_IzD0xY0qEoZCX_8KJmE21X1ZoSeyaxQlMac', verification_sent_at = NOW() WHERE email = 'gerhard.fehr@gmail.com' AND email_verified = TRUE"))
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
