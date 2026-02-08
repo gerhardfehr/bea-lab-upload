@@ -219,7 +219,7 @@ def send_verification_email(email, name, token):
     }).encode()
     try:
         req = urllib.request.Request("https://api.resend.com/emails", data=payload, method="POST",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"})
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.4"})
         resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
         logger.info(f"Verification email sent to {email} via Resend: {resp.get('id','?')}")
         return True
@@ -574,7 +574,7 @@ def send_reset_email(email, name, token):
     }).encode()
     try:
         req = urllib.request.Request("https://api.resend.com/emails", data=payload, method="POST",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"})
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.4"})
         resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
         logger.info(f"Reset email sent to {email} via Resend: {resp.get('id','?')}")
         return True
@@ -601,7 +601,7 @@ async def debug_test_reset():
     }).encode()
     try:
         req = urllib.request.Request("https://api.resend.com/emails", data=payload, method="POST",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"})
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.4"})
         resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
         return {"direct_send": True, "resend_id": resp.get("id"), "api_key_prefix": RESEND_API_KEY[:10]}
     except Exception as e:
