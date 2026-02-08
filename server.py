@@ -46,6 +46,8 @@ LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GH_CONTEXT_REPO = os.getenv("GH_CONTEXT_REPO", "FehrAdvice-Partners-AG/complementarity-context-framework")
+VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY", "")
+VOYAGE_MODEL = "voyage-3-lite"  # 512 dimensions, fast, free tier 200M tokens/month
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
@@ -177,6 +179,16 @@ def get_db():
                         id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
                         role VARCHAR(20) NOT NULL, content TEXT NOT NULL,
                         sources JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    # pgvector for semantic search (AlphaGo-style)
+                    try:
+                        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                        conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS embedding vector(512)"))
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 10)"))
+                        logger.info("pgvector enabled with embedding column")
+                    except Exception as ve:
+                        logger.warning(f"pgvector setup (non-critical): {ve}")
+                        try: conn.rollback()
+                        except: pass
                     # Auto-verify existing admin users
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
                     conn.commit()
@@ -193,6 +205,121 @@ def push_to_github(filename, content_bytes):
         logger.warning("GH_TOKEN not set, skipping GitHub push")
         return {"error": "GH_TOKEN not configured"}
     import urllib.request, ssl
+
+# ========== VECTOR EMBEDDING (AlphaGo Neural Network) ==========
+
+def embed_texts(texts: list, input_type: str = "document") -> list:
+    """Generate embeddings via Voyage AI. Returns list of 512-dim vectors."""
+    if not VOYAGE_API_KEY or not texts:
+        return []
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    # Truncate long texts (Voyage limit ~32k tokens)
+    truncated = [t[:16000] for t in texts]
+    payload = json.dumps({
+        "input": truncated,
+        "model": VOYAGE_MODEL,
+        "input_type": input_type  # "document" for storage, "query" for search
+    }).encode()
+    req = urllib.request.Request("https://api.voyageai.com/v1/embeddings", data=payload, method="POST",
+        headers={"Authorization": f"Bearer {VOYAGE_API_KEY}", "Content-Type": "application/json"})
+    try:
+        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+        return [d["embedding"] for d in resp.get("data", [])]
+    except Exception as e:
+        logger.error(f"Voyage AI embedding error: {e}")
+        return []
+
+def embed_single(text: str, input_type: str = "document") -> list:
+    """Embed a single text. Returns 512-dim vector or empty list."""
+    results = embed_texts([text], input_type)
+    return results[0] if results else []
+
+def embed_document(db, doc_id: str):
+    """Generate and store embedding for a single document."""
+    if not VOYAGE_API_KEY: return False
+    from sqlalchemy import text as sql_text
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc or not doc.content: return False
+    # Create embedding text from title + content
+    embed_input = f"{doc.title or ''}\n{doc.content[:15000]}"
+    vec = embed_single(embed_input, "document")
+    if not vec: return False
+    # Store as pgvector
+    try:
+        vec_str = f"[{','.join(str(v) for v in vec)}]"
+        db.execute(sql_text("UPDATE documents SET embedding = :vec WHERE id = :id"), {"vec": vec_str, "id": doc_id})
+        db.commit()
+        logger.info(f"Embedded doc: {doc.title[:50]}")
+        return True
+    except Exception as e:
+        logger.error(f"Store embedding error: {e}")
+        db.rollback()
+        return False
+
+def embed_all_documents(db):
+    """Embed all documents that don't have embeddings yet. Called on startup."""
+    if not VOYAGE_API_KEY:
+        logger.info("No VOYAGE_API_KEY, skipping embeddings")
+        return 0
+    from sqlalchemy import text as sql_text
+    # Find docs without embeddings
+    try:
+        result = db.execute(sql_text("SELECT id, title, content FROM documents WHERE embedding IS NULL AND content IS NOT NULL"))
+        rows = result.fetchall()
+    except Exception as e:
+        logger.warning(f"Cannot query embeddings (pgvector not ready?): {e}")
+        return 0
+    if not rows:
+        logger.info("All documents already embedded")
+        return 0
+    logger.info(f"Embedding {len(rows)} documents...")
+    count = 0
+    # Batch embed (max 8 at a time for Voyage API)
+    batch_size = 8
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i+batch_size]
+        texts = [f"{r[1] or ''}\n{(r[2] or '')[:15000]}" for r in batch]
+        vectors = embed_texts(texts, "document")
+        for j, vec in enumerate(vectors):
+            if vec:
+                try:
+                    vec_str = f"[{','.join(str(v) for v in vec)}]"
+                    db.execute(sql_text("UPDATE documents SET embedding = :vec WHERE id = :id"), {"vec": vec_str, "id": batch[j][0]})
+                    count += 1
+                except: pass
+        db.commit()
+    logger.info(f"Embedded {count}/{len(rows)} documents")
+    return count
+
+def vector_search(db, query: str, limit: int = 8) -> list:
+    """Semantic search using pgvector cosine similarity. Returns [(score, doc), ...]"""
+    if not VOYAGE_API_KEY: return []
+    from sqlalchemy import text as sql_text
+    # Embed the query
+    query_vec = embed_single(query, "query")
+    if not query_vec: return []
+    vec_str = f"[{','.join(str(v) for v in query_vec)}]"
+    try:
+        result = db.execute(sql_text("""
+            SELECT id, 1 - (embedding <=> :vec::vector) as similarity
+            FROM documents
+            WHERE embedding IS NOT NULL AND content IS NOT NULL
+            ORDER BY embedding <=> :vec::vector
+            LIMIT :lim
+        """), {"vec": vec_str, "lim": limit})
+        rows = result.fetchall()
+        scored = []
+        for row in rows:
+            doc = db.query(Document).filter(Document.id == row[0]).first()
+            if doc:
+                scored.append((float(row[1]) * 100, doc))  # Scale to 0-100
+        return scored
+    except Exception as e:
+        logger.warning(f"Vector search error (fallback to keyword): {e}")
+        return []
+
+# ========== END VECTOR EMBEDDING ==========
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
     path = f"{GH_UPLOAD_PATH}/{filename}"
     url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
@@ -807,32 +934,59 @@ class ChatRequest(BaseModel):
     database: Optional[str] = None
 
 def search_knowledge_base(db, query: str, database: Optional[str] = None, limit: int = 8):
-    """Search documents by keyword matching for RAG context. EBF answers get priority."""
+    """Hybrid search: Vector (semantic) + Keyword combined. Like AlphaGo: Neural Net + Tree Search."""
+    # === VECTOR SEARCH (Neural Network - semantic understanding) ===
+    vector_results = vector_search(db, query, limit=limit) if VOYAGE_API_KEY else []
+
+    # === KEYWORD SEARCH (Tree Search - exact matching) ===
     words = [w.lower() for w in query.split() if len(w) > 2]
-    if not words: return []
-    docs = db.query(Document).filter(Document.content.isnot(None))
-    if database: docs = docs.filter(Document.database_target == database)
-    docs = docs.all()
-    scored = []
-    for doc in docs:
-        if not doc.content: continue
-        text_lower = doc.content.lower()
-        score = sum(text_lower.count(w) for w in words)
-        # Boost title matches
-        if doc.title:
-            title_lower = doc.title.lower()
-            score += sum(10 for w in words if w in title_lower)
-        # Boost tag matches
-        if doc.tags:
-            tags_lower = " ".join(doc.tags).lower()
-            score += sum(5 for w in words if w in tags_lower)
-        # Boost EBF cached answers (from Claude Code deep analysis)
-        if doc.source_type == "ebf_answer" or (doc.tags and "ebf-answer" in doc.tags):
-            score = int(score * 3)  # 3x boost for pre-computed EBF answers
-        if score > 0:
-            scored.append((score, doc))
-    scored.sort(key=lambda x: -x[0])
-    return scored[:limit]
+    keyword_results = []
+    if words:
+        docs = db.query(Document).filter(Document.content.isnot(None))
+        if database: docs = docs.filter(Document.database_target == database)
+        docs = docs.all()
+        for doc in docs:
+            if not doc.content: continue
+            text_lower = doc.content.lower()
+            score = sum(text_lower.count(w) for w in words)
+            if doc.title:
+                score += sum(10 for w in words if w in doc.title.lower())
+            if doc.tags:
+                tags_lower = " ".join(doc.tags).lower()
+                score += sum(5 for w in words if w in tags_lower)
+            if doc.source_type == "ebf_answer" or (doc.tags and "ebf-answer" in doc.tags):
+                score = int(score * 3)
+            if score > 0:
+                keyword_results.append((score, doc))
+        keyword_results.sort(key=lambda x: -x[0])
+
+    # === HYBRID: Combine both result sets ===
+    if vector_results and keyword_results:
+        # Merge: vector scores (0-100) dominate, keyword adds bonus
+        merged = {}
+        for score, doc in vector_results:
+            merged[doc.id] = {"doc": doc, "vector_score": score, "keyword_score": 0}
+        for score, doc in keyword_results:
+            if doc.id in merged:
+                merged[doc.id]["keyword_score"] = score
+            else:
+                merged[doc.id] = {"doc": doc, "vector_score": 0, "keyword_score": score}
+        # Combined score: 70% vector + 30% keyword (normalized)
+        max_kw = max((m["keyword_score"] for m in merged.values()), default=1) or 1
+        combined = []
+        for m in merged.values():
+            hybrid_score = 0.7 * m["vector_score"] + 0.3 * (m["keyword_score"] / max_kw * 100)
+            # EBF answer boost
+            if m["doc"].source_type == "ebf_answer":
+                hybrid_score *= 1.5
+            combined.append((hybrid_score, m["doc"]))
+        combined.sort(key=lambda x: -x[0])
+        logger.info(f"Hybrid search: {len(vector_results)} vector + {len(keyword_results)} keyword = {len(combined)} results")
+        return combined[:limit]
+    elif vector_results:
+        return vector_results[:limit]
+    else:
+        return keyword_results[:limit]
 
 def build_context(results, max_chars=12000):
     """Build context string from search results."""
@@ -913,7 +1067,9 @@ def store_ebf_answer(db, question: str, answer: str, issue_url: str = ""):
         doc_metadata={"type": "ebf_cached_answer", "question": question, "generated_at": datetime.utcnow().isoformat()}
     )
     db.add(doc); db.commit()
-    logger.info(f"EBF answer stored in KB: {question[:60]}")
+    # Embed for vector search
+    embed_document(db, doc.id)
+    logger.info(f"EBF answer stored + embedded in KB: {question[:60]}")
     return doc.id
 
 def fast_path_answer(question: str, context: str, sources: list) -> str:
@@ -1128,6 +1284,8 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
         github_url = gh_result.get("url", None)
         doc = Document(title=request.title, content=request.content, source_type="text", database_target=request.database or "knowledge_base", category=request.category, language=request.language, tags=request.tags, status="indexed+github" if github_url else "indexed", github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash, doc_metadata={"content_length": len(request.content), "github": gh_result})
         db.add(doc); db.commit(); db.refresh(doc)
+        # Auto-embed for vector search
+        embed_document(db, doc.id)
         return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=None, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=doc.github_url)
     except HTTPException: raise
     except Exception as e: db.rollback(); raise HTTPException(500, f"Datenbankfehler: {e}")
@@ -1151,4 +1309,54 @@ async def delete_document(doc_id: str, user=Depends(require_auth)):
         if doc.file_path and os.path.exists(doc.file_path): os.remove(doc.file_path)
         db.delete(doc); db.commit()
         return {"message": f"Geloescht: {doc.title}"}
+    finally: db.close()
+
+# ========== STARTUP: Embed existing documents ==========
+@app.on_event("startup")
+async def startup_embed():
+    """On startup, embed any documents that don't have embeddings yet."""
+    if not VOYAGE_API_KEY:
+        logger.info("No VOYAGE_API_KEY set — vector search disabled, using keyword fallback")
+        return
+    logger.info("Starting background embedding of existing documents...")
+    try:
+        db = get_db()
+        count = embed_all_documents(db)
+        db.close()
+        logger.info(f"Startup embedding complete: {count} documents embedded")
+    except Exception as e:
+        logger.warning(f"Startup embedding error (non-critical): {e}")
+
+# ========== ADMIN: Embedding management ==========
+@app.get("/api/admin/embedding-stats")
+async def embedding_stats(user=Depends(require_auth)):
+    from sqlalchemy import text as sql_text
+    db = get_db()
+    try:
+        total = db.query(Document).filter(Document.content.isnot(None)).count()
+        try:
+            embedded = db.execute(sql_text("SELECT COUNT(*) FROM documents WHERE embedding IS NOT NULL")).scalar()
+        except:
+            embedded = 0
+        return {
+            "total_documents": total,
+            "embedded": embedded,
+            "not_embedded": total - embedded,
+            "vector_search_enabled": bool(VOYAGE_API_KEY),
+            "voyage_model": VOYAGE_MODEL
+        }
+    finally: db.close()
+
+@app.post("/api/admin/embed-all")
+async def admin_embed_all(user=Depends(require_auth)):
+    """Admin endpoint: Trigger embedding of all un-embedded documents."""
+    db = get_db()
+    try:
+        u = db.query(User).filter(User.email == user["sub"]).first()
+        if not u or not u.is_admin:
+            raise HTTPException(403, "Nur Admins")
+        if not VOYAGE_API_KEY:
+            raise HTTPException(400, "VOYAGE_API_KEY nicht konfiguriert")
+        count = embed_all_documents(db)
+        return {"message": f"{count} Dokumente embedded", "embedded": count}
     finally: db.close()
