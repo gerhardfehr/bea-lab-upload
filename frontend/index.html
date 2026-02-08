@@ -3,57 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BEA Lab · Document Upload</title>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <title>BEATRIX – The Strategic Intelligence Suite</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-primary: #0a0b0f;
-            --bg-secondary: #12131a;
-            --bg-card: #181a24;
-            --bg-card-hover: #1e2030;
-            --border: #2a2d3e;
-            --border-active: #4f6ef7;
-            --text-primary: #e8eaf0;
-            --text-secondary: #8b8fa3;
-            --text-muted: #5a5e73;
-            --accent: #4f6ef7;
-            --accent-light: #6b85fa;
-            --accent-glow: rgba(79, 110, 247, 0.15);
+            --navy: #0a1628;
+            --navy-light: #111d35;
+            --navy-mid: #162244;
+            --navy-card: #1a2847;
+            --navy-hover: #1f3055;
+            --border: #253556;
+            --border-light: #2d4070;
+            --accent: #5b8af5;
+            --accent-light: #7ba3ff;
+            --accent-glow: rgba(91, 138, 245, 0.12);
+            --accent-glow-strong: rgba(91, 138, 245, 0.25);
+            --text: #e4e9f2;
+            --text-secondary: #8899b8;
+            --text-muted: #586a8e;
+            --white: #ffffff;
             --success: #34d399;
             --success-bg: rgba(52, 211, 153, 0.1);
             --warning: #fbbf24;
-            --warning-bg: rgba(251, 191, 36, 0.1);
             --error: #f87171;
-            --error-bg: rgba(248, 113, 113, 0.1);
-            --radius: 12px;
+            --error-bg: rgba(248, 113, 113, 0.08);
+            --radius: 14px;
             --radius-sm: 8px;
-            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: 'DM Sans', sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+            background: var(--navy);
+            color: var(--text);
             min-height: 100vh;
             overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
-        /* Subtle grid background */
+        /* ── Background Pattern ─────────────────────────────── */
         body::before {
             content: '';
             position: fixed;
             inset: 0;
-            background-image:
-                linear-gradient(rgba(79, 110, 247, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(79, 110, 247, 0.03) 1px, transparent 1px);
-            background-size: 60px 60px;
+            background:
+                radial-gradient(ellipse 80% 60% at 50% 0%, rgba(91,138,245,0.06), transparent),
+                radial-gradient(ellipse 60% 50% at 80% 100%, rgba(91,138,245,0.04), transparent);
             pointer-events: none;
             z-index: 0;
         }
 
-        /* Top nav */
+        /* ── Navigation ─────────────────────────────────────── */
         .nav {
             position: sticky;
             top: 0;
@@ -61,99 +63,217 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 16px 40px;
-            background: rgba(10, 11, 15, 0.85);
-            backdrop-filter: blur(20px);
+            padding: 0 40px;
+            height: 64px;
+            background: rgba(10, 22, 40, 0.9);
+            backdrop-filter: blur(24px);
             border-bottom: 1px solid var(--border);
         }
 
         .nav-brand {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 14px;
             text-decoration: none;
         }
 
-        .nav-logo {
-            width: 36px;
-            height: 36px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-light));
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 14px;
-            color: white;
-            letter-spacing: -0.5px;
+        .nav-logo-img {
+            height: 34px;
+            width: auto;
+            border-radius: 6px;
         }
 
         .nav-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: var(--text-primary);
-            letter-spacing: -0.3px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--white);
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
         }
 
-        .nav-title span {
-            color: var(--text-muted);
-            font-weight: 400;
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-link {
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-radius: var(--radius-sm);
+            transition: var(--transition);
+        }
+
+        .nav-link:hover, .nav-link.active {
+            color: var(--white);
+            background: var(--navy-mid);
         }
 
         .nav-status {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 13px;
-            color: var(--text-secondary);
+            gap: 7px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--success);
+            padding: 5px 12px;
+            background: var(--success-bg);
+            border-radius: 20px;
         }
 
         .nav-status .dot {
-            width: 8px;
-            height: 8px;
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
             background: var(--success);
             animation: pulse 2s infinite;
         }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
-        /* Main layout */
-        .container {
+        /* ── Hero Section ───────────────────────────────────── */
+        .hero {
             position: relative;
             z-index: 1;
+            text-align: center;
+            padding: 80px 24px 60px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .hero-logo {
+            width: 120px;
+            height: 120px;
+            border-radius: 24px;
+            margin: 0 auto 32px;
+            object-fit: cover;
+            box-shadow: 0 8px 40px rgba(91, 138, 245, 0.15);
+        }
+
+        .hero h1 {
+            font-size: 42px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: var(--white);
+            margin-bottom: 12px;
+        }
+
+        .hero h1 span {
+            background: linear-gradient(135deg, var(--accent), var(--accent-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero .subtitle {
+            font-size: 17px;
+            color: var(--text-secondary);
+            max-width: 520px;
+            margin: 0 auto 36px;
+            line-height: 1.7;
+        }
+
+        .hero-stats {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+        }
+
+        .hero-stat {
+            text-align: center;
+        }
+
+        .hero-stat .num {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--white);
+        }
+
+        .hero-stat .label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
+
+        /* ── Page Sections ──────────────────────────────────── */
+        .section {
+            display: none;
+            position: relative;
+            z-index: 1;
+        }
+
+        .section.active { display: block; }
+
+        .container {
             max-width: 960px;
             margin: 0 auto;
-            padding: 48px 24px 80px;
+            padding: 40px 24px 80px;
         }
 
-        .page-header {
-            margin-bottom: 40px;
+        .section-header {
+            margin-bottom: 32px;
         }
 
-        .page-header h1 {
-            font-size: 32px;
+        .section-header h2 {
+            font-size: 24px;
             font-weight: 700;
-            letter-spacing: -0.5px;
-            margin-bottom: 8px;
+            color: var(--white);
+            margin-bottom: 6px;
         }
 
-        .page-header p {
-            font-size: 15px;
+        .section-header p {
+            font-size: 14px;
             color: var(--text-secondary);
             line-height: 1.6;
-            max-width: 560px;
         }
 
-        /* Tab navigation */
+        /* ── Database Selector ──────────────────────────────── */
+        .db-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+
+        .db-option {
+            padding: 16px 18px;
+            background: var(--navy-light);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .db-option:hover { background: var(--navy-card); border-color: var(--border-light); }
+
+        .db-option.selected {
+            background: var(--navy-card);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .db-option-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--white);
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .db-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .db-option-desc { font-size: 12px; color: var(--text-muted); }
+
+        /* ── Tabs ───────────────────────────────────────────── */
         .tabs {
             display: flex;
             gap: 4px;
-            margin-bottom: 32px;
-            background: var(--bg-secondary);
+            margin-bottom: 28px;
+            background: var(--navy-light);
             padding: 4px;
             border-radius: var(--radius);
             border: 1px solid var(--border);
@@ -161,10 +281,10 @@
         }
 
         .tab {
-            padding: 10px 20px;
-            border-radius: var(--radius-sm);
-            font-size: 14px;
-            font-weight: 500;
+            padding: 10px 22px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
             color: var(--text-secondary);
             cursor: pointer;
             transition: var(--transition);
@@ -173,23 +293,22 @@
             font-family: inherit;
         }
 
-        .tab:hover { color: var(--text-primary); }
-
+        .tab:hover { color: var(--text); }
         .tab.active {
-            background: var(--bg-card);
-            color: var(--text-primary);
+            background: var(--navy-card);
+            color: var(--white);
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
         }
 
-        /* Upload zone */
+        /* ── Upload Zone ────────────────────────────────────── */
         .upload-zone {
             border: 2px dashed var(--border);
             border-radius: var(--radius);
-            padding: 56px 40px;
+            padding: 52px 40px;
             text-align: center;
             cursor: pointer;
             transition: var(--transition);
-            background: var(--bg-secondary);
+            background: var(--navy-light);
             position: relative;
             overflow: hidden;
         }
@@ -203,24 +322,20 @@
             transition: var(--transition);
         }
 
-        .upload-zone:hover,
-        .upload-zone.dragover {
+        .upload-zone:hover, .upload-zone.dragover {
             border-color: var(--accent);
-            background: var(--bg-card);
+            background: var(--navy-card);
         }
 
-        .upload-zone:hover::before,
-        .upload-zone.dragover::before {
-            opacity: 1;
-        }
+        .upload-zone:hover::before, .upload-zone.dragover::before { opacity: 1; }
 
         .upload-icon {
-            width: 56px;
-            height: 56px;
-            margin: 0 auto 20px;
-            background: var(--bg-card);
+            width: 52px;
+            height: 52px;
+            margin: 0 auto 18px;
+            background: var(--navy-card);
             border: 1px solid var(--border);
-            border-radius: 16px;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -228,16 +343,13 @@
             z-index: 1;
         }
 
-        .upload-icon svg {
-            width: 24px;
-            height: 24px;
-            stroke: var(--accent);
-        }
+        .upload-icon svg { width: 22px; height: 22px; stroke: var(--accent); }
 
         .upload-zone h3 {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 600;
-            margin-bottom: 6px;
+            color: var(--white);
+            margin-bottom: 5px;
             position: relative;
             z-index: 1;
         }
@@ -257,61 +369,48 @@
 
         .upload-formats {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             justify-content: center;
-            margin-top: 16px;
+            margin-top: 14px;
             position: relative;
             z-index: 1;
         }
 
         .format-badge {
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 11px;
+            padding: 3px 9px;
+            border-radius: 5px;
+            font-size: 10px;
             font-weight: 600;
             font-family: 'JetBrains Mono', monospace;
-            background: var(--bg-card);
+            background: var(--navy-card);
             border: 1px solid var(--border);
             color: var(--text-secondary);
             text-transform: uppercase;
         }
 
-        /* Text input section */
-        .text-section {
-            display: none;
-        }
+        /* ── Text Input ─────────────────────────────────────── */
+        .text-section, .file-section { display: none; }
+        .text-section.active, .file-section.active { display: block; }
 
-        .text-section.active {
-            display: block;
-        }
-
-        .file-section.active {
-            display: block;
-        }
-
-        .file-section {
-            display: none;
-        }
-
-        .input-group {
-            margin-bottom: 20px;
-        }
+        .input-group { margin-bottom: 18px; }
 
         .input-group label {
             display: block;
-            font-size: 13px;
-            font-weight: 500;
+            font-size: 12px;
+            font-weight: 600;
             color: var(--text-secondary);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
         }
 
         .input-field {
             width: 100%;
-            padding: 12px 16px;
-            background: var(--bg-secondary);
+            padding: 11px 14px;
+            background: var(--navy-light);
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
-            color: var(--text-primary);
+            color: var(--text);
             font-family: inherit;
             font-size: 14px;
             transition: var(--transition);
@@ -323,45 +422,33 @@
             box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
-        textarea.input-field {
-            min-height: 200px;
-            resize: vertical;
-            line-height: 1.7;
-        }
-
-        .input-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-        }
+        textarea.input-field { min-height: 200px; resize: vertical; line-height: 1.7; }
+        .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
         select.input-field {
             appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%238b8fa3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5l3 3 3-3'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%238899b8' stroke-width='2'%3E%3Cpath d='M3 5l3 3 3-3'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
-            background-position: right 14px center;
-            padding-right: 36px;
+            background-position: right 12px center;
+            padding-right: 32px;
         }
 
-        /* Tag input */
+        /* ── Tags ───────────────────────────────────────────── */
         .tag-container {
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
             padding: 8px 12px;
-            background: var(--bg-secondary);
+            background: var(--navy-light);
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
-            min-height: 44px;
+            min-height: 42px;
             align-items: center;
             cursor: text;
             transition: var(--transition);
         }
 
-        .tag-container:focus-within {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-glow);
-        }
+        .tag-container:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 
         .tag {
             display: flex;
@@ -369,7 +456,7 @@
             gap: 4px;
             padding: 3px 8px 3px 10px;
             background: var(--accent-glow);
-            border: 1px solid rgba(79, 110, 247, 0.3);
+            border: 1px solid rgba(91,138,245,0.3);
             border-radius: 6px;
             font-size: 12px;
             font-weight: 500;
@@ -382,7 +469,6 @@
             color: var(--accent-light);
             cursor: pointer;
             font-size: 14px;
-            line-height: 1;
             padding: 0 2px;
             opacity: 0.6;
         }
@@ -393,140 +479,67 @@
             border: none;
             outline: none;
             background: none;
-            color: var(--text-primary);
+            color: var(--text);
             font-family: inherit;
             font-size: 13px;
             flex: 1;
-            min-width: 100px;
+            min-width: 80px;
         }
 
-        /* File list */
-        .file-list {
-            margin-top: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
+        /* ── File List ──────────────────────────────────────── */
+        .file-list { margin-top: 20px; display: flex; flex-direction: column; gap: 8px; }
 
         .file-item {
             display: flex;
             align-items: center;
-            gap: 14px;
-            padding: 14px 18px;
-            background: var(--bg-card);
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--navy-card);
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
             animation: slideIn 0.3s ease;
         }
 
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(-8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
 
         .file-type-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
+            width: 38px;
+            height: 38px;
+            border-radius: 9px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
             font-family: 'JetBrains Mono', monospace;
             text-transform: uppercase;
             flex-shrink: 0;
         }
 
-        .file-type-icon.pdf {
-            background: rgba(239, 68, 68, 0.12);
-            color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.2);
-        }
+        .file-type-icon.pdf { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+        .file-type-icon.txt { background: rgba(96,165,250,0.12); color: #60a5fa; border: 1px solid rgba(96,165,250,0.2); }
+        .file-type-icon.md { background: rgba(52,211,153,0.12); color: #34d399; border: 1px solid rgba(52,211,153,0.2); }
+        .file-type-icon.doc { background: rgba(96,165,250,0.12); color: #60a5fa; border: 1px solid rgba(96,165,250,0.2); }
 
-        .file-type-icon.txt {
-            background: rgba(96, 165, 250, 0.12);
-            color: #60a5fa;
-            border: 1px solid rgba(96, 165, 250, 0.2);
-        }
+        .file-info { flex: 1; min-width: 0; }
+        .file-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
-        .file-type-icon.md {
-            background: rgba(52, 211, 153, 0.12);
-            color: #34d399;
-            border: 1px solid rgba(52, 211, 153, 0.2);
-        }
-
-        .file-type-icon.doc {
-            background: rgba(96, 165, 250, 0.12);
-            color: #60a5fa;
-            border: 1px solid rgba(96, 165, 250, 0.2);
-        }
-
-        .file-info {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .file-name {
-            font-size: 14px;
-            font-weight: 500;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .file-meta {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 2px;
-        }
-
-        .file-progress {
-            flex: 1;
-            max-width: 200px;
-        }
-
-        .progress-bar {
-            height: 4px;
-            background: var(--bg-primary);
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: var(--accent);
-            border-radius: 2px;
-            transition: width 0.3s ease;
-        }
+        .progress-bar { height: 3px; background: var(--navy); border-radius: 2px; overflow: hidden; max-width: 180px; }
+        .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
 
         .file-status {
-            font-size: 12px;
-            font-weight: 500;
-            padding: 4px 10px;
-            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 9px;
+            border-radius: 5px;
             white-space: nowrap;
         }
 
-        .file-status.pending {
-            color: var(--text-muted);
-            background: var(--bg-secondary);
-        }
-
-        .file-status.uploading {
-            color: var(--accent-light);
-            background: var(--accent-glow);
-        }
-
-        .file-status.success {
-            color: var(--success);
-            background: var(--success-bg);
-        }
-
-        .file-status.error {
-            color: var(--error);
-            background: var(--error-bg);
-        }
+        .file-status.pending { color: var(--text-muted); background: var(--navy-light); }
+        .file-status.uploading { color: var(--accent-light); background: var(--accent-glow); }
+        .file-status.success { color: var(--success); background: var(--success-bg); }
+        .file-status.error { color: var(--error); background: var(--error-bg); }
 
         .file-remove {
             background: none;
@@ -538,23 +551,15 @@
             border-radius: 4px;
         }
 
-        .file-remove:hover {
-            color: var(--error);
-            background: var(--error-bg);
-        }
+        .file-remove:hover { color: var(--error); background: var(--error-bg); }
 
-        /* Submit button */
-        .actions {
-            margin-top: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
+        /* ── Buttons ────────────────────────────────────────── */
+        .actions { margin-top: 28px; display: flex; align-items: center; justify-content: space-between; }
 
         .btn {
-            padding: 12px 28px;
+            padding: 11px 24px;
             border-radius: var(--radius-sm);
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             font-family: inherit;
             cursor: pointer;
@@ -568,182 +573,28 @@
         .btn-primary {
             background: var(--accent);
             color: white;
-            box-shadow: 0 2px 12px rgba(79, 110, 247, 0.3);
+            box-shadow: 0 2px 12px rgba(91,138,245,0.3);
         }
 
-        .btn-primary:hover {
-            background: var(--accent-light);
-            box-shadow: 0 4px 20px rgba(79, 110, 247, 0.4);
-            transform: translateY(-1px);
-        }
-
-        .btn-primary:active {
-            transform: translateY(0);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
+        .btn-primary:hover { background: var(--accent-light); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(91,138,245,0.4); }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
 
         .btn-secondary {
-            background: var(--bg-card);
+            background: var(--navy-card);
             color: var(--text-secondary);
             border: 1px solid var(--border);
         }
 
-        .btn-secondary:hover {
-            background: var(--bg-card-hover);
-            color: var(--text-primary);
-        }
+        .btn-secondary:hover { background: var(--navy-hover); color: var(--text); }
 
-        .upload-count {
-            font-size: 13px;
-            color: var(--text-muted);
-        }
+        .upload-count { font-size: 13px; color: var(--text-muted); }
 
-        .upload-count strong {
-            color: var(--text-secondary);
-        }
-
-        /* Toast notifications */
-        .toast-container {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .toast {
-            padding: 14px 20px;
-            border-radius: var(--radius-sm);
-            font-size: 13px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            animation: toastIn 0.3s ease;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-            border: 1px solid var(--border);
-            background: var(--bg-card);
-        }
-
-        .toast.success { border-left: 3px solid var(--success); }
-        .toast.error { border-left: 3px solid var(--error); }
-        .toast.info { border-left: 3px solid var(--accent); }
-
-        @keyframes toastIn {
-            from { opacity: 0; transform: translateX(20px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-
-        /* Database selector */
-        .db-selector {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 28px;
-        }
-
-        .db-option {
-            flex: 1;
-            padding: 16px 20px;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            cursor: pointer;
-            transition: var(--transition);
+        /* ── Documents Table ────────────────────────────────── */
+        .doc-table { width: 100%; border-collapse: collapse; }
+        .doc-table th {
             text-align: left;
-        }
-
-        .db-option:hover {
-            background: var(--bg-card);
-            border-color: var(--border-active);
-        }
-
-        .db-option.selected {
-            background: var(--bg-card);
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-glow);
-        }
-
-        .db-option-title {
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .db-option-desc {
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
-        .db-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-
-        /* Responsive */
-        @media (max-width: 640px) {
-            .nav { padding: 12px 20px; }
-            .container { padding: 24px 16px 60px; }
-            .page-header h1 { font-size: 24px; }
-            .upload-zone { padding: 36px 20px; }
-            .input-row { grid-template-columns: 1fr; }
-            .db-selector { flex-direction: column; }
-            .actions { flex-direction: column; gap: 12px; }
-        }
-
-        /* Spinner */
-        .spinner {
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Recent uploads table */
-        .recent-section {
-            margin-top: 48px;
-            padding-top: 32px;
-            border-top: 1px solid var(--border);
-        }
-
-        .recent-section h2 {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 4px;
-        }
-
-        .recent-section > p {
-            font-size: 13px;
-            color: var(--text-muted);
-            margin-bottom: 20px;
-        }
-
-        .recent-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .recent-table th {
-            text-align: left;
-            font-size: 11px;
-            font-weight: 600;
+            font-size: 10px;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: var(--text-muted);
@@ -751,34 +602,87 @@
             border-bottom: 1px solid var(--border);
         }
 
-        .recent-table td {
+        .doc-table td {
             padding: 12px 14px;
             font-size: 13px;
-            border-bottom: 1px solid rgba(42, 45, 62, 0.5);
+            border-bottom: 1px solid rgba(37,53,86,0.5);
             color: var(--text-secondary);
         }
 
-        .recent-table tr:hover td {
-            background: var(--bg-secondary);
-        }
+        .doc-table tr:hover td { background: var(--navy-light); }
+        .doc-table .doc-name { color: var(--white); font-weight: 500; }
 
-        .recent-table .doc-name {
-            color: var(--text-primary);
-            font-weight: 500;
-        }
-
-        .status-dot {
+        .status-badge {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
+            font-size: 11px;
+            font-weight: 600;
         }
 
-        .status-dot::before {
-            content: '';
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--success);
+        .status-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state svg { width: 48px; height: 48px; stroke: var(--border-light); margin-bottom: 16px; }
+        .empty-state h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 6px; }
+        .empty-state p { font-size: 13px; }
+
+        /* ── Toast ──────────────────────────────────────────── */
+        .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+
+        .toast {
+            padding: 12px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            animation: toastIn 0.3s ease;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            border: 1px solid var(--border);
+            background: var(--navy-card);
+        }
+
+        .toast.success { border-left: 3px solid var(--success); }
+        .toast.error { border-left: 3px solid var(--error); }
+        .toast.info { border-left: 3px solid var(--accent); }
+
+        @keyframes toastIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
+
+        .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; }
+        @keyframes spin { to{transform:rotate(360deg)} }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .footer {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 32px 24px;
+            border-top: 1px solid var(--border);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .footer a { color: var(--accent); text-decoration: none; }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 640px) {
+            .nav { padding: 0 16px; }
+            .nav-links { display: none; }
+            .hero { padding: 48px 16px 40px; }
+            .hero h1 { font-size: 28px; }
+            .hero-stats { gap: 20px; }
+            .container { padding: 24px 16px 60px; }
+            .db-selector { grid-template-columns: 1fr; }
+            .input-row { grid-template-columns: 1fr; }
+            .upload-zone { padding: 36px 20px; }
+            .actions { flex-direction: column; gap: 12px; }
         }
     </style>
 </head>
@@ -786,170 +690,194 @@
 
     <!-- Navigation -->
     <nav class="nav">
-        <a href="#" class="nav-brand">
-            <div class="nav-logo">BEA</div>
-            <div class="nav-title">BEA Lab <span>· Upload</span></div>
+        <a href="#" class="nav-brand" onclick="showSection('hero')">
+            <img src="/static/logo.jpeg" alt="BEATRIX" class="nav-logo-img">
+            <span class="nav-title">BEATRIX</span>
         </a>
+        <div class="nav-links">
+            <a href="#" class="nav-link active" data-section="upload" onclick="showSection('upload', this)">Upload</a>
+            <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents', this)">Dokumente</a>
+        </div>
         <div class="nav-status">
-            <div class="dot"></div>
-            Datenbank verbunden
+            <span class="dot"></span>
+            Online
         </div>
     </nav>
 
-    <!-- Main Content -->
-    <div class="container">
-        <div class="page-header">
-            <h1>Dokumente hochladen</h1>
-            <p>Lade PDFs, Textdateien oder Markdown-Dokumente hoch, um sie in die BEATRIX Knowledge Base einzufügen. Texte können auch direkt eingegeben werden.</p>
-        </div>
-
-        <!-- Target Database -->
-        <div class="db-selector">
-            <div class="db-option selected" data-db="knowledge_base" onclick="selectDB(this)">
-                <div class="db-option-title">
-                    <span class="db-dot" style="background: var(--accent)"></span>
-                    Knowledge Base
-                </div>
-                <div class="db-option-desc">Allgemeine Dokumente & Literatur</div>
+    <!-- Hero -->
+    <section class="hero" id="hero-section">
+        <img src="/static/logo.jpeg" alt="BEATRIX Logo" class="hero-logo">
+        <h1>BEATRIX <span>Intelligence Suite</span></h1>
+        <p class="subtitle">Knowledge Base für Behavioral Economics. Lade Dokumente, Axiome und Research Papers in die BEATRIX-Datenbank.</p>
+        <div class="hero-stats">
+            <div class="hero-stat">
+                <div class="num" id="statDocs">–</div>
+                <div class="label">Dokumente</div>
             </div>
-            <div class="db-option" data-db="bcm_axioms" onclick="selectDB(this)">
-                <div class="db-option-title">
-                    <span class="db-dot" style="background: var(--success)"></span>
-                    BCM Axiome
-                </div>
-                <div class="db-option-desc">Axiom-Definitionen & Parameter</div>
+            <div class="hero-stat">
+                <div class="num" id="statKB">–</div>
+                <div class="label">Knowledge Base</div>
             </div>
-            <div class="db-option" data-db="research" onclick="selectDB(this)">
-                <div class="db-option-title">
-                    <span class="db-dot" style="background: var(--warning)"></span>
-                    Research Papers
-                </div>
-                <div class="db-option-desc">Akademische Publikationen</div>
+            <div class="hero-stat">
+                <div class="num" id="statAxioms">–</div>
+                <div class="label">BCM Axiome</div>
             </div>
         </div>
+    </section>
 
-        <!-- Tabs -->
-        <div class="tabs">
-            <button class="tab active" onclick="switchTab('file', this)">Datei-Upload</button>
-            <button class="tab" onclick="switchTab('text', this)">Text eingeben</button>
-        </div>
+    <!-- Upload Section -->
+    <section class="section active" id="upload-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Dokument hochladen</h2>
+                <p>PDFs, Texte und Axiom-Definitionen in die BEATRIX Knowledge Base einfügen.</p>
+            </div>
 
-        <!-- File Upload Section -->
-        <div class="file-section active" id="file-section">
-            <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-                <div class="upload-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="17 8 12 3 7 8"/>
-                        <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
+            <div class="db-selector">
+                <div class="db-option selected" data-db="knowledge_base" onclick="selectDB(this)">
+                    <div class="db-option-title">
+                        <span class="db-dot" style="background:var(--accent)"></span>
+                        Knowledge Base
+                    </div>
+                    <div class="db-option-desc">Dokumente & Literatur</div>
                 </div>
-                <h3>Dateien hierher ziehen oder <span>durchsuchen</span></h3>
-                <p>Maximal 50 MB pro Datei</p>
-                <div class="upload-formats">
-                    <span class="format-badge">PDF</span>
-                    <span class="format-badge">TXT</span>
-                    <span class="format-badge">MD</span>
-                    <span class="format-badge">DOCX</span>
-                    <span class="format-badge">CSV</span>
+                <div class="db-option" data-db="bcm_axioms" onclick="selectDB(this)">
+                    <div class="db-option-title">
+                        <span class="db-dot" style="background:var(--success)"></span>
+                        BCM Axiome
+                    </div>
+                    <div class="db-option-desc">Axiom-Definitionen</div>
+                </div>
+                <div class="db-option" data-db="research" onclick="selectDB(this)">
+                    <div class="db-option-title">
+                        <span class="db-dot" style="background:var(--warning)"></span>
+                        Research Papers
+                    </div>
+                    <div class="db-option-desc">Akademische Publikationen</div>
                 </div>
             </div>
-            <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.docx,.csv,.json" style="display:none">
 
-            <div class="file-list" id="fileList"></div>
-        </div>
-
-        <!-- Text Input Section -->
-        <div class="text-section" id="text-section">
-            <div class="input-group">
-                <label>Titel</label>
-                <input type="text" class="input-field" id="textTitle" placeholder="z.B. Axiom INU-3200 Definition">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('file', this)">Datei-Upload</button>
+                <button class="tab" onclick="switchTab('text', this)">Text eingeben</button>
             </div>
-            <div class="input-row">
+
+            <!-- File Upload -->
+            <div class="file-section active" id="file-section">
+                <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                    <div class="upload-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <h3>Dateien hierher ziehen oder <span>durchsuchen</span></h3>
+                    <p>Maximal 50 MB pro Datei</p>
+                    <div class="upload-formats">
+                        <span class="format-badge">PDF</span>
+                        <span class="format-badge">TXT</span>
+                        <span class="format-badge">MD</span>
+                        <span class="format-badge">DOCX</span>
+                        <span class="format-badge">CSV</span>
+                        <span class="format-badge">JSON</span>
+                    </div>
+                </div>
+                <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.docx,.csv,.json" style="display:none">
+                <div class="file-list" id="fileList"></div>
+            </div>
+
+            <!-- Text Input -->
+            <div class="text-section" id="text-section">
                 <div class="input-group">
-                    <label>Kategorie</label>
-                    <select class="input-field" id="textCategory">
-                        <option value="general">Allgemein</option>
-                        <option value="axiom">Axiom-Definition</option>
-                        <option value="paper">Research Paper</option>
-                        <option value="note">Notiz / Memo</option>
-                        <option value="persona">Persona-Profil</option>
-                        <option value="parameter">Parameter-Set</option>
-                    </select>
+                    <label>Titel</label>
+                    <input type="text" class="input-field" id="textTitle" placeholder="z.B. Axiom INU-3200 Definition">
+                </div>
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Kategorie</label>
+                        <select class="input-field" id="textCategory">
+                            <option value="general">Allgemein</option>
+                            <option value="axiom">Axiom-Definition</option>
+                            <option value="paper">Research Paper</option>
+                            <option value="note">Notiz / Memo</option>
+                            <option value="persona">Persona-Profil</option>
+                            <option value="parameter">Parameter-Set</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Sprache</label>
+                        <select class="input-field" id="textLang">
+                            <option value="de">Deutsch</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="input-group">
-                    <label>Sprache</label>
-                    <select class="input-field" id="textLang">
-                        <option value="de">Deutsch</option>
-                        <option value="en">English</option>
-                        <option value="auto">Auto-detect</option>
-                    </select>
+                    <label>Tags</label>
+                    <div class="tag-container" id="tagContainer" onclick="document.getElementById('tagInput').focus()">
+                        <input type="text" class="tag-input" id="tagInput" placeholder="Tag + Enter">
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Inhalt</label>
+                    <textarea class="input-field" id="textContent" placeholder="Text, JSON, Axiom-Definition oder Markdown einfügen..."></textarea>
                 </div>
             </div>
-            <div class="input-group">
-                <label>Tags</label>
-                <div class="tag-container" id="tagContainer" onclick="document.getElementById('tagInput').focus()">
-                    <input type="text" class="tag-input" id="tagInput" placeholder="Tag eingeben + Enter">
+
+            <div class="actions">
+                <div class="upload-count" id="uploadCount"></div>
+                <div style="display:flex;gap:10px;">
+                    <button class="btn btn-secondary" onclick="clearAll()">Zurücksetzen</button>
+                    <button class="btn btn-primary" id="submitBtn" onclick="submitUpload()">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        In Datenbank laden
+                    </button>
                 </div>
             </div>
-            <div class="input-group">
-                <label>Inhalt</label>
-                <textarea class="input-field" id="textContent" placeholder="Text, JSON, Axiom-Definition oder Markdown hier einfügen..."></textarea>
+        </div>
+    </section>
+
+    <!-- Documents Section -->
+    <section class="section" id="documents-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Alle Dokumente</h2>
+                <p>Übersicht aller indexierten Dokumente in der BEATRIX Knowledge Base.</p>
             </div>
+            <div id="docTableWrapper"></div>
         </div>
+    </section>
 
-        <!-- Actions -->
-        <div class="actions">
-            <div class="upload-count" id="uploadCount"></div>
-            <div style="display:flex;gap:12px;">
-                <button class="btn btn-secondary" onclick="clearAll()">Zurücksetzen</button>
-                <button class="btn btn-primary" id="submitBtn" onclick="submitUpload()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="17 8 12 3 7 8"/>
-                        <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                    In Datenbank laden
-                </button>
-            </div>
-        </div>
+    <!-- Footer -->
+    <footer class="footer">
+        BEATRIX – The Strategic Intelligence Suite · <a href="https://fehradvice.com" target="_blank">FehrAdvice & Partners AG</a> · Zürich
+    </footer>
 
-        <!-- Recent uploads -->
-        <div class="recent-section">
-            <h2>Letzte Uploads</h2>
-            <p>Die zuletzt hinzugefügten Dokumente</p>
-            <table class="recent-table">
-                <thead>
-                    <tr>
-                        <th>Dokument</th>
-                        <th>Typ</th>
-                        <th>Datenbank</th>
-                        <th>Datum</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody id="recentTableBody">
-                    <!-- Populated dynamically -->
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Toast container -->
+    <!-- Toast -->
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
-        // ── Configuration ──────────────────────────────────────────
-        const API_BASE = '/api'; // Change to your actual API endpoint
-        // e.g., 'https://bea-lab.io/api' or 'http://localhost:8000/api'
+        const API_BASE = '/api';
+        let files = [], tags = [], selectedDB = 'knowledge_base', currentTab = 'file';
 
-        // ── State ──────────────────────────────────────────────────
-        let files = [];
-        let tags = [];
-        let selectedDB = 'knowledge_base';
-        let currentTab = 'file';
+        // ── Navigation ──────────────────────────────────────
+        function showSection(name, el) {
+            if (el) {
+                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                el.classList.add('active');
+            }
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            const sec = document.getElementById(name + '-section');
+            if (sec) sec.classList.add('active');
+            if (name === 'documents') loadDocuments();
+        }
 
-        // ── Tab switching ──────────────────────────────────────────
+        // ── Tab switching ───────────────────────────────────
         function switchTab(tab, el) {
             currentTab = tab;
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -959,331 +887,158 @@
             updateCount();
         }
 
-        // ── Database selector ──────────────────────────────────────
         function selectDB(el) {
             document.querySelectorAll('.db-option').forEach(o => o.classList.remove('selected'));
             el.classList.add('selected');
             selectedDB = el.dataset.db;
         }
 
-        // ── Drag & Drop ────────────────────────────────────────────
+        // ── Drag & Drop ────────────────────────────────────
         const dropZone = document.getElementById('dropZone');
+        ['dragenter','dragover'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('dragover'); }));
+        ['dragleave','drop'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.remove('dragover'); }));
+        dropZone.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
+        document.getElementById('fileInput').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
 
-        ['dragenter', 'dragover'].forEach(evt => {
-            dropZone.addEventListener(evt, e => {
-                e.preventDefault();
-                dropZone.classList.add('dragover');
-            });
-        });
-
-        ['dragleave', 'drop'].forEach(evt => {
-            dropZone.addEventListener(evt, e => {
-                e.preventDefault();
-                dropZone.classList.remove('dragover');
-            });
-        });
-
-        dropZone.addEventListener('drop', e => {
-            const droppedFiles = [...e.dataTransfer.files];
-            addFiles(droppedFiles);
-        });
-
-        document.getElementById('fileInput').addEventListener('change', e => {
-            addFiles([...e.target.files]);
-            e.target.value = '';
-        });
-
-        // ── File management ────────────────────────────────────────
         function addFiles(newFiles) {
-            const allowed = ['application/pdf', 'text/plain', 'text/markdown', 'text/csv',
-                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                            'application/json'];
-            const allowedExt = ['.pdf', '.txt', '.md', '.docx', '.csv', '.json'];
-
+            const ok = ['.pdf','.txt','.md','.docx','.csv','.json'];
             for (const f of newFiles) {
                 const ext = '.' + f.name.split('.').pop().toLowerCase();
-                if (!allowedExt.includes(ext)) {
-                    showToast(`${f.name}: Dateityp nicht unterstützt`, 'error');
-                    continue;
-                }
-                if (f.size > 50 * 1024 * 1024) {
-                    showToast(`${f.name}: Datei zu groß (max 50 MB)`, 'error');
-                    continue;
-                }
+                if (!ok.includes(ext)) { showToast(`${f.name}: nicht unterstützt`, 'error'); continue; }
+                if (f.size > 50*1024*1024) { showToast(`${f.name}: zu groß`, 'error'); continue; }
                 files.push({ file: f, status: 'pending', progress: 0, id: Date.now() + Math.random() });
             }
-            renderFileList();
-            updateCount();
+            renderFileList(); updateCount();
         }
 
-        function removeFile(id) {
-            files = files.filter(f => f.id !== id);
-            renderFileList();
-            updateCount();
-        }
-
-        function getFileExt(name) {
-            return name.split('.').pop().toLowerCase();
-        }
-
-        function formatSize(bytes) {
-            if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-        }
+        function removeFile(id) { files = files.filter(f => f.id !== id); renderFileList(); updateCount(); }
 
         function renderFileList() {
-            const list = document.getElementById('fileList');
-            list.innerHTML = files.map(f => {
-                const ext = getFileExt(f.file.name);
-                const iconClass = ext === 'pdf' ? 'pdf' : ext === 'md' ? 'md' :
-                                 ext === 'docx' ? 'doc' : 'txt';
-                return `
-                    <div class="file-item" data-id="${f.id}">
-                        <div class="file-type-icon ${iconClass}">${ext}</div>
-                        <div class="file-info">
-                            <div class="file-name">${f.file.name}</div>
-                            <div class="file-meta">${formatSize(f.file.size)}</div>
-                        </div>
-                        ${f.status === 'uploading' ? `
-                            <div class="file-progress">
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: ${f.progress}%"></div>
-                                </div>
-                            </div>
-                        ` : ''}
-                        <span class="file-status ${f.status}">
-                            ${f.status === 'pending' ? 'Bereit' :
-                              f.status === 'uploading' ? `${f.progress}%` :
-                              f.status === 'success' ? '✓ Fertig' : '✗ Fehler'}
-                        </span>
-                        ${f.status === 'pending' ? `
-                            <button class="file-remove" onclick="removeFile(${f.id})" title="Entfernen">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                                </svg>
-                            </button>
-                        ` : ''}
-                    </div>
-                `;
+            document.getElementById('fileList').innerHTML = files.map(f => {
+                const ext = f.file.name.split('.').pop().toLowerCase();
+                const cls = ext === 'pdf' ? 'pdf' : ext === 'md' ? 'md' : ext === 'docx' ? 'doc' : 'txt';
+                const sz = f.file.size < 1024*1024 ? (f.file.size/1024).toFixed(1)+' KB' : (f.file.size/1024/1024).toFixed(1)+' MB';
+                return `<div class="file-item">
+                    <div class="file-type-icon ${cls}">${ext}</div>
+                    <div class="file-info"><div class="file-name">${f.file.name}</div><div class="file-meta">${sz}</div></div>
+                    ${f.status==='uploading' ? `<div><div class="progress-bar"><div class="progress-fill" style="width:${f.progress}%"></div></div></div>` : ''}
+                    <span class="file-status ${f.status}">${f.status==='pending'?'Bereit':f.status==='uploading'?f.progress+'%':f.status==='success'?'✓ Fertig':'✗ Fehler'}</span>
+                    ${f.status==='pending'?`<button class="file-remove" onclick="removeFile(${f.id})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}
+                </div>`;
             }).join('');
         }
 
         function updateCount() {
             const el = document.getElementById('uploadCount');
-            if (currentTab === 'file') {
-                el.textContent = files.length > 0
-                    ? `${files.length} Datei${files.length > 1 ? 'en' : ''} ausgewählt`
-                    : '';
-            } else {
-                const content = document.getElementById('textContent').value;
-                el.textContent = content.length > 0
-                    ? `${content.length} Zeichen`
-                    : '';
-            }
+            el.textContent = currentTab === 'file'
+                ? (files.length ? `${files.length} Datei${files.length>1?'en':''}` : '')
+                : (document.getElementById('textContent').value.length ? `${document.getElementById('textContent').value.length} Zeichen` : '');
         }
 
-        // ── Tags ───────────────────────────────────────────────────
+        // ── Tags ────────────────────────────────────────────
         document.getElementById('tagInput').addEventListener('keydown', e => {
             if (e.key === 'Enter' && e.target.value.trim()) {
                 e.preventDefault();
-                const val = e.target.value.trim();
-                if (!tags.includes(val)) {
-                    tags.push(val);
-                    renderTags();
-                }
+                if (!tags.includes(e.target.value.trim())) { tags.push(e.target.value.trim()); renderTags(); }
                 e.target.value = '';
             }
         });
 
-        function removeTag(tag) {
-            tags = tags.filter(t => t !== tag);
-            renderTags();
-        }
+        function removeTag(t) { tags = tags.filter(x => x !== t); renderTags(); }
 
         function renderTags() {
-            const container = document.getElementById('tagContainer');
-            const input = document.getElementById('tagInput');
-            container.innerHTML = '';
-            tags.forEach(t => {
-                const el = document.createElement('span');
-                el.className = 'tag';
-                el.innerHTML = `${t} <button onclick="removeTag('${t}')">&times;</button>`;
-                container.appendChild(el);
-            });
-            container.appendChild(input);
+            const c = document.getElementById('tagContainer'), inp = document.getElementById('tagInput');
+            c.innerHTML = '';
+            tags.forEach(t => { const s = document.createElement('span'); s.className='tag'; s.innerHTML=`${t} <button onclick="removeTag('${t}')">&times;</button>`; c.appendChild(s); });
+            c.appendChild(inp);
         }
 
-        // ── Upload / Submit ────────────────────────────────────────
+        // ── Upload ──────────────────────────────────────────
         async function submitUpload() {
             const btn = document.getElementById('submitBtn');
-
             if (currentTab === 'file') {
-                if (files.length === 0) {
-                    showToast('Bitte wähle mindestens eine Datei aus', 'error');
-                    return;
-                }
-                btn.disabled = true;
-                btn.innerHTML = '<div class="spinner"></div> Wird hochgeladen...';
-
-                for (let i = 0; i < files.length; i++) {
-                    if (files[i].status !== 'pending') continue;
-                    files[i].status = 'uploading';
-                    renderFileList();
-
+                if (!files.length) { showToast('Bitte Dateien auswählen', 'error'); return; }
+                btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Hochladen...';
+                for (const f of files) {
+                    if (f.status !== 'pending') continue;
+                    f.status = 'uploading'; renderFileList();
                     try {
-                        await uploadFile(files[i]);
-                        files[i].status = 'success';
-                        files[i].progress = 100;
-                        addToRecentTable(files[i].file.name, getFileExt(files[i].file.name), selectedDB);
-                    } catch (err) {
-                        files[i].status = 'error';
-                        showToast(`Fehler bei ${files[i].file.name}: ${err.message}`, 'error');
-                    }
+                        const fd = new FormData(); fd.append('file', f.file); fd.append('database', selectedDB);
+                        const r = await fetch(`${API_BASE}/upload`, { method: 'POST', body: fd });
+                        if (!r.ok) throw new Error(await r.text());
+                        f.status = 'success'; f.progress = 100;
+                    } catch(e) { f.status = 'error'; showToast(`${f.file.name}: ${e.message}`, 'error'); }
                     renderFileList();
                 }
-
-                const successCount = files.filter(f => f.status === 'success').length;
-                if (successCount > 0) {
-                    showToast(`${successCount} Datei${successCount > 1 ? 'en' : ''} erfolgreich hochgeladen`, 'success');
-                }
+                const ok = files.filter(f => f.status==='success').length;
+                if (ok) showToast(`${ok} Datei${ok>1?'en':''} hochgeladen`, 'success');
             } else {
-                // Text upload
                 const title = document.getElementById('textTitle').value.trim();
                 const content = document.getElementById('textContent').value.trim();
-
-                if (!content) {
-                    showToast('Bitte gib einen Text ein', 'error');
-                    return;
-                }
-
-                btn.disabled = true;
-                btn.innerHTML = '<div class="spinner"></div> Wird gespeichert...';
-
+                if (!content) { showToast('Bitte Text eingeben', 'error'); return; }
+                btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Speichern...';
                 try {
-                    await uploadText({
-                        title: title || 'Untitled',
-                        content,
-                        category: document.getElementById('textCategory').value,
-                        language: document.getElementById('textLang').value,
-                        tags,
-                        database: selectedDB
+                    const r = await fetch(`${API_BASE}/text`, {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ title: title||'Untitled', content, category: document.getElementById('textCategory').value, language: document.getElementById('textLang').value, tags, database: selectedDB })
                     });
-                    showToast('Text erfolgreich in die Datenbank eingefügt', 'success');
-                    addToRecentTable(title || 'Texteingabe', 'text', selectedDB);
+                    if (!r.ok) throw new Error(await r.text());
+                    showToast('Text gespeichert', 'success');
                     document.getElementById('textTitle').value = '';
                     document.getElementById('textContent').value = '';
-                    tags = [];
-                    renderTags();
-                } catch (err) {
-                    showToast(`Fehler: ${err.message}`, 'error');
-                }
+                    tags = []; renderTags();
+                } catch(e) { showToast(e.message, 'error'); }
             }
-
             btn.disabled = false;
-            btn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="17 8 12 3 7 8"/>
-                    <line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
-                In Datenbank laden
-            `;
+            btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> In Datenbank laden';
+            loadStats();
         }
 
-        // ── API Calls ──────────────────────────────────────────────
-        async function uploadFile(fileObj) {
-            const formData = new FormData();
-            formData.append('file', fileObj.file);
-            formData.append('database', selectedDB);
+        // ── Documents ───────────────────────────────────────
+        async function loadDocuments() {
+            const wrap = document.getElementById('docTableWrapper');
+            try {
+                const r = await fetch(`${API_BASE}/documents`);
+                const docs = await r.json();
+                if (!docs.length) {
+                    wrap.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><h3>Noch keine Dokumente</h3><p>Lade dein erstes Dokument hoch.</p></div>`;
+                    return;
+                }
+                const dbLabels = { knowledge_base: 'Knowledge Base', bcm_axioms: 'BCM Axiome', research: 'Research' };
+                wrap.innerHTML = `<table class="doc-table"><thead><tr><th>Dokument</th><th>Typ</th><th>Datenbank</th><th>Datum</th><th>Status</th></tr></thead><tbody>${docs.map(d => {
+                    const date = new Date(d.created_at).toLocaleDateString('de-CH', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+                    return `<tr><td class="doc-name">${d.title}</td><td><span class="format-badge">${(d.file_type||d.source_type).toUpperCase()}</span></td><td>${dbLabels[d.database_target]||d.database_target}</td><td>${date}</td><td><span class="status-badge">${d.status}</span></td></tr>`;
+                }).join('')}</tbody></table>`;
+            } catch(e) { wrap.innerHTML = '<p style="color:var(--error)">Fehler beim Laden</p>'; }
+        }
 
-            const response = await fetch(`${API_BASE}/upload`, {
-                method: 'POST',
-                body: formData
-            });
-            if (!response.ok) {
-                const err = await response.text();
-                throw new Error(err);
+        // ── Stats ───────────────────────────────────────────
+        async function loadStats() {
+            try {
+                const r = await fetch(`${API_BASE}/documents`);
+                const docs = await r.json();
+                document.getElementById('statDocs').textContent = docs.length;
+                document.getElementById('statKB').textContent = docs.filter(d => d.database_target === 'knowledge_base').length;
+                document.getElementById('statAxioms').textContent = docs.filter(d => d.database_target === 'bcm_axioms').length;
+            } catch(e) {
+                document.getElementById('statDocs').textContent = '–';
             }
-            fileObj.progress = 100;
-            renderFileList();
-            return await response.json();
         }
 
-        async function uploadText(data) {
-            const response = await fetch(`${API_BASE}/text`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            if (!response.ok) {
-                const err = await response.text();
-                throw new Error(err);
-            }
-            return await response.json();
+        // ── Toast ───────────────────────────────────────────
+        function showToast(msg, type='info') {
+            const c = document.getElementById('toastContainer');
+            const t = document.createElement('div');
+            t.className = `toast ${type}`;
+            t.innerHTML = `<span>${{success:'✓',error:'✗',info:'ℹ'}[type]||''}</span> ${msg}`;
+            c.appendChild(t);
+            setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(20px)'; t.style.transition='0.3s'; setTimeout(()=>t.remove(),300); }, 4000);
         }
 
-        // ── Recent table ───────────────────────────────────────────
-        function addToRecentTable(name, type, db) {
-            const tbody = document.getElementById('recentTableBody');
-            const dbLabels = {
-                knowledge_base: 'Knowledge Base',
-                bcm_axioms: 'BCM Axiome',
-                research: 'Research Papers'
-            };
-            const now = new Date();
-            const dateStr = now.toLocaleDateString('de-CH', {
-                day: '2-digit', month: '2-digit', year: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-            });
+        function clearAll() { files=[]; tags=[]; renderFileList(); renderTags(); document.getElementById('textTitle').value=''; document.getElementById('textContent').value=''; updateCount(); }
 
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td class="doc-name">${name}</td>
-                <td><span class="format-badge">${type.toUpperCase()}</span></td>
-                <td>${dbLabels[db] || db}</td>
-                <td>${dateStr}</td>
-                <td><span class="status-dot">Indexiert</span></td>
-            `;
-            tbody.insertBefore(row, tbody.firstChild);
-        }
-
-        // ── Toast notifications ────────────────────────────────────
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-            const icons = {
-                success: '✓',
-                error: '✗',
-                info: 'ℹ'
-            };
-            toast.innerHTML = `<span>${icons[type] || ''}</span> ${message}`;
-            container.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(20px)';
-                toast.style.transition = '0.3s ease';
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
-        }
-
-        // ── Clear all ──────────────────────────────────────────────
-        function clearAll() {
-            files = [];
-            tags = [];
-            renderFileList();
-            renderTags();
-            document.getElementById('textTitle').value = '';
-            document.getElementById('textContent').value = '';
-            updateCount();
-        }
-
-        // ── Text content counter ───────────────────────────────────
         document.getElementById('textContent').addEventListener('input', updateCount);
-
-        // ── Init ───────────────────────────────────────────────────
-        updateCount();
+        loadStats();
     </script>
 </body>
 </html>
