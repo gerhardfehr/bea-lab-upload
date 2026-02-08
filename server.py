@@ -103,6 +103,14 @@ async def root():
         return FileResponse(str(index_path))
     return {"message": "BEA Lab Upload API", "docs": "/docs"}
 
+@app.get("/static/{filepath:path}")
+async def static_files(filepath: str):
+    file_path = FRONTEND_DIR / filepath
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(str(file_path))
+    raise HTTPException(404, "Not found")
+
+
 @app.get("/api/health")
 async def health():
     db_ok = False
