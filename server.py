@@ -42,6 +42,8 @@ REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "true").low
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "BEATRIX Lab <noreply@bea-lab.io>")
 APP_URL = os.getenv("APP_URL", "https://www.bea-lab.io")
+LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "")
+LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
@@ -108,6 +110,15 @@ class User(Base):
     verification_sent_at = Column(DateTime, nullable=True)
     reset_token = Column(String(200), nullable=True)
     reset_sent_at = Column(DateTime, nullable=True)
+    # Profile fields
+    position = Column(String(200), nullable=True)
+    company = Column(String(200), nullable=True)
+    bio = Column(Text, nullable=True)
+    phone = Column(String(50), nullable=True)
+    linkedin_url = Column(String(500), nullable=True)
+    linkedin_id = Column(String(100), nullable=True)
+    profile_photo_url = Column(String(1000), nullable=True)
+    expertise = Column(JSON, nullable=True)  # ["Behavioral Economics", "Strategy", ...]
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
@@ -150,6 +161,15 @@ def get_db():
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(200)"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_sent_at TIMESTAMP"))
                     conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)"))
+                    # Profile fields
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS position VARCHAR(200)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS company VARCHAR(200)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(500)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_id VARCHAR(100)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url VARCHAR(1000)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS expertise JSON"))
                     # Auto-verify existing admin users
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
                     conn.commit()
@@ -186,7 +206,7 @@ def push_to_github(filename, content_bytes):
         logger.error(f"GitHub push failed: {e}")
         return {"error": str(e)}
 
-app = FastAPI(title="BEA Lab Upload API", version="3.5.0")
+app = FastAPI(title="BEA Lab Upload API", version="3.6.0")
 
 def send_verification_email(email, name, token):
     """Send verification email via Resend API"""
@@ -250,6 +270,15 @@ class ResetPasswordRequest(BaseModel):
 class ResetPasswordConfirm(BaseModel):
     token: str
     new_password: str
+
+class ProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    position: Optional[str] = None
+    company: Optional[str] = None
+    bio: Optional[str] = None
+    phone: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    expertise: Optional[List[str]] = None
 
 class TextUploadRequest(BaseModel):
     title: str = "Untitled"
@@ -427,6 +456,139 @@ async def change_password(request: ChangePasswordRequest, user=Depends(require_a
         return {"message": "Passwort erfolgreich geändert"}
     except HTTPException: raise
     except Exception as e: raise HTTPException(500, f"Fehler: {e}")
+    finally: db.close()
+
+# ── Profile ──────────────────────────────────────────────────────────────
+@app.get("/api/profile")
+async def get_profile(user=Depends(require_auth)):
+    db = get_db()
+    try:
+        u = db.query(User).filter(User.email == user["sub"]).first()
+        if not u: raise HTTPException(404, "Benutzer nicht gefunden")
+        return {
+            "email": u.email, "name": u.name, "position": u.position, "company": u.company,
+            "bio": u.bio, "phone": u.phone, "linkedin_url": u.linkedin_url,
+            "linkedin_connected": bool(u.linkedin_id), "profile_photo_url": u.profile_photo_url,
+            "expertise": u.expertise or [], "is_admin": u.is_admin,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "last_login": u.last_login.isoformat() if u.last_login else None
+        }
+    finally: db.close()
+
+@app.put("/api/profile")
+async def update_profile(request: ProfileUpdate, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        u = db.query(User).filter(User.email == user["sub"]).first()
+        if not u: raise HTTPException(404, "Benutzer nicht gefunden")
+        if request.name is not None: u.name = request.name.strip()[:200]
+        if request.position is not None: u.position = request.position.strip()[:200]
+        if request.company is not None: u.company = request.company.strip()[:200]
+        if request.bio is not None: u.bio = request.bio.strip()[:2000]
+        if request.phone is not None: u.phone = request.phone.strip()[:50]
+        if request.linkedin_url is not None:
+            url = request.linkedin_url.strip()
+            if url and not url.startswith("http"): url = "https://" + url
+            u.linkedin_url = url[:500] if url else None
+        if request.expertise is not None: u.expertise = request.expertise[:20]
+        db.commit()
+        logger.info(f"Profile updated: {user['sub']}")
+        return {"message": "Profil aktualisiert"}
+    except HTTPException: raise
+    except Exception as e: db.rollback(); raise HTTPException(500, f"Fehler: {e}")
+    finally: db.close()
+
+@app.post("/api/profile/photo")
+async def upload_profile_photo(file: UploadFile = File(...), user=Depends(require_auth)):
+    ext = file.filename.split(".")[-1].lower() if file.filename else ""
+    if ext not in {"jpg", "jpeg", "png", "webp"}: raise HTTPException(400, "Nur JPG, PNG oder WebP erlaubt")
+    content = await file.read()
+    if len(content) > 5_000_000: raise HTTPException(400, "Max 5 MB")
+    photo_id = str(uuid.uuid4())
+    photo_path = UPLOAD_DIR / f"photos/{photo_id}.{ext}"
+    photo_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(photo_path, "wb") as f: f.write(content)
+    db = get_db()
+    try:
+        u = db.query(User).filter(User.email == user["sub"]).first()
+        if not u: raise HTTPException(404)
+        u.profile_photo_url = f"/api/photos/{photo_id}.{ext}"
+        db.commit()
+        return {"photo_url": u.profile_photo_url}
+    finally: db.close()
+
+@app.get("/api/photos/{filename}")
+async def serve_photo(filename: str):
+    photo_path = UPLOAD_DIR / f"photos/{filename}"
+    if not photo_path.exists(): raise HTTPException(404)
+    return FileResponse(str(photo_path))
+
+# ── LinkedIn OAuth ───────────────────────────────────────────────────────
+@app.get("/api/auth/linkedin")
+async def linkedin_auth(user=Depends(require_auth)):
+    if not LINKEDIN_CLIENT_ID: raise HTTPException(501, "LinkedIn nicht konfiguriert")
+    state = base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("=")
+    redirect_uri = f"{APP_URL}/api/auth/linkedin/callback"
+    url = (f"https://www.linkedin.com/oauth/v2/authorization?response_type=code"
+           f"&client_id={LINKEDIN_CLIENT_ID}&redirect_uri={redirect_uri}"
+           f"&state={state}&scope=openid%20profile%20email")
+    return {"auth_url": url, "state": state}
+
+@app.get("/api/auth/linkedin/callback")
+async def linkedin_callback(code: str = "", state: str = "", error: str = ""):
+    if error or not code:
+        return HTMLResponse(f"<script>window.opener.postMessage({{type:'linkedin_error',error:'{error or \"cancelled\"}'}},'*');window.close();</script>")
+    redirect_uri = f"{APP_URL}/api/auth/linkedin/callback"
+    import urllib.request, urllib.parse, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    # Exchange code for token
+    try:
+        token_data = urllib.parse.urlencode({"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri, "client_id": LINKEDIN_CLIENT_ID, "client_secret": LINKEDIN_CLIENT_SECRET}).encode()
+        req = urllib.request.Request("https://www.linkedin.com/oauth/v2/accessToken", data=token_data, method="POST", headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BEATRIXLab/3.5"})
+        token_resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+        access_token = token_resp["access_token"]
+    except Exception as e:
+        logger.error(f"LinkedIn token exchange failed: {e}")
+        return HTMLResponse(f"<script>window.opener.postMessage({{type:'linkedin_error',error:'token_exchange_failed'}},'*');window.close();</script>")
+    # Fetch profile using OpenID userinfo
+    try:
+        req = urllib.request.Request("https://api.linkedin.com/v2/userinfo", headers={"Authorization": f"Bearer {access_token}", "User-Agent": "BEATRIXLab/3.5"})
+        profile = json.loads(urllib.request.urlopen(req, context=ctx).read())
+    except Exception as e:
+        logger.error(f"LinkedIn profile fetch failed: {e}")
+        return HTMLResponse(f"<script>window.opener.postMessage({{type:'linkedin_error',error:'profile_fetch_failed'}},'*');window.close();</script>")
+    linkedin_data = {
+        "sub": profile.get("sub", ""),
+        "name": profile.get("name", ""),
+        "given_name": profile.get("given_name", ""),
+        "family_name": profile.get("family_name", ""),
+        "email": profile.get("email", ""),
+        "picture": profile.get("picture", ""),
+    }
+    return HTMLResponse(f"<script>window.opener.postMessage({{type:'linkedin_success',data:{json.dumps(linkedin_data)}}},'*');window.close();</script>")
+
+@app.post("/api/profile/linkedin")
+async def save_linkedin_data(data: dict, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        u = db.query(User).filter(User.email == user["sub"]).first()
+        if not u: raise HTTPException(404)
+        if data.get("sub"): u.linkedin_id = str(data["sub"])
+        if data.get("name") and not u.name: u.name = data["name"]
+        if data.get("picture"): u.profile_photo_url = data["picture"]
+        db.commit()
+        return {"message": "LinkedIn-Daten gespeichert", "linkedin_connected": True}
+    finally: db.close()
+
+@app.post("/api/profile/linkedin/disconnect")
+async def disconnect_linkedin(user=Depends(require_auth)):
+    db = get_db()
+    try:
+        u = db.query(User).filter(User.email == user["sub"]).first()
+        if not u: raise HTTPException(404)
+        u.linkedin_id = None
+        db.commit()
+        return {"message": "LinkedIn getrennt"}
     finally: db.close()
 
 @app.post("/api/forgot-password")
