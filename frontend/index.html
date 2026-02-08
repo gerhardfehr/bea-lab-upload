@@ -239,6 +239,7 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                     </div>
                     <button class="auth-btn" id="loginBtn" onclick="doLogin()">Anmelden</button>
+                    <div style="text-align:center;margin-top:10px"><a onclick="showAuthPanel('forgot')" style="font-size:13px;color:var(--accent);cursor:pointer">Passwort vergessen?</a></div>
                 </div>
                 <div class="auth-switch">Noch kein Konto? <a onclick="showAuthPanel('register')">Jetzt registrieren</a></div>
             </div>
@@ -266,6 +267,21 @@
                     </div>
                 </div>
                 <div class="auth-switch">Bereits registriert? <a onclick="showAuthPanel('login')">Anmelden</a></div>
+            </div>
+
+            <!-- FORGOT PASSWORD PANEL -->
+            <div class="auth-panel" id="forgotPanel">
+                <div class="auth-form">
+                    <p style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-align:center">Gib deine E-Mail-Adresse ein und wir senden dir einen Link zum Zurücksetzen deines Passworts.</p>
+                    <div class="auth-error" id="forgotError"></div>
+                    <div class="auth-success" id="forgotSuccess" style="display:none;padding:12px;background:var(--success-bg);border:1px solid rgba(52,211,153,0.15);border-radius:var(--radius-sm);color:var(--success);font-size:13px;margin-bottom:12px"></div>
+                    <div class="auth-input-wrapper">
+                        <input type="email" class="auth-input" id="forgotEmail" placeholder="E-Mail-Adresse" autocomplete="email">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    </div>
+                    <button class="auth-btn" id="forgotBtn" onclick="doForgotPassword()">Reset-Link senden</button>
+                </div>
+                <div class="auth-switch">Zurück zur <a onclick="showAuthPanel('login')">Anmeldung</a></div>
             </div>
 
             <div class="auth-footer"><a href="https://fehradvice.com" target="_blank">FehrAdvice & Partners AG</a> · Zürich</div>
@@ -461,6 +477,23 @@
                 if (r.ok) { err.innerHTML='✓ Neuer Bestätigungslink gesendet!'; err.style.color='var(--success)'; }
                 else { err.textContent = d.detail || 'Fehler'; }
             } catch(e) { err.textContent='Verbindungsfehler'; }
+        }
+
+        async function doForgotPassword() {
+            const email = document.getElementById('forgotEmail').value.trim();
+            const btn = document.getElementById('forgotBtn');
+            const err = document.getElementById('forgotError');
+            const suc = document.getElementById('forgotSuccess');
+            err.classList.remove('visible'); suc.style.display='none';
+            if (!email) { err.textContent='Bitte E-Mail-Adresse eingeben.'; err.classList.add('visible'); return; }
+            btn.disabled=true; btn.innerHTML='<div class="spinner"></div> Wird gesendet...';
+            try {
+                const r = await fetch(`${API}/forgot-password`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email})});
+                const d = await r.json();
+                if (r.ok) { suc.textContent='✓ ' + d.message; suc.style.display='block'; }
+                else { err.textContent=d.detail||'Fehler'; err.classList.add('visible'); }
+            } catch(e) { err.textContent='Verbindungsfehler'; err.classList.add('visible'); }
+            btn.disabled=false; btn.textContent='Reset-Link senden';
         }
 
         async function doRegister() {
