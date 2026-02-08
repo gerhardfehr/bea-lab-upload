@@ -936,6 +936,27 @@
     <footer class="footer">BEATRIX – The Strategic Intelligence Suite · <a href="https://fehradvice.com" target="_blank">FehrAdvice & Partners AG</a> · Zürich</footer>
     <div class="toast-container" id="toastContainer"></div>
 
+    <!-- ═══ INSIGHT QUESTION MODAL ═══ -->
+    <div id="insightModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:20px">
+        <div style="background:var(--card);border-radius:20px;max-width:600px;width:100%;padding:40px;position:relative;border:1px solid rgba(139,170,255,0.15)">
+            <div style="text-align:center;margin-bottom:24px">
+                <div style="font-size:32px;margin-bottom:8px" id="insightIcon">🧠</div>
+                <div style="font-size:14px;color:var(--accent);font-weight:600;letter-spacing:1px" id="insightLabel">Ψ-PROFILING</div>
+                <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="insightCounter">Frage 1</div>
+            </div>
+            <div style="font-size:18px;line-height:1.6;color:rgba(255,255,255,0.9);text-align:center;margin-bottom:24px" id="insightQuestion"></div>
+            <div id="insightNudge" style="display:none;text-align:center;font-size:13px;color:var(--accent);margin-bottom:16px;font-style:italic"></div>
+            <textarea id="insightAnswer" style="width:100%;min-height:80px;padding:14px;background:rgba(255,255,255,0.05);border:1px solid rgba(139,170,255,0.2);border-radius:12px;color:white;font-size:15px;resize:vertical;font-family:inherit" placeholder="Deine Antwort..."></textarea>
+            <div style="display:flex;gap:12px;margin-top:20px;justify-content:center">
+                <button id="insightSkipBtn" style="display:none;padding:12px 24px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:rgba(255,255,255,0.5);cursor:pointer;font-size:14px" onclick="insightSkip()">Überspringen</button>
+                <button id="insightSubmitBtn" style="padding:12px 32px;border-radius:12px;border:none;background:var(--accent);color:white;cursor:pointer;font-size:15px;font-weight:600" onclick="insightSubmit()">Antworten</button>
+            </div>
+            <div style="text-align:center;margin-top:16px">
+                <div style="display:flex;gap:6px;justify-content:center" id="insightDots"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- ═══════ PASSWORD MODAL ═══════ -->
     <div class="modal-overlay" id="pwModal" onclick="if(event.target===this)closePwModal()">
         <div class="modal">
@@ -998,6 +1019,148 @@
             if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
             loadStats();
             showToast(`Willkommen, ${data.user.name || data.user.email}!`, 'success');
+            // Trigger insight question after login
+            setTimeout(() => insightStart('login'), 800);
+        }
+
+        // ── Insight / Ψ-Profiling ──────────────────────────────
+        let insightState = { questionNum: 0, currentQuestion: null, startTime: null, context: 'login' };
+
+        async function insightStart(context = 'login') {
+            insightState = { questionNum: 0, currentQuestion: null, startTime: null, context };
+            await insightNext();
+        }
+
+        async function insightNext() {
+            try {
+                const resp = await fetch(`${API}/insight/question?context=${insightState.context}`, { headers: H() });
+                if (!resp.ok) return insightClose();
+                const data = await resp.json();
+                insightState.currentQuestion = data;
+                insightState.startTime = Date.now();
+                insightState.questionNum = data.question_number;
+
+                // Update UI
+                const modal = document.getElementById('insightModal');
+                modal.style.display = 'flex';
+                document.getElementById('insightQuestion').textContent = data.question;
+                document.getElementById('insightAnswer').value = '';
+                document.getElementById('insightAnswer').focus();
+                document.getElementById('insightCounter').textContent = `Frage ${data.question_number}` + (data.total_answered > 0 ? ` · ${data.total_answered} bisherige Antworten` : '');
+
+                // Label
+                const label = document.getElementById('insightLabel');
+                if (data.is_mandatory) {
+                    label.textContent = 'Ψ-PROFILING · PFLICHTFRAGE';
+                    label.style.color = 'var(--accent)';
+                } else if (data.is_nudged) {
+                    label.textContent = 'Ψ-PROFILING · EMPFOHLEN';
+                    label.style.color = '#f59e0b';
+                } else {
+                    label.textContent = 'Ψ-PROFILING · FREIWILLIG';
+                    label.style.color = 'rgba(255,255,255,0.4)';
+                }
+
+                // Nudge message
+                const nudgeEl = document.getElementById('insightNudge');
+                if (data.nudge_message) {
+                    nudgeEl.textContent = data.nudge_message;
+                    nudgeEl.style.display = 'block';
+                } else {
+                    nudgeEl.style.display = 'none';
+                }
+
+                // Skip button (visible for non-mandatory)
+                document.getElementById('insightSkipBtn').style.display = data.can_skip ? 'block' : 'none';
+
+                // Progress dots
+                const dotsEl = document.getElementById('insightDots');
+                let dots = '';
+                for (let i = 1; i <= Math.max(3, data.question_number); i++) {
+                    const active = i === data.question_number;
+                    const done = i < data.question_number;
+                    const color = done ? 'var(--accent)' : active ? 'white' : 'rgba(255,255,255,0.2)';
+                    dots += `<div style="width:8px;height:8px;border-radius:50%;background:${color}"></div>`;
+                }
+                dotsEl.innerHTML = dots;
+
+            } catch(e) {
+                console.error('Insight load error:', e);
+                insightClose();
+            }
+        }
+
+        async function insightSubmit() {
+            const answer = document.getElementById('insightAnswer').value.trim();
+            if (!answer) { document.getElementById('insightAnswer').focus(); return; }
+
+            const btn = document.getElementById('insightSubmitBtn');
+            btn.disabled = true;
+            btn.textContent = 'Wird gespeichert...';
+
+            const latency = Date.now() - insightState.startTime;
+            const q = insightState.currentQuestion;
+
+            try {
+                await fetch(`${API}/insight/answer`, {
+                    method: 'POST',
+                    headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question_text: q.question,
+                        question_id: q.question_id,
+                        answer_text: answer,
+                        latency_ms: latency,
+                        question_number: q.question_number,
+                        was_mandatory: q.is_mandatory,
+                        was_nudged: q.is_nudged,
+                        skipped: false,
+                        context: insightState.context,
+                    })
+                });
+
+                btn.disabled = false;
+                btn.textContent = 'Antworten';
+
+                // After mandatory (1): always show next (nudge)
+                // After nudged (2-3): show next with "Noch eine?"
+                // After voluntary (4+): show next but easy to skip
+                if (q.question_number < 3) {
+                    await insightNext();
+                } else {
+                    // Ask if they want to continue
+                    const wantMore = confirm('Danke! Möchtest du noch eine Frage beantworten? Das stärkt dein Ψ-Profil.');
+                    if (wantMore) {
+                        await insightNext();
+                    } else {
+                        insightClose();
+                    }
+                }
+            } catch(e) {
+                console.error('Insight submit error:', e);
+                btn.disabled = false;
+                btn.textContent = 'Antworten';
+            }
+        }
+
+        async function insightSkip() {
+            const q = insightState.currentQuestion;
+            try {
+                await fetch(`${API}/insight/skip`, {
+                    method: 'POST',
+                    headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question_text: q.question,
+                        question_id: q.question_id,
+                        question_number: q.question_number,
+                        context: insightState.context,
+                    })
+                });
+            } catch(e) {}
+            insightClose();
+        }
+
+        function insightClose() {
+            document.getElementById('insightModal').style.display = 'none';
         }
 
         async function doLogin() {
