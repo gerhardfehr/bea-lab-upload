@@ -130,6 +130,7 @@ class Document(Base):
     status = Column(String(20), default="indexed")
     github_url = Column(String(1000), nullable=True)
     uploaded_by = Column(String(320), nullable=True)
+    content_hash = Column(String(64), nullable=True, index=True)
 
 def get_db():
     global _engine, _SessionLocal
@@ -148,10 +149,9 @@ def get_db():
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_sent_at TIMESTAMP"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(200)"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_sent_at TIMESTAMP"))
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)"))
                     # Auto-verify existing admin users
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
-                    # One-time: set verification token for gmail user
-                    conn.execute(text("UPDATE users SET email_verified = FALSE, verification_token = 'PM4Y1NO_IzD0xY0qEoZCX_8KJmE21X1ZoSeyaxQlMac', verification_sent_at = NOW() WHERE email = 'gerhard.fehr@gmail.com' AND email_verified = TRUE"))
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -186,7 +186,7 @@ def push_to_github(filename, content_bytes):
         logger.error(f"GitHub push failed: {e}")
         return {"error": str(e)}
 
-app = FastAPI(title="BEA Lab Upload API", version="3.4.1")
+app = FastAPI(title="BEA Lab Upload API", version="3.5.0")
 
 def send_verification_email(email, name, token):
     """Send verification email via Resend API"""
@@ -628,30 +628,42 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
     if ext not in {"pdf", "txt", "md", "docx", "csv", "json"}: raise HTTPException(400, f"Dateityp .{ext} nicht unterstuetzt")
     content_bytes = await file.read()
     if len(content_bytes) > MAX_FILE_SIZE: raise HTTPException(400, "Datei zu gross (max 50 MB)")
-    file_id = str(uuid.uuid4()); file_path = UPLOAD_DIR / f"{file_id}.{ext}"
-    with open(file_path, "wb") as f: f.write(content_bytes)
-    text_content = extract_text(str(file_path), ext)
-    gh_result = push_to_github(file.filename, content_bytes)
-    github_url = gh_result.get("url", None); gh_status = "indexed+github" if github_url else "indexed"
+    # Duplicate check via SHA256 hash
+    content_hash = hashlib.sha256(content_bytes).hexdigest()
     db = get_db()
     try:
-        doc = Document(id=file_id, title=file.filename or "Unnamed", content=text_content, source_type="file", file_type=ext, file_path=str(file_path), file_size=len(content_bytes), database_target=database, status=gh_status, github_url=github_url, uploaded_by=user.get("sub"), doc_metadata={"original_filename": file.filename, "content_length": len(text_content), "github": gh_result})
+        existing = db.query(Document).filter(Document.content_hash == content_hash).first()
+        if existing:
+            raise HTTPException(409, f"Duplikat: Diese Datei wurde bereits hochgeladen als \"{existing.title}\" ({existing.created_at.strftime('%d.%m.%Y %H:%M')})")
+        file_id = str(uuid.uuid4()); file_path = UPLOAD_DIR / f"{file_id}.{ext}"
+        with open(file_path, "wb") as f: f.write(content_bytes)
+        text_content = extract_text(str(file_path), ext)
+        gh_result = push_to_github(file.filename, content_bytes)
+        github_url = gh_result.get("url", None); gh_status = "indexed+github" if github_url else "indexed"
+        doc = Document(id=file_id, title=file.filename or "Unnamed", content=text_content, source_type="file", file_type=ext, file_path=str(file_path), file_size=len(content_bytes), database_target=database, status=gh_status, github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash, doc_metadata={"original_filename": file.filename, "content_length": len(text_content), "github": gh_result})
         db.add(doc); db.commit(); db.refresh(doc)
         return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=doc.github_url)
+    except HTTPException: raise
     except Exception as e: db.rollback(); raise HTTPException(500, f"Datenbankfehler: {e}")
     finally: db.close()
 
 @app.post("/api/text", response_model=DocumentResponse)
 async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
     if not request.content.strip(): raise HTTPException(400, "Inhalt darf nicht leer sein")
-    filename = f"{request.title.replace(' ', '_').replace('/', '-')}.txt"
-    gh_result = push_to_github(filename, request.content.encode("utf-8"))
-    github_url = gh_result.get("url", None)
+    # Duplicate check via SHA256 hash of content
+    content_hash = hashlib.sha256(request.content.encode("utf-8")).hexdigest()
     db = get_db()
     try:
-        doc = Document(title=request.title, content=request.content, source_type="text", database_target=request.database or "knowledge_base", category=request.category, language=request.language, tags=request.tags, status="indexed+github" if github_url else "indexed", github_url=github_url, uploaded_by=user.get("sub"), doc_metadata={"content_length": len(request.content), "github": gh_result})
+        existing = db.query(Document).filter(Document.content_hash == content_hash).first()
+        if existing:
+            raise HTTPException(409, f"Duplikat: Dieser Text wurde bereits gespeichert als \"{existing.title}\" ({existing.created_at.strftime('%d.%m.%Y %H:%M')})")
+        filename = f"{request.title.replace(' ', '_').replace('/', '-')}.txt"
+        gh_result = push_to_github(filename, request.content.encode("utf-8"))
+        github_url = gh_result.get("url", None)
+        doc = Document(title=request.title, content=request.content, source_type="text", database_target=request.database or "knowledge_base", category=request.category, language=request.language, tags=request.tags, status="indexed+github" if github_url else "indexed", github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash, doc_metadata={"content_length": len(request.content), "github": gh_result})
         db.add(doc); db.commit(); db.refresh(doc)
         return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=None, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=doc.github_url)
+    except HTTPException: raise
     except Exception as e: db.rollback(); raise HTTPException(500, f"Datenbankfehler: {e}")
     finally: db.close()
 
