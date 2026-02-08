@@ -33,6 +33,10 @@ JWT_EXPIRY = int(os.getenv("JWT_EXPIRY", "86400"))
 # Example: "fehradvice.com,bea-lab.io" → only these domains can register
 ALLOWED_EMAIL_DOMAINS = [d.strip().lower() for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "").split(",") if d.strip()]
 
+# Auto-admin emails (comma-separated)
+# Example: "gerhard.fehr@fehradvice.com" → these users get admin on registration
+ADMIN_EMAILS = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
 
@@ -225,7 +229,8 @@ async def register(request: RegisterRequest):
         if db.query(User).filter(User.email == email).first():
             raise HTTPException(409, "E-Mail bereits registriert")
         pw_hash, pw_salt = hash_password(request.password)
-        user = User(email=email, name=request.name or email.split('@')[0], password_hash=pw_hash, password_salt=pw_salt)
+        is_admin = email in ADMIN_EMAILS
+        user = User(email=email, name=request.name or email.split('@')[0], password_hash=pw_hash, password_salt=pw_salt, is_admin=is_admin)
         db.add(user); db.commit(); db.refresh(user)
         token = create_jwt({"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY})
         logger.info(f"New user: {email}")
