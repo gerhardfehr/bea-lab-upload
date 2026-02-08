@@ -1197,50 +1197,30 @@
             formData.append('file', fileObj.file);
             formData.append('database', selectedDB);
 
-            // Simulated upload with progress
-            // Replace with actual fetch when backend is ready:
-            /*
             const response = await fetch(`${API_BASE}/upload`, {
                 method: 'POST',
                 body: formData
             });
-            if (!response.ok) throw new Error(await response.text());
+            if (!response.ok) {
+                const err = await response.text();
+                throw new Error(err);
+            }
+            fileObj.progress = 100;
+            renderFileList();
             return await response.json();
-            */
-
-            // Simulation for demo:
-            return new Promise((resolve, reject) => {
-                let progress = 0;
-                const interval = setInterval(() => {
-                    progress += Math.random() * 25 + 10;
-                    if (progress >= 100) {
-                        progress = 100;
-                        clearInterval(interval);
-                        fileObj.progress = 100;
-                        renderFileList();
-                        setTimeout(resolve, 200);
-                    } else {
-                        fileObj.progress = Math.round(progress);
-                        renderFileList();
-                    }
-                }, 300);
-            });
         }
 
         async function uploadText(data) {
-            // Replace with actual fetch when backend is ready:
-            /*
             const response = await fetch(`${API_BASE}/text`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            if (!response.ok) throw new Error(await response.text());
+            if (!response.ok) {
+                const err = await response.text();
+                throw new Error(err);
+            }
             return await response.json();
-            */
-
-            // Simulation for demo:
-            return new Promise(resolve => setTimeout(resolve, 1000));
         }
 
         // ── Recent table ───────────────────────────────────────────
