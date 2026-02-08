@@ -2,14 +2,14 @@
 BEA Lab - Document Upload API
 Uploads are automatically pushed to GitHub: papers/evaluated/integrated/
 """
-import os, uuid, json, base64, logging
+import os, uuid, json, base64, logging, hashlib, time, hmac
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -25,8 +25,56 @@ GH_TOKEN = os.getenv("GH_TOKEN", "")
 GH_REPO = os.getenv("GH_REPO", "FehrAdvice-Partners-AG/complementarity-context-framework")
 GH_UPLOAD_PATH = os.getenv("GH_UPLOAD_PATH", "papers/evaluated/integrated")
 
+# Auth config
+AUTH_PASSWORD = os.getenv("BEA_PASSWORD", "beatrix2026")
+JWT_SECRET = os.getenv("JWT_SECRET", hashlib.sha256(AUTH_PASSWORD.encode()).hexdigest())
+JWT_EXPIRY = int(os.getenv("JWT_EXPIRY", "86400"))  # 24h default
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
+
+# ── Simple JWT implementation (no external dependency) ──────────
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+
+def _b64url_decode(s: str) -> bytes:
+    s += '=' * (4 - len(s) % 4)
+    return base64.urlsafe_b64decode(s)
+
+def create_jwt(payload: dict) -> str:
+    header = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    payload_enc = _b64url_encode(json.dumps(payload).encode())
+    sig_input = f"{header}.{payload_enc}".encode()
+    sig = _b64url_encode(hmac.new(JWT_SECRET.encode(), sig_input, hashlib.sha256).digest())
+    return f"{header}.{payload_enc}.{sig}"
+
+def verify_jwt(token: str) -> Optional[dict]:
+    try:
+        parts = token.split('.')
+        if len(parts) != 3:
+            return None
+        sig_input = f"{parts[0]}.{parts[1]}".encode()
+        expected_sig = _b64url_encode(hmac.new(JWT_SECRET.encode(), sig_input, hashlib.sha256).digest())
+        if not hmac.compare_digest(parts[2], expected_sig):
+            return None
+        payload = json.loads(_b64url_decode(parts[1]))
+        if payload.get("exp", 0) < time.time():
+            return None
+        return payload
+    except Exception:
+        return None
+
+# ── Auth dependency ─────────────────────────────────────────────
+async def require_auth(request: Request):
+    auth = request.headers.get("Authorization", "")
+    token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
+    if not token:
+        # Also check cookie
+        token = request.cookies.get("bea_token", "")
+    payload = verify_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+    return payload
 
 Base = declarative_base()
 _engine = None
@@ -58,7 +106,6 @@ def get_db():
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
         try:
             Base.metadata.create_all(bind=_engine)
-            # Migration: add github_url column if missing
             try:
                 from sqlalchemy import text
                 with _engine.connect() as conn:
@@ -105,9 +152,12 @@ def push_to_github(filename, content_bytes):
         logger.error(f"GitHub push failed: {e}")
         return {"error": str(e)}
 
-app = FastAPI(title="BEA Lab Upload API", version="2.0.0")
+app = FastAPI(title="BEA Lab Upload API", version="3.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 FRONTEND_DIR = Path(__file__).parent / "frontend"
+
+class LoginRequest(BaseModel):
+    password: str
 
 class TextUploadRequest(BaseModel):
     title: str = "Untitled"
@@ -146,6 +196,7 @@ def extract_text(file_path, file_type):
         return f"[Extraction error: {e}]"
     return ""
 
+# ── Public routes ───────────────────────────────────────────────
 @app.get("/")
 async def root():
     index_path = FRONTEND_DIR / "index.html"
@@ -160,6 +211,28 @@ async def static_files(filepath):
         return FileResponse(str(file_path))
     raise HTTPException(404, "Not found")
 
+@app.post("/api/login")
+async def login(request: LoginRequest):
+    if not hmac.compare_digest(request.password, AUTH_PASSWORD):
+        logger.warning("Failed login attempt")
+        raise HTTPException(401, "Falsches Passwort")
+    token = create_jwt({
+        "sub": "bea-user",
+        "iat": int(time.time()),
+        "exp": int(time.time()) + JWT_EXPIRY
+    })
+    logger.info("Successful login")
+    response = JSONResponse({"token": token, "expires_in": JWT_EXPIRY})
+    response.set_cookie(
+        key="bea_token", value=token,
+        max_age=JWT_EXPIRY, httponly=True, samesite="lax"
+    )
+    return response
+
+@app.get("/api/auth/check")
+async def check_auth(user=Depends(require_auth)):
+    return {"authenticated": True, "user": user.get("sub")}
+
 @app.get("/api/health")
 async def health():
     db_ok = False
@@ -171,8 +244,9 @@ async def health():
         pass
     return {"status": "ok" if db_ok else "degraded", "database": "connected" if db_ok else "unavailable", "github": "configured" if GH_TOKEN else "not configured", "github_repo": GH_REPO, "timestamp": datetime.utcnow().isoformat()}
 
+# ── Protected routes ────────────────────────────────────────────
 @app.post("/api/upload", response_model=DocumentResponse)
-async def upload_file(file: UploadFile = File(...), database: str = Form("knowledge_base")):
+async def upload_file(file: UploadFile = File(...), database: str = Form("knowledge_base"), user=Depends(require_auth)):
     ext = file.filename.split(".")[-1].lower() if file.filename else ""
     if ext not in {"pdf", "txt", "md", "docx", "csv", "json"}:
         raise HTTPException(400, f"Dateityp .{ext} nicht unterstuetzt")
@@ -201,7 +275,7 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
         db.close()
 
 @app.post("/api/text", response_model=DocumentResponse)
-async def upload_text(request: TextUploadRequest):
+async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
     if not request.content.strip():
         raise HTTPException(400, "Inhalt darf nicht leer sein")
     filename = f"{request.title.replace(' ', '_').replace('/', '-')}.txt"
@@ -221,7 +295,7 @@ async def upload_text(request: TextUploadRequest):
         db.close()
 
 @app.get("/api/documents")
-async def list_documents(database: Optional[str] = None, limit: int = 50):
+async def list_documents(database: Optional[str] = None, limit: int = 50, user=Depends(require_auth)):
     db = get_db()
     try:
         query = db.query(Document).order_by(Document.created_at.desc())
@@ -232,7 +306,7 @@ async def list_documents(database: Optional[str] = None, limit: int = 50):
         db.close()
 
 @app.delete("/api/documents/{doc_id}")
-async def delete_document(doc_id: str):
+async def delete_document(doc_id: str, user=Depends(require_auth)):
     db = get_db()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
