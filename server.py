@@ -852,19 +852,102 @@ async def disconnect_linkedin(user=Depends(require_auth)):
 # ── Behavioral Insights / Ψ-Profiling ──────────────────────────────────
 
 INSIGHT_QUESTION_POOL = [
-    # Domain: diverse, covering BCM-relevant topics
-    {"id": "iq-001", "text": "Wenn du eine Entscheidung unter Unsicherheit triffst — verlässt du dich eher auf Daten oder auf dein Bauchgefühl?", "category": "decision_style", "domain": "ORG"},
-    {"id": "iq-002", "text": "Welches Verhaltensphänomen fasziniert dich am meisten: Warum Menschen nicht sparen, obwohl sie es wollen?", "category": "interest_probe", "domain": "FIN"},
-    {"id": "iq-003", "text": "Stell dir vor, du könntest ein Nudge-Experiment weltweit durchführen — in welchem Bereich: Gesundheit, Finanzen, Bildung oder Umwelt?", "category": "domain_preference", "domain": "HLT"},
-    {"id": "iq-004", "text": "Was ist für dich der wichtigste Hebel für Verhaltensänderung: die richtige Information, die richtige Architektur oder der richtige Zeitpunkt?", "category": "theory_preference", "domain": "ORG"},
-    {"id": "iq-005", "text": "Wenn du zwischen zwei Strategien wählen müsstest — eine mit 70% Erfolgswahrscheinlichkeit oder eine mit 30% aber 10x Impact — welche wählst du?", "category": "risk_preference", "domain": "FIN"},
-    {"id": "iq-006", "text": "Glaubst du, dass religiöse und kulturelle Werte stärker das wirtschaftliche Verhalten prägen als rationale Anreize?", "category": "worldview", "domain": "REL"},
-    {"id": "iq-007", "text": "Was wäre für dich der spannendere Auftrag: eine Regierung zu beraten oder ein Startup zu transformieren?", "category": "scope_preference", "domain": "POL"},
-    {"id": "iq-008", "text": "Wenn du an Willingness, Ability und Capacity denkst — wo scheitern die meisten Veränderungsprojekte?", "category": "bcm_understanding", "domain": "ORG"},
-    {"id": "iq-009", "text": "Wie wichtig ist dir, dass ein Verhaltensmodell mathematisch präzise ist vs. intuitiv verständlich?", "category": "abstraction_preference", "domain": "EDU"},
-    {"id": "iq-010", "text": "Welches Bias hältst du für das gefährlichste in strategischen Entscheidungen: Overconfidence, Status Quo Bias oder Sunk Cost?", "category": "bias_awareness", "domain": "ORG"},
-    {"id": "iq-011", "text": "Wenn du ein Behavioral Design Projekt starten könntest — würdest du mit der Zielgruppe beginnen oder mit dem gewünschten Verhalten?", "category": "design_approach", "domain": "ORG"},
-    {"id": "iq-012", "text": "Was treibt Unternehmen deiner Meinung nach mehr: der Wunsch nach Wachstum oder die Angst vor Verlust?", "category": "motivation_theory", "domain": "FIN"},
+    {"id": "iq-001", "text": "Wenn du eine Entscheidung unter Unsicherheit triffst — worauf verlässt du dich?", "category": "decision_style", "domain": "ORG",
+     "choices": [
+        {"icon": "📊", "label": "Daten & Evidenz", "signal": {"style": "analytical", "domain": "FIN"}},
+        {"icon": "🧭", "label": "Intuition & Erfahrung", "signal": {"style": "intuitive", "domain": "ORG"}},
+        {"icon": "⚖️", "label": "Beides — je nach Kontext", "signal": {"style": "adaptive", "domain": "ORG"}},
+        {"icon": "🗣️", "label": "Ich frage mein Netzwerk", "signal": {"style": "social", "domain": "ORG"}},
+        {"icon": "🎲", "label": "Ich entscheide schnell und korrigiere", "signal": {"style": "experimental", "domain": "ORG"}},
+     ]},
+    {"id": "iq-002", "text": "Welches Verhaltensphänomen fasziniert dich am meisten?", "category": "interest_probe", "domain": "FIN",
+     "choices": [
+        {"icon": "💰", "label": "Warum Menschen nicht sparen", "signal": {"style": "practical", "domain": "FIN"}},
+        {"icon": "🏥", "label": "Warum wir ungesund leben", "signal": {"style": "practical", "domain": "HLT"}},
+        {"icon": "🌍", "label": "Warum Gesellschaften nicht handeln beim Klima", "signal": {"style": "systemic", "domain": "ENV"}},
+        {"icon": "🏢", "label": "Warum Organisationen sich nicht verändern", "signal": {"style": "structural", "domain": "ORG"}},
+        {"icon": "🕊️", "label": "Wie Glaube und Kultur Entscheidungen formen", "signal": {"style": "cultural", "domain": "REL"}},
+     ]},
+    {"id": "iq-003", "text": "Du darfst ein Nudge-Experiment weltweit durchführen — welchen Bereich wählst du?", "category": "domain_preference", "domain": "HLT",
+     "choices": [
+        {"icon": "🏥", "label": "Gesundheit & Prävention", "signal": {"style": "practical", "domain": "HLT"}},
+        {"icon": "💰", "label": "Finanzen & Altersvorsorge", "signal": {"style": "practical", "domain": "FIN"}},
+        {"icon": "🌱", "label": "Umwelt & Nachhaltigkeit", "signal": {"style": "visionary", "domain": "ENV"}},
+        {"icon": "🎓", "label": "Bildung & Lernen", "signal": {"style": "developmental", "domain": "EDU"}},
+        {"icon": "🏛️", "label": "Demokratie & Partizipation", "signal": {"style": "systemic", "domain": "POL"}},
+     ]},
+    {"id": "iq-004", "text": "Was ist der wichtigste Hebel für Verhaltensänderung?", "category": "theory_preference", "domain": "ORG",
+     "choices": [
+        {"icon": "💡", "label": "Die richtige Information", "signal": {"style": "rational", "domain": "EDU"}},
+        {"icon": "🏗️", "label": "Die richtige Architektur", "signal": {"style": "structural", "domain": "ORG"}},
+        {"icon": "⏰", "label": "Der richtige Zeitpunkt", "signal": {"style": "contextual", "domain": "ORG"}},
+        {"icon": "👥", "label": "Die richtigen sozialen Normen", "signal": {"style": "social", "domain": "ORG"}},
+        {"icon": "❤️", "label": "Die richtige Motivation", "signal": {"style": "motivational", "domain": "ORG"}},
+     ]},
+    {"id": "iq-005", "text": "Zwei Strategien stehen zur Wahl — welche nimmst du?", "category": "risk_preference", "domain": "FIN",
+     "choices": [
+        {"icon": "🎯", "label": "70% sicher, moderater Impact", "signal": {"style": "risk_averse", "domain": "FIN"}},
+        {"icon": "🚀", "label": "30% aber 10x Impact", "signal": {"style": "risk_seeking", "domain": "FIN"}},
+        {"icon": "🔄", "label": "Sequenziell testen, dann skalieren", "signal": {"style": "experimental", "domain": "ORG"}},
+        {"icon": "🤝", "label": "Beide kombinieren als Portfolio", "signal": {"style": "portfolio", "domain": "FIN"}},
+        {"icon": "📋", "label": "Mehr Daten sammeln bevor ich entscheide", "signal": {"style": "analytical", "domain": "FIN"}},
+     ]},
+    {"id": "iq-006", "text": "Prägen kulturelle Werte das wirtschaftliche Verhalten stärker als Anreize?", "category": "worldview", "domain": "REL",
+     "choices": [
+        {"icon": "🕊️", "label": "Ja — Kultur ist der tiefste Treiber", "signal": {"style": "cultural", "domain": "REL"}},
+        {"icon": "📈", "label": "Nein — Anreize dominieren immer", "signal": {"style": "economic", "domain": "FIN"}},
+        {"icon": "🔀", "label": "Es ist komplementär", "signal": {"style": "integrative", "domain": "REL"}},
+        {"icon": "🔬", "label": "Kommt auf den Kontext an", "signal": {"style": "contextual", "domain": "ORG"}},
+        {"icon": "🧬", "label": "Biologie und Evolution prägen am stärksten", "signal": {"style": "evolutionary", "domain": "HLT"}},
+     ]},
+    {"id": "iq-007", "text": "Welcher Auftrag wäre am spannendsten für dich?", "category": "scope_preference", "domain": "POL",
+     "choices": [
+        {"icon": "🏛️", "label": "Eine Regierung beraten", "signal": {"style": "macro", "domain": "POL"}},
+        {"icon": "🚀", "label": "Ein Startup transformieren", "signal": {"style": "micro", "domain": "ORG"}},
+        {"icon": "🌐", "label": "Multilaterale Organisation (UN, WHO)", "signal": {"style": "global", "domain": "POL"}},
+        {"icon": "🏦", "label": "Eine Grossbank neu denken", "signal": {"style": "structural", "domain": "FIN"}},
+        {"icon": "🎓", "label": "Ein Bildungssystem redesignen", "signal": {"style": "developmental", "domain": "EDU"}},
+     ]},
+    {"id": "iq-008", "text": "Willingness, Ability, Capacity — wo scheitern die meisten Veränderungsprojekte?", "category": "bcm_understanding", "domain": "ORG",
+     "choices": [
+        {"icon": "❤️", "label": "Willingness — die Bereitschaft fehlt", "signal": {"style": "motivational", "domain": "ORG"}},
+        {"icon": "🧠", "label": "Ability — die Fähigkeit fehlt", "signal": {"style": "capability", "domain": "EDU"}},
+        {"icon": "🏗️", "label": "Capacity — die Struktur verhindert es", "signal": {"style": "structural", "domain": "ORG"}},
+        {"icon": "🔗", "label": "Am Zusammenspiel aller drei", "signal": {"style": "systemic", "domain": "ORG"}},
+        {"icon": "📏", "label": "Am falschen Messen — man weiss nicht wo", "signal": {"style": "analytical", "domain": "ORG"}},
+     ]},
+    {"id": "iq-009", "text": "Wie sollte ein gutes Verhaltensmodell sein?", "category": "abstraction_preference", "domain": "EDU",
+     "choices": [
+        {"icon": "🔢", "label": "Mathematisch präzise", "signal": {"style": "formal", "domain": "FIN"}},
+        {"icon": "🎨", "label": "Intuitiv verständlich", "signal": {"style": "intuitive", "domain": "EDU"}},
+        {"icon": "🔬", "label": "Empirisch validiert", "signal": {"style": "empirical", "domain": "ORG"}},
+        {"icon": "🛠️", "label": "Direkt anwendbar in der Praxis", "signal": {"style": "practical", "domain": "ORG"}},
+        {"icon": "🌊", "label": "Flexibel und kontextabhängig", "signal": {"style": "adaptive", "domain": "ORG"}},
+     ]},
+    {"id": "iq-010", "text": "Welches Bias ist am gefährlichsten in strategischen Entscheidungen?", "category": "bias_awareness", "domain": "ORG",
+     "choices": [
+        {"icon": "🦚", "label": "Overconfidence", "signal": {"style": "metacognitive", "domain": "ORG"}},
+        {"icon": "🪨", "label": "Status Quo Bias", "signal": {"style": "structural", "domain": "ORG"}},
+        {"icon": "💸", "label": "Sunk Cost Fallacy", "signal": {"style": "economic", "domain": "FIN"}},
+        {"icon": "👥", "label": "Groupthink", "signal": {"style": "social", "domain": "ORG"}},
+        {"icon": "🔍", "label": "Confirmation Bias", "signal": {"style": "analytical", "domain": "ORG"}},
+     ]},
+    {"id": "iq-011", "text": "Wenn du ein Behavioral Design Projekt startest — womit beginnst du?", "category": "design_approach", "domain": "ORG",
+     "choices": [
+        {"icon": "👤", "label": "Mit der Zielgruppe verstehen", "signal": {"style": "empathic", "domain": "ORG"}},
+        {"icon": "🎯", "label": "Mit dem gewünschten Verhalten", "signal": {"style": "goal_oriented", "domain": "ORG"}},
+        {"icon": "📊", "label": "Mit der Datenlage", "signal": {"style": "analytical", "domain": "FIN"}},
+        {"icon": "🗺️", "label": "Mit der Entscheidungsumgebung", "signal": {"style": "structural", "domain": "ORG"}},
+        {"icon": "📚", "label": "Mit der Literatur und Evidenz", "signal": {"style": "theoretical", "domain": "EDU"}},
+     ]},
+    {"id": "iq-012", "text": "Was treibt Unternehmen stärker?", "category": "motivation_theory", "domain": "FIN",
+     "choices": [
+        {"icon": "📈", "label": "Der Wunsch nach Wachstum", "signal": {"style": "growth", "domain": "FIN"}},
+        {"icon": "🛡️", "label": "Die Angst vor Verlust", "signal": {"style": "loss_averse", "domain": "FIN"}},
+        {"icon": "🏆", "label": "Der Wettbewerb mit anderen", "signal": {"style": "competitive", "domain": "ORG"}},
+        {"icon": "🔄", "label": "Der Druck sich anzupassen", "signal": {"style": "adaptive", "domain": "ORG"}},
+        {"icon": "💡", "label": "Die Vision einzelner Führungspersonen", "signal": {"style": "visionary", "domain": "ORG"}},
+     ]},
 ]
 
 @app.get("/api/insight/question")
@@ -943,6 +1026,7 @@ async def get_insight_question(context: str = "login", user=Depends(require_auth
             "question": question["text"],
             "question_id": question["id"],
             "category": question["category"],
+            "choices": [{"icon": c["icon"], "label": c["label"]} for c in question.get("choices", [])],
             "question_number": q_number,
             "is_mandatory": is_mandatory,
             "is_nudged": is_nudged,
@@ -955,10 +1039,12 @@ async def get_insight_question(context: str = "login", user=Depends(require_auth
     except Exception as e:
         logger.error(f"Insight question error: {e}")
         # Fallback
+        fallback_q = INSIGHT_QUESTION_POOL[0]
         return {
-            "question": INSIGHT_QUESTION_POOL[0]["text"],
-            "question_id": INSIGHT_QUESTION_POOL[0]["id"],
-            "category": INSIGHT_QUESTION_POOL[0]["category"],
+            "question": fallback_q["text"],
+            "question_id": fallback_q["id"],
+            "category": fallback_q["category"],
+            "choices": [{"icon": c["icon"], "label": c["label"]} for c in fallback_q.get("choices", [])],
             "question_number": 1, "is_mandatory": True, "is_nudged": False,
             "is_voluntary": False, "nudge_message": None, "total_answered": 0,
             "can_skip": False, "session_number": 1,
@@ -984,59 +1070,34 @@ async def submit_insight_answer(request: InsightAnswer, user=Depends(require_aut
     try:
         email = user["sub"]
 
-        # Extract behavioral signals from the answer
+        # Extract behavioral signals from the selected choice
         domain_signal = None
         thinking_style = None
-        abstraction_level = None
+        abstraction_level = "concise"  # Choice clicks are always concise
         autonomy_signal = "moderate"
 
-        answer_lower = (request.answer_text or "").lower()
+        # Look up signal from question pool based on question_id and choice_index
+        question_data = None
+        for q in INSIGHT_QUESTION_POOL:
+            if q["id"] == request.question_id:
+                question_data = q; break
 
-        # Domain signal extraction
-        domain_keywords = {
-            "FIN": ["spar", "invest", "geld", "finan", "markt", "verlust", "gewinn", "rendite"],
-            "HLT": ["gesundheit", "health", "patient", "medizin", "therapie"],
-            "ORG": ["organisation", "unternehmen", "team", "führung", "manage", "strateg"],
-            "REL": ["religion", "glaub", "kultur", "wert", "ethik", "spiritu"],
-            "EDU": ["bildung", "lernen", "schule", "training", "wissen"],
-            "ENV": ["umwelt", "klima", "nachhaltig", "energie", "recycl"],
-            "POL": ["politik", "regierung", "gesetz", "demokrat", "wahl"],
-        }
-        for dom, keywords in domain_keywords.items():
-            if any(kw in answer_lower for kw in keywords):
-                domain_signal = dom; break
+        if question_data and request.choice_index and question_data.get("choices"):
+            idx = request.choice_index - 1  # 1-based to 0-based
+            if 0 <= idx < len(question_data["choices"]):
+                chosen = question_data["choices"][idx]
+                signal = chosen.get("signal", {})
+                domain_signal = signal.get("domain")
+                thinking_style = signal.get("style")
 
-        # Thinking style
-        theory_words = ["theorie", "modell", "framework", "konzept", "hypothese", "abstrakt"]
-        practice_words = ["praxis", "konkret", "beispiel", "projekt", "umsetz", "implementier"]
-        if any(w in answer_lower for w in theory_words):
-            thinking_style = "theoretical"
-        elif any(w in answer_lower for w in practice_words):
-            thinking_style = "practical"
-        else:
-            thinking_style = "mixed"
-
-        # Abstraction level (by answer length and structure)
-        if len(request.answer_text or "") > 200:
-            abstraction_level = "detailed"
-        elif len(request.answer_text or "") > 50:
-            abstraction_level = "moderate"
-        else:
-            abstraction_level = "concise"
-
-        # Autonomy signal from choice_index
-        if request.choice_index == 4:
-            autonomy_signal = "high"
-        elif request.choice_index == 5:
-            autonomy_signal = "delegating"
-        elif request.choice_index:
-            autonomy_signal = "moderate"
-
-        # Latency insight
+        # Latency adds decision speed signal
+        speed_suffix = ""
         if request.latency_ms and request.latency_ms < 3000:
-            thinking_style = (thinking_style or "") + "_fast"
-        elif request.latency_ms and request.latency_ms > 30000:
-            thinking_style = (thinking_style or "") + "_deliberate"
+            speed_suffix = "_fast"
+        elif request.latency_ms and request.latency_ms > 20000:
+            speed_suffix = "_deliberate"
+        if thinking_style and speed_suffix:
+            thinking_style = thinking_style + speed_suffix
 
         insight = UserInsight(
             user_email=email,
@@ -1123,6 +1184,18 @@ async def get_insight_profile(user=Depends(require_auth)):
             "voluntary_answers": voluntary_count,
             "engagement_score": engagement,
             "decision_speed": "fast" if avg_latency and avg_latency < 5000 else "deliberate" if avg_latency and avg_latency > 20000 else "moderate",
+            "answers": [
+                {
+                    "question": dict(row._mapping).get("question_text", ""),
+                    "answer": dict(row._mapping).get("answer_text", ""),
+                    "choice_index": dict(row._mapping).get("choice_index"),
+                    "domain": dict(row._mapping).get("domain_signal"),
+                    "style": dict(row._mapping).get("thinking_style"),
+                    "latency_ms": dict(row._mapping).get("latency_ms"),
+                    "created_at": str(dict(row._mapping).get("created_at", "")),
+                }
+                for row in insights if not dict(row._mapping).get("skipped")
+            ],
         }
     except Exception as e:
         logger.error(f"Insight profile error: {e}")
