@@ -209,6 +209,38 @@
         .modal-msg.success { display:block; color:var(--success); background:var(--success-bg); border:1px solid rgba(52,211,153,0.15); }
         .nav-user { cursor:pointer; transition:var(--transition); }
         .nav-user:hover { border-color:var(--accent); color:var(--text); }
+        /* ── Profile ──────────────────────── */
+        .profile-grid { display:grid; grid-template-columns:280px 1fr; gap:32px; }
+        .profile-card { background:var(--navy-card); border:1px solid var(--border); border-radius:var(--radius); padding:32px; text-align:center; }
+        .profile-avatar-wrap { position:relative; width:120px; height:120px; margin:0 auto 20px; }
+        .profile-avatar { width:120px; height:120px; border-radius:50%; object-fit:cover; border:3px solid var(--border); background:var(--navy-mid); display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:700; color:var(--accent); overflow:hidden; }
+        .profile-avatar img { width:100%; height:100%; object-fit:cover; }
+        .profile-avatar-edit { position:absolute; bottom:4px; right:4px; width:32px; height:32px; border-radius:50%; background:var(--accent); border:2px solid var(--navy-card); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:var(--transition); }
+        .profile-avatar-edit:hover { transform:scale(1.1); }
+        .profile-avatar-edit svg { width:14px; height:14px; stroke:white; }
+        .profile-name { font-size:20px; font-weight:700; color:var(--white); margin-bottom:4px; }
+        .profile-position { font-size:13px; color:var(--text-secondary); margin-bottom:16px; }
+        .profile-meta { display:flex; flex-direction:column; gap:8px; text-align:left; padding-top:16px; border-top:1px solid var(--border); }
+        .profile-meta-item { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--text-secondary); }
+        .profile-meta-item svg { width:16px; height:16px; stroke:var(--text-muted); flex-shrink:0; }
+        .profile-form { background:var(--navy-card); border:1px solid var(--border); border-radius:var(--radius); padding:32px; }
+        .profile-form h3 { font-size:16px; font-weight:700; color:var(--white); margin-bottom:20px; }
+        .profile-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+        .profile-field { display:flex; flex-direction:column; gap:6px; }
+        .profile-field.full { grid-column:1/-1; }
+        .profile-field label { font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; }
+        .profile-field input, .profile-field textarea { background:var(--navy-mid); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 14px; color:var(--text); font-family:inherit; font-size:14px; transition:var(--transition); }
+        .profile-field input:focus, .profile-field textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+        .profile-field textarea { resize:vertical; min-height:80px; }
+        .profile-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+        .profile-tag { padding:4px 12px; background:var(--accent-glow); border:1px solid rgba(91,138,245,0.2); border-radius:20px; font-size:12px; color:var(--accent-light); display:flex; align-items:center; gap:4px; }
+        .profile-tag .remove { cursor:pointer; opacity:0.6; } .profile-tag .remove:hover { opacity:1; }
+        .profile-actions { display:flex; gap:12px; justify-content:flex-end; margin-top:24px; padding-top:20px; border-top:1px solid var(--border); }
+        .linkedin-btn { display:inline-flex; align-items:center; gap:8px; padding:10px 20px; background:#0a66c2; color:white; border:none; border-radius:var(--radius-sm); font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:var(--transition); }
+        .linkedin-btn:hover { background:#004182; }
+        .linkedin-btn.connected { background:var(--navy-mid); border:1px solid var(--border); color:var(--text-secondary); }
+        .linkedin-section { margin-top:20px; padding-top:16px; border-top:1px solid var(--border); }
+        @media (max-width:768px) { .profile-grid { grid-template-columns:1fr; } .profile-row { grid-template-columns:1fr; } }
         @media (max-width:640px) {
             .nav { padding:0 16px; } .nav-links { display:none; } .hero { padding:48px 16px 40px; } .hero h1 { font-size:28px; }
             .hero-stats { gap:20px; } .container { padding:24px 16px 60px; } .db-selector { grid-template-columns:1fr; }
@@ -294,11 +326,12 @@
         <div class="nav-links">
             <a href="#" class="nav-link active" data-section="upload" onclick="showSection('upload',this)">Upload</a>
             <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
+            <a href="#" class="nav-link" data-section="profile" onclick="showSection('profile',this)">Profil</a>
             <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">⚙ Admin</a>
         </div>
         <div class="nav-right">
             <div class="nav-status"><span class="dot"></span> Online</div>
-            <span class="nav-user" id="navUser" onclick="openPwModal()" title="Passwort ändern"></span>
+            <span class="nav-user" id="navUser" onclick="showSection('profile',document.querySelector('[data-section=profile]'))" title="Profil"></span>
             <button class="nav-logout" onclick="doLogout()">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 Abmelden
@@ -374,6 +407,87 @@
             <div id="adminUserTable"></div>
             <div class="admin-section-title" style="margin-top:32px">Einstellungen</div>
             <div id="adminSettings"></div>
+        </div>
+    </section>
+
+    <!-- ═══════ PROFILE SECTION ═══════ -->
+    <section class="section" id="profile-section">
+        <div class="container">
+            <div class="section-header"><h2>Profil</h2><p>Dein persönliches Profil in der BEATRIX Intelligence Suite.</p></div>
+            <div class="profile-grid">
+                <div>
+                    <div class="profile-card">
+                        <div class="profile-avatar-wrap">
+                            <div class="profile-avatar" id="profileAvatar">
+                                <span id="profileInitials"></span>
+                            </div>
+                            <label class="profile-avatar-edit" for="photoUpload" title="Foto ändern">
+                                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                            </label>
+                            <input type="file" id="photoUpload" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="uploadPhoto(this)">
+                        </div>
+                        <div class="profile-name" id="profileDisplayName">–</div>
+                        <div class="profile-position" id="profileDisplayPosition">–</div>
+                        <div class="profile-meta">
+                            <div class="profile-meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 8h20"/></svg>
+                                <span id="profileDisplayEmail">–</span>
+                            </div>
+                            <div class="profile-meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                                <span id="profileDisplayCompany">–</span>
+                            </div>
+                            <div class="profile-meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                                <span id="profileDisplayPhone">–</span>
+                            </div>
+                            <div class="profile-meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                                <span>Mitglied seit <span id="profileMemberSince">–</span></span>
+                            </div>
+                        </div>
+                        <div class="linkedin-section">
+                            <button class="linkedin-btn" id="linkedinBtn" onclick="connectLinkedIn()">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                                <span id="linkedinBtnText">Mit LinkedIn verbinden</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="profile-card" style="margin-top:16px">
+                        <div style="text-align:left">
+                            <div style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">Expertise</div>
+                            <div class="profile-tags" id="profileExpertiseTags"></div>
+                            <div style="display:flex;gap:8px;margin-top:10px">
+                                <input type="text" class="modal-input" id="expertiseInput" placeholder="Neue Expertise + Enter" style="flex:1;margin:0;font-size:12px;padding:6px 10px" onkeydown="if(event.key==='Enter'){addExpertise();event.preventDefault()}">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="profile-form">
+                    <h3>Profil bearbeiten</h3>
+                    <div class="profile-row">
+                        <div class="profile-field"><label>Name</label><input type="text" id="profileName" placeholder="Vor- und Nachname"></div>
+                        <div class="profile-field"><label>Position</label><input type="text" id="profilePosition" placeholder="z.B. CEO, Researcher"></div>
+                    </div>
+                    <div class="profile-row">
+                        <div class="profile-field"><label>Unternehmen</label><input type="text" id="profileCompany" placeholder="z.B. FehrAdvice & Partners AG"></div>
+                        <div class="profile-field"><label>Telefon</label><input type="text" id="profilePhone" placeholder="+41 ..."></div>
+                    </div>
+                    <div class="profile-row">
+                        <div class="profile-field full"><label>LinkedIn URL</label><input type="text" id="profileLinkedin" placeholder="https://linkedin.com/in/..."></div>
+                    </div>
+                    <div class="profile-row">
+                        <div class="profile-field full"><label>Bio</label><textarea id="profileBio" placeholder="Kurze Beschreibung, Schwerpunkte, Forschungsinteressen..."></textarea></div>
+                    </div>
+                    <div class="profile-actions">
+                        <button class="btn btn-secondary" onclick="openPwModal()">🔑 Passwort ändern</button>
+                        <button class="btn btn-primary" onclick="saveProfile()">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Profil speichern
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -565,6 +679,7 @@
             const sec=document.getElementById(name+'-section'); if(sec) sec.classList.add('active');
             if(name==='documents') loadDocuments();
             if(name==='admin') loadAdminData();
+            if(name==='profile') loadProfile();
         }
         function switchTab(tab,el) { currentTab=tab; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); document.getElementById('file-section').classList.toggle('active',tab==='file'); document.getElementById('text-section').classList.toggle('active',tab==='text'); updateCount(); }
         function selectDB(el) { document.querySelectorAll('.db-option').forEach(o=>o.classList.remove('selected')); el.classList.add('selected'); selectedDB=el.dataset.db; }
@@ -739,6 +854,138 @@
             btn.disabled=false; btn.textContent='Ändern';
         }
         document.addEventListener('keydown', e => { if(e.key==='Escape') closePwModal(); });
+
+        // ── Profile ──────────────────────────────────────────────────────────
+        let profileData = null;
+        let profileExpertise = [];
+
+        async function loadProfile() {
+            try {
+                const r = await fetch(`${API}/profile`, {headers:H()});
+                if (!r.ok) return;
+                profileData = await r.json();
+                profileExpertise = profileData.expertise || [];
+                // Fill form
+                document.getElementById('profileName').value = profileData.name || '';
+                document.getElementById('profilePosition').value = profileData.position || '';
+                document.getElementById('profileCompany').value = profileData.company || '';
+                document.getElementById('profilePhone').value = profileData.phone || '';
+                document.getElementById('profileLinkedin').value = profileData.linkedin_url || '';
+                document.getElementById('profileBio').value = profileData.bio || '';
+                // Fill display card
+                const name = profileData.name || profileData.email.split('@')[0];
+                document.getElementById('profileDisplayName').textContent = name;
+                document.getElementById('profileDisplayPosition').textContent = [profileData.position, profileData.company].filter(Boolean).join(' · ') || '–';
+                document.getElementById('profileDisplayEmail').textContent = profileData.email;
+                document.getElementById('profileDisplayCompany').textContent = profileData.company || '–';
+                document.getElementById('profileDisplayPhone').textContent = profileData.phone || '–';
+                if (profileData.created_at) {
+                    document.getElementById('profileMemberSince').textContent = new Date(profileData.created_at).toLocaleDateString('de-CH', {month:'long', year:'numeric'});
+                }
+                // Avatar
+                const avatar = document.getElementById('profileAvatar');
+                if (profileData.profile_photo_url) {
+                    avatar.innerHTML = `<img src="${profileData.profile_photo_url}" alt="Foto">`;
+                } else {
+                    const initials = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+                    document.getElementById('profileInitials').textContent = initials;
+                }
+                // LinkedIn button state
+                if (profileData.linkedin_connected) {
+                    document.getElementById('linkedinBtn').className = 'linkedin-btn connected';
+                    document.getElementById('linkedinBtnText').textContent = 'LinkedIn verbunden ✓';
+                }
+                // Expertise tags
+                renderExpertise();
+            } catch(e) { console.error('Profile load error:', e); }
+        }
+
+        function renderExpertise() {
+            document.getElementById('profileExpertiseTags').innerHTML = profileExpertise.map((t,i) =>
+                `<span class="profile-tag">${t}<span class="remove" onclick="removeExpertise(${i})">×</span></span>`
+            ).join('') || '<span style="font-size:12px;color:var(--text-muted)">Noch keine Expertise hinzugefügt</span>';
+        }
+
+        function addExpertise() {
+            const input = document.getElementById('expertiseInput');
+            const val = input.value.trim();
+            if (!val || profileExpertise.includes(val)) { input.value=''; return; }
+            if (profileExpertise.length >= 20) { showToast('Max. 20 Expertise-Tags','info'); return; }
+            profileExpertise.push(val);
+            input.value = '';
+            renderExpertise();
+            saveProfile(true);
+        }
+
+        function removeExpertise(idx) {
+            profileExpertise.splice(idx, 1);
+            renderExpertise();
+            saveProfile(true);
+        }
+
+        async function saveProfile(silent) {
+            const data = {
+                name: document.getElementById('profileName').value.trim(),
+                position: document.getElementById('profilePosition').value.trim(),
+                company: document.getElementById('profileCompany').value.trim(),
+                phone: document.getElementById('profilePhone').value.trim(),
+                linkedin_url: document.getElementById('profileLinkedin').value.trim(),
+                bio: document.getElementById('profileBio').value.trim(),
+                expertise: profileExpertise
+            };
+            try {
+                const r = await fetch(`${API}/profile`, {method:'PUT', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify(data)});
+                if (!r.ok) { showToast('Fehler beim Speichern','error'); return; }
+                if (!silent) showToast('Profil gespeichert ✓','success');
+                // Update nav user name
+                if (data.name) document.getElementById('navUser').textContent = data.name;
+                loadProfile();
+            } catch(e) { showToast('Verbindungsfehler','error'); }
+        }
+
+        async function uploadPhoto(input) {
+            if (!input.files.length) return;
+            const fd = new FormData();
+            fd.append('file', input.files[0]);
+            try {
+                const r = await fetch(`${API}/profile/photo`, {method:'POST', headers:H(), body:fd});
+                if (!r.ok) { const d=await r.json(); showToast(d.detail||'Fehler','error'); return; }
+                showToast('Foto aktualisiert ✓','success');
+                loadProfile();
+            } catch(e) { showToast('Upload fehlgeschlagen','error'); }
+            input.value='';
+        }
+
+        async function connectLinkedIn() {
+            if (profileData?.linkedin_connected) {
+                if (!confirm('LinkedIn-Verbindung trennen?')) return;
+                try {
+                    await fetch(`${API}/profile/linkedin/disconnect`, {method:'POST', headers:H()});
+                    showToast('LinkedIn getrennt','info');
+                    loadProfile();
+                } catch(e) { showToast('Fehler','error'); }
+                return;
+            }
+            try {
+                const r = await fetch(`${API}/auth/linkedin`, {headers:H()});
+                if (!r.ok) { const d=await r.json(); showToast(d.detail||'LinkedIn nicht konfiguriert','error'); return; }
+                const {auth_url} = await r.json();
+                const popup = window.open(auth_url, 'linkedin', 'width=600,height=700,left=200,top=100');
+                window.addEventListener('message', async function handler(e) {
+                    if (e.data?.type === 'linkedin_success') {
+                        window.removeEventListener('message', handler);
+                        try {
+                            await fetch(`${API}/profile/linkedin`, {method:'POST', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify(e.data.data)});
+                            showToast('LinkedIn verbunden ✓','success');
+                            loadProfile();
+                        } catch(err) { showToast('Fehler beim Speichern','error'); }
+                    } else if (e.data?.type === 'linkedin_error') {
+                        window.removeEventListener('message', handler);
+                        showToast('LinkedIn-Verbindung fehlgeschlagen','error');
+                    }
+                });
+            } catch(e) { showToast('Verbindungsfehler','error'); }
+        }
 
         checkAuth();
     </script>
