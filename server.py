@@ -2,7 +2,7 @@
 BEA Lab - Document Upload API
 Uploads are automatically pushed to GitHub: papers/evaluated/integrated/
 """
-import os, uuid, json, base64, logging, hashlib, time, hmac
+import os, uuid, json, base64, logging, hashlib, time, hmac, random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -11,7 +11,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, JSON, Boolean
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, JSON, Boolean, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./beatrix.db")
@@ -924,7 +924,6 @@ async def get_insight_question(context: str = "login", user=Depends(require_auth
         preferred = [q for q in available if q["domain"] in preferred_domains]
         other = [q for q in available if q["domain"] not in preferred_domains]
 
-        import random
         random.shuffle(preferred)
         random.shuffle(other)
         ordered = preferred + other
