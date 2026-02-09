@@ -96,6 +96,27 @@ async def require_auth(request: Request):
     if not payload: raise HTTPException(401, "Nicht autorisiert")
     return payload
 
+def _user_crm_payload(user):
+    """Compute CRM access for JWT. Rules:
+    - Only @fehradvice.com emails eligible
+    - Senior Management / Partner / Admin: CRM auto-enabled
+    - lead_management: see own leads (viewer + owner_code)
+    - Others need explicit crm_access=True in DB
+    """
+    email = (user.email or "").lower()
+    is_fa = email.endswith("@fehradvice.com")
+    role = (user.role or "researcher").lower()
+    senior_roles = ("senior_management", "partner")
+    auto_crm = role in senior_roles or user.is_admin
+    effective_crm = user.crm_access or (auto_crm and is_fa)
+    effective_lead_mgmt = getattr(user, 'lead_management', False) or auto_crm
+    return {
+        "crm_access": effective_crm and is_fa,
+        "crm_role": user.crm_role or ("admin" if user.is_admin else ("manager" if role in senior_roles else "none")),
+        "crm_owner_code": user.crm_owner_code or "",
+        "lead_management": bool(effective_lead_mgmt and effective_crm and is_fa),
+    }
+
 Base = declarative_base()
 _engine = None
 _SessionLocal = None
@@ -124,6 +145,10 @@ class User(Base):
     profile_photo_url = Column(String(1000), nullable=True)
     expertise = Column(JSON, nullable=True)  # ["Behavioral Economics", "Strategy", ...]
     role = Column(String(50), default="researcher")  # researcher, sales, operations
+    crm_access = Column(Boolean, default=False)  # explicitly enabled for CRM
+    crm_role = Column(String(30), default="none")  # none, viewer, manager, admin
+    crm_owner_code = Column(String(20), nullable=True)  # OWN-GF, OWN-EB, etc.
+    lead_management = Column(Boolean, default=False)  # access to lead management suite
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
@@ -237,6 +262,13 @@ def get_db():
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
                     # Role field for tab visibility
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'researcher'"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_access BOOLEAN DEFAULT FALSE"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_role VARCHAR(30) DEFAULT 'none'"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_owner_code VARCHAR(20)"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS lead_management BOOLEAN DEFAULT FALSE"))
+                    # Auto-enable CRM for FehrAdvice admins (Senior Management)
+                    conn.execute(text("""UPDATE users SET crm_access = TRUE, crm_role = 'admin' 
+                        WHERE is_admin = TRUE AND email LIKE '%%@fehradvice.com' AND (crm_access IS NULL OR crm_access = FALSE)"""))
                     # Set initial roles for sales users
                     conn.execute(text("UPDATE users SET role = 'sales' WHERE email IN ('nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com') AND (role IS NULL OR role = 'researcher')"))
                     # Leads table
@@ -701,7 +733,7 @@ async def register(request: RegisterRequest):
                 logger.info(f"Verification email sent to {email}")
                 return JSONResponse({"status": "verification_required", "message": "Registrierung erfolgreich! Bitte prüfe dein E-Mail-Postfach und bestätige deine E-Mail-Adresse."})
         # Admin or no verification required → direct login
-        token = create_jwt({"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "role": user.role or "researcher", "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY})
+        token = create_jwt({**{"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "role": user.role or "researcher", "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY}, **_user_crm_payload(user)})
         logger.info(f"New user: {email} (verified={user.email_verified})")
         resp = JSONResponse({"token": token, "expires_in": JWT_EXPIRY, "user": {"email": user.email, "name": user.name}})
         resp.set_cookie(key="bea_token", value=token, max_age=JWT_EXPIRY, httponly=True, samesite="lax")
@@ -722,7 +754,7 @@ async def login(request: LoginRequest):
         if REQUIRE_EMAIL_VERIFICATION and not user.email_verified:
             raise HTTPException(403, "E-Mail noch nicht bestätigt. Bitte prüfe dein Postfach.")
         user.last_login = datetime.utcnow(); db.commit()
-        token = create_jwt({"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "role": user.role or "researcher", "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY})
+        token = create_jwt({**{"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "role": user.role or "researcher", "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY}, **_user_crm_payload(user)})
         logger.info(f"Login: {email}")
         resp = JSONResponse({"token": token, "expires_in": JWT_EXPIRY, "user": {"email": user.email, "name": user.name}})
         resp.set_cookie(key="bea_token", value=token, max_age=JWT_EXPIRY, httponly=True, samesite="lax")
@@ -1495,7 +1527,7 @@ async def admin_users(user=Depends(require_auth)):
     db = get_db()
     try:
         users = db.query(User).order_by(User.created_at.desc()).all()
-        return [{"id": u.id, "email": u.email, "name": u.name, "is_active": u.is_active, "is_admin": u.is_admin, "role": u.role or "researcher", "email_verified": u.email_verified, "created_at": u.created_at.isoformat() if u.created_at else None, "last_login": u.last_login.isoformat() if u.last_login else None} for u in users]
+        return [{"id": u.id, "email": u.email, "name": u.name, "is_active": u.is_active, "is_admin": u.is_admin, "role": u.role or "researcher", "email_verified": u.email_verified, "crm_access": u.crm_access or False, "crm_role": u.crm_role or "none", "crm_owner_code": u.crm_owner_code or "", "lead_management": getattr(u, 'lead_management', False) or False, "created_at": u.created_at.isoformat() if u.created_at else None, "last_login": u.last_login.isoformat() if u.last_login else None} for u in users]
     finally: db.close()
 
 @app.put("/api/admin/users/{user_id}/toggle-active")
@@ -1516,13 +1548,48 @@ async def set_user_role(user_id: str, request: Request, user=Depends(require_aut
     try:
         data = await request.json()
         role = data.get("role", "researcher")
-        if role not in ("researcher", "sales", "operations"):
+        if role not in ("researcher", "sales", "operations", "senior_management", "partner"):
             raise HTTPException(400, "Ungültige Rolle")
         target = db.query(User).filter(User.id == user_id).first()
         if not target: raise HTTPException(404, "Benutzer nicht gefunden")
-        target.role = role; db.commit()
+        target.role = role
+        # Auto-enable CRM for senior roles (if @fehradvice.com)
+        if role in ("senior_management", "partner") and target.email.lower().endswith("@fehradvice.com"):
+            if not target.crm_access:
+                target.crm_access = True
+                target.lead_management = True
+                if not target.crm_role or target.crm_role == "none":
+                    target.crm_role = "manager"
+                logger.info(f"Auto-enabled CRM for senior role: {target.email}")
+        db.commit()
         logger.info(f"Role changed: {target.email} → {role}")
-        return {"email": target.email, "role": role}
+        return {"email": target.email, "role": role, "crm_access": target.crm_access or False}
+    finally: db.close()
+
+@app.put("/api/admin/users/{user_id}/crm-access")
+async def set_user_crm_access(user_id: str, request: Request, user=Depends(require_auth)):
+    """Toggle CRM access for a user. Only admins. Only @fehradvice.com emails eligible."""
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        data = await request.json()
+        target = db.query(User).filter(User.id == user_id).first()
+        if not target: raise HTTPException(404, "Benutzer nicht gefunden")
+        if not target.email.lower().endswith("@fehradvice.com"):
+            raise HTTPException(400, "CRM nur für FehrAdvice-Mitarbeiter verfügbar")
+        if "crm_access" in data:
+            target.crm_access = bool(data["crm_access"])
+        if "crm_role" in data:
+            if data["crm_role"] not in ("none", "viewer", "manager", "admin"):
+                raise HTTPException(400, "Ungültige CRM-Rolle")
+            target.crm_role = data["crm_role"]
+        if "crm_owner_code" in data:
+            target.crm_owner_code = data["crm_owner_code"] or None
+        if "lead_management" in data:
+            target.lead_management = bool(data["lead_management"])
+        db.commit()
+        logger.info(f"CRM access changed: {target.email} → access={target.crm_access}, role={target.crm_role}, owner={target.crm_owner_code}, leads={target.lead_management}")
+        return {"email": target.email, "crm_access": target.crm_access, "crm_role": target.crm_role, "crm_owner_code": target.crm_owner_code, "lead_management": target.lead_management or False}
     finally: db.close()
 
 # ── BEATRIX Chat (RAG) ──────────────────────────────────────────────────
@@ -2220,6 +2287,13 @@ async def crm_update_contact(cid: str, request: Request, user=Depends(require_au
 # ── Deals ──
 @app.get("/api/crm/deals")
 async def crm_get_deals(user=Depends(require_auth), stage: str = None):
+    # CRM access check: must be @fehradvice.com with crm_access
+    email = user.get("sub", "")
+    crm_ok = user.get("crm_access", False)
+    crm_role = user.get("crm_role", "none")
+    owner_code = user.get("crm_owner_code", "")
+    if not crm_ok:
+        raise HTTPException(403, "Kein CRM-Zugang. Bitte Admin kontaktieren.")
     db = get_db()
     try:
         q = """SELECT d.*, c.name as company_name, ct.name as contact_name, ct.email as contact_email
@@ -2227,12 +2301,24 @@ async def crm_get_deals(user=Depends(require_auth), stage: str = None):
                LEFT JOIN crm_companies c ON d.company_id = c.id
                LEFT JOIN crm_contacts ct ON d.contact_id = ct.id"""
         params = {}
+        conditions = []
         if stage:
-            q += " WHERE d.stage = :stage"
+            conditions.append("d.stage = :stage")
             params["stage"] = stage
+        # Owner filtering: viewer sees only own leads, manager/admin sees all
+        if crm_role not in ("admin", "manager") and not user.get("admin"):
+            if owner_code:
+                conditions.append("d.owner = :owner")
+                params["owner"] = owner_code
+            else:
+                # No owner code assigned → see nothing
+                return []
+        if conditions:
+            q += " WHERE " + " AND ".join(conditions)
         q += " ORDER BY d.updated_at DESC"
         rows = db.execute(text(q), params).fetchall()
         return [dict(r._mapping) for r in rows]
+    except HTTPException: raise
     except Exception as e:
         logger.error(f"CRM deals fetch: {e}")
         return []
@@ -2351,9 +2437,23 @@ async def crm_create_activity(request: Request, user=Depends(require_auth)):
 # ── CRM Stats ──
 @app.get("/api/crm/stats")
 async def crm_stats(user=Depends(require_auth)):
+    crm_ok = user.get("crm_access", False)
+    crm_role = user.get("crm_role", "none")
+    owner_code = user.get("crm_owner_code", "")
+    if not crm_ok:
+        return {"total_deals":0,"active_deals":0,"won_deals":0,"new_this_month":0,"pipeline_value":0,"total_value":0,"conversion_rate":0,"stages":{},"companies":0,"contacts":0}
     db = get_db()
     try:
-        deals = db.execute(text("SELECT stage, value, probability, created_at, closed_at FROM crm_deals")).fetchall()
+        q = "SELECT stage, value, probability, created_at, closed_at FROM crm_deals"
+        params = {}
+        # Owner filtering for non-admin/manager
+        if crm_role not in ("admin", "manager") and not user.get("admin"):
+            if owner_code:
+                q += " WHERE owner = :owner"
+                params["owner"] = owner_code
+            else:
+                return {"total_deals":0,"active_deals":0,"won_deals":0,"new_this_month":0,"pipeline_value":0,"total_value":0,"conversion_rate":0,"stages":{},"companies":0,"contacts":0}
+        deals = db.execute(text(q), params).fetchall()
         deals = [dict(r._mapping) for r in deals]
         active = [d for d in deals if d['stage'] not in ('won','lost')]
         won = [d for d in deals if d['stage'] == 'won']
