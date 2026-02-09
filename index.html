@@ -2725,34 +2725,57 @@ Antworte NUR als JSON Array:
             mbState.selectedProblem = null;
             const ci = document.getElementById('mbCustomInput');
             ci.style.display = 'block';
-            document.getElementById('mbQuestion').focus();
+            ci.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => document.getElementById('mbQuestion').focus(), 200);
         }
 
         async function mbLetBeatrixDefine() {
-            // Show custom input area with loading state
-            const ci = document.getElementById('mbCustomInput');
-            ci.style.display = 'block';
-            const ta = document.getElementById('mbQuestion');
-            ta.value = '';
-            ta.placeholder = 'BEATRIX generiert eine Problemstellung...';
-            ta.disabled = true;
+            // Switch to a generation view
+            document.getElementById('mbStep0ViewA').style.display = 'none';
+            document.getElementById('mbStep0ViewB').style.display = 'block';
+            document.getElementById('mbStep0SelectedQ').innerHTML = `
+                <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:14px;height:14px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
+                    <span style="color:rgba(255,255,255,0.5)">BEATRIX generiert eine Problemstellung...</span>
+                </div>`;
+            document.getElementById('mbStep0Result').style.display = 'none';
+            const btn = document.getElementById('mbStep0Btn');
+            btn.disabled = true;
+            btn.textContent = 'Wird generiert...';
+
             try {
                 const resp = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
-                    body: JSON.stringify({ question: `Generiere eine spannende, aktuelle Problemstellung für den EEE Model-Building Workflow (Modus: ${mbState.mode || 'gefuehrt'}). Die Problemstellung soll ein reales Verhaltensphänomen beschreiben, das mit dem BCM modelliert werden kann. Antworte NUR mit der Problemstellung als Text, max 2 Sätze, kein JSON.` })
+                    body: JSON.stringify({ question: `Generiere eine Problemstellung für den EEE Model-Building Workflow (Modus: ${mbState.mode || 'gefuehrt'}).
+Antworte NUR als JSON: {"icon":"emoji","title":"Kurztitel 3-4 Worte","question":"Vollständige Problemstellung als Frage, 2-3 Sätze mit konkreten Zahlen/Fakten","domain":"REL/FIN/HLT/ENV/POL/ORG/EDU/OTH"}` })
                 });
                 const data = await resp.json();
-                const generated = (data.answer || '').replace(/```[^`]*```/g, '').replace(/["""]/g, '').trim();
-                if (generated) {
-                    ta.value = generated;
-                    ta.disabled = false;
-                    ta.placeholder = 'Beschreibe das Verhalten...';
+                let parsed = null;
+                if (data.answer) {
+                    try { const m = data.answer.match(/\{[\s\S]*\}/); if(m) parsed = JSON.parse(m[0]); } catch(e){}
                 }
+                if (!parsed) parsed = { icon: '🔬', title: 'Behavioral Analysis', question: data.answer || 'Generierte Problemstellung', domain: 'OTH' };
+
+                // Show as structured card
+                document.getElementById('mbStep0SelectedQ').innerHTML = `
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                        <span style="font-size:20px">${parsed.icon}</span>
+                        <span style="font-weight:600;color:white;font-size:16px">${parsed.title}</span>
+                        <span style="margin-left:auto;font-size:11px;color:var(--accent);opacity:0.6">${parsed.domain}</span>
+                    </div>
+                    <div style="font-size:14px;color:rgba(255,255,255,0.8);line-height:1.6">${parsed.question}</div>
+                    <div style="margin-top:10px;font-size:11px;color:rgba(255,255,255,0.3)">🤖 Von BEATRIX generiert</div>`;
+
+                mbState.selectedProblem = parsed.question;
+                // Auto-trigger analysis
+                mbProcessStep0();
+
             } catch(e) {
                 console.error('Generate error:', e);
-                ta.disabled = false;
-                ta.placeholder = 'Beschreibe das Verhalten...';
+                document.getElementById('mbStep0SelectedQ').innerHTML = '<div style="color:#ef4444">⚠ Fehler bei der Generierung. Bitte erneut versuchen.</div>';
+                btn.textContent = 'Analysieren →';
+                btn.disabled = false;
             }
         }
 
