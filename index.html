@@ -1083,9 +1083,12 @@
                 <div class="admin-card"><div class="admin-card-label">Benutzer</div><div class="admin-card-value" id="adminStatUsers">–</div><div class="admin-card-sub">Registriert</div></div>
                 <div class="admin-card"><div class="admin-card-label">Registrierung</div><div class="admin-card-value" id="adminStatReg" style="font-size:18px">–</div><div class="admin-card-sub" id="adminStatRegSub"></div></div>
                 <div class="admin-card"><div class="admin-card-label">Dokumente</div><div class="admin-card-value" id="adminStatDocs">–</div><div class="admin-card-sub">In Datenbank</div></div>
+                <div class="admin-card" style="cursor:pointer" onclick="document.getElementById('adminFeedbackSection').scrollIntoView({behavior:'smooth'})"><div class="admin-card-label">Feedback</div><div class="admin-card-value" id="adminStatFb">–</div><div class="admin-card-sub" id="adminStatFbSub">offen</div></div>
             </div>
             <div class="admin-section-title">Benutzer <span class="badge" id="adminUserCount">0</span></div>
             <div id="adminUserTable"></div>
+            <div class="admin-section-title" style="margin-top:32px" id="adminFeedbackSection">Feedback <span class="badge" id="adminFbCount">0</span></div>
+            <div id="adminFeedbackList"></div>
             <div class="admin-section-title" style="margin-top:32px">Einstellungen</div>
             <div id="adminSettings"></div>
         </div>
@@ -1271,6 +1274,7 @@
                         if (currentUser.admin) document.getElementById('navAdmin').style.display = 'inline';
                         applyUserTabs();
                         console.log('Session restore:', currentUser.email, 'admin:', currentUser.admin);
+                        if(document.getElementById('fbBtn')) document.getElementById('fbBtn').style.display = 'flex';
                         loadStats();
                         return;
                     }
@@ -1293,6 +1297,7 @@
             if (currentUser.admin) document.getElementById('navAdmin').style.display = 'inline';
             applyUserTabs();
             console.log('Auth success:', currentUser.email, 'admin:', currentUser.admin);
+            if(document.getElementById('fbBtn')) document.getElementById('fbBtn').style.display = 'flex';
             loadStats();
             showToast(`Willkommen, ${data.user.name || data.user.email}!`, 'success');
             // Trigger insight question after login
@@ -1541,6 +1546,7 @@
         function doLogout() {
             authToken=null; currentUser=null;
             sessionStorage.removeItem('bea_token'); sessionStorage.removeItem('bea_user');
+            if(document.getElementById('fbBtn')) document.getElementById('fbBtn').style.display = 'none';
             document.getElementById('authOverlay').classList.remove('hidden');
             document.getElementById('loginEmail').value=''; document.getElementById('loginPassword').value='';
             document.querySelectorAll('.auth-error,.auth-success').forEach(e => e.classList.remove('visible'));
@@ -2002,6 +2008,38 @@
                     <div class="settings-row"><span class="settings-label">Erlaubte Domains</span><span class="settings-value">${domains.includes('*') ? 'Alle (*)' : domains.map(d=>'@'+d).join(', ') || 'Alle (*)'}</span></div>
                     <div class="settings-row"><span class="settings-label">JWT Gültigkeit</span><span class="settings-value">${settings.jwt_expiry_hours || 24}h</span></div>
                 `;
+
+                // Load feedback
+                try {
+                    const fbR = await fetch(`${API}/feedback`, {headers:H()});
+                    const feedbacks = fbR.ok ? await fbR.json() : [];
+                    const openFb = feedbacks.filter(f => f.status === 'neu');
+                    document.getElementById('adminStatFb').textContent = openFb.length;
+                    document.getElementById('adminStatFbSub').textContent = `von ${feedbacks.length} gesamt`;
+                    document.getElementById('adminFbCount').textContent = feedbacks.length;
+
+                    if (feedbacks.length === 0) {
+                        document.getElementById('adminFeedbackList').innerHTML = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Noch kein Feedback eingegangen.</div>';
+                    } else {
+                        const typeIcons = { bug: '🐛', wunsch: '💡', frage: '❓' };
+                        const statusColors = { neu: '#f87171', bearbeitung: '#fbbf24', erledigt: '#34d399' };
+                        document.getElementById('adminFeedbackList').innerHTML = feedbacks.map(f => {
+                            const sc = statusColors[f.status] || '#94a3b8';
+                            const date = f.created_at ? new Date(f.created_at).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '–';
+                            return `<div style="padding:14px 16px;background:var(--navy-card);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;display:flex;align-items:center;gap:12px">
+                                <span style="font-size:20px">${typeIcons[f.type] || '📝'}</span>
+                                <div style="flex:1;min-width:0">
+                                    <div style="font-size:13px;color:white;margin-bottom:3px">${f.comment || '–'}</div>
+                                    <div style="font-size:11px;color:rgba(255,255,255,0.3)">${f.created_by} · ${date} · Tab: ${f.page || '–'} · ${f.viewport || ''}</div>
+                                </div>
+                                <button onclick="fbShowScreenshot('${f.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(139,170,255,0.2);background:transparent;color:rgba(139,170,255,0.7);font-size:11px;cursor:pointer;white-space:nowrap">📸 Bild</button>
+                                <select onchange="fbUpdateStatus('${f.id}',this.value)" style="font-size:11px;padding:4px 8px;background:transparent;color:${sc};border:1px solid ${sc}44;border-radius:6px;cursor:pointer">
+                                    ${['neu','bearbeitung','erledigt'].map(s => `<option value="${s}" ${s===f.status?'selected':''}>${s}</option>`).join('')}
+                                </select>
+                            </div>`;
+                        }).join('');
+                    }
+                } catch(e) { console.error('Feedback load:', e); }
             } catch(e) {
                 document.getElementById('adminUserTable').innerHTML = '<p style="color:var(--error)">Fehler beim Laden der Admin-Daten.</p>';
             }
@@ -2039,6 +2077,33 @@
                 showToast(`Rolle → ${rc.label} gesetzt`, 'success');
                 loadAdminData();
             } catch(e) { showToast('Verbindungsfehler', 'error'); }
+        }
+
+        async function fbShowScreenshot(id) {
+            try {
+                const r = await fetch(`${API}/feedback/${id}/screenshot`, { headers: H() });
+                if (!r.ok) { showToast('Bild nicht gefunden', 'error'); return; }
+                const data = await r.json();
+                // Show in modal overlay
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:20px';
+                modal.onclick = () => modal.remove();
+                const img = document.createElement('img');
+                img.src = data.screenshot;
+                img.style.cssText = 'max-width:95%;max-height:95%;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.5)';
+                modal.appendChild(img);
+                document.body.appendChild(modal);
+            } catch(e) { showToast('Fehler', 'error'); }
+        }
+
+        async function fbUpdateStatus(id, status) {
+            try {
+                await fetch(`${API}/feedback/${id}`, {
+                    method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+                loadAdminData();
+            } catch(e) { showToast('Fehler', 'error'); }
         }
 
         // ── Password Change ──────────────────────────────
@@ -3928,6 +3993,249 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
         }
 
         checkAuth();
+    </script>
+
+    <!-- Screenshot Feedback Widget -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        #fbBtn { position:fixed; bottom:24px; right:24px; z-index:9999; width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg,#8b9aff,#6366f1); border:none; cursor:pointer; box-shadow:0 4px 20px rgba(99,102,241,0.4); display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
+        #fbBtn:hover { transform:scale(1.1); box-shadow:0 6px 28px rgba(99,102,241,0.6); }
+        #fbBtn svg { width:22px; height:22px; fill:white; }
+        #fbOverlay { display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,0.85); flex-direction:column; }
+        #fbOverlay.active { display:flex; }
+        #fbToolbar { display:flex; align-items:center; gap:8px; padding:10px 16px; background:rgba(20,20,40,0.95); border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0; }
+        .fb-tool { padding:6px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:transparent; color:rgba(255,255,255,0.6); font-size:12px; cursor:pointer; transition:all 0.15s; }
+        .fb-tool:hover, .fb-tool.active { background:rgba(139,170,255,0.15); color:white; border-color:rgba(139,170,255,0.4); }
+        .fb-color { width:24px; height:24px; border-radius:50%; border:2px solid transparent; cursor:pointer; transition:transform 0.15s; }
+        .fb-color:hover, .fb-color.active { transform:scale(1.2); border-color:white; }
+        #fbCanvas { flex:1; cursor:crosshair; object-fit:contain; }
+        #fbBottom { display:flex; align-items:center; gap:10px; padding:10px 16px; background:rgba(20,20,40,0.95); border-top:1px solid rgba(255,255,255,0.08); flex-shrink:0; }
+        #fbComment { flex:1; padding:8px 14px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:white; font-size:13px; outline:none; font-family:inherit; }
+        #fbComment::placeholder { color:rgba(255,255,255,0.25); }
+        #fbComment:focus { border-color:rgba(139,170,255,0.4); }
+        .fb-type { padding:5px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:transparent; color:rgba(255,255,255,0.5); font-size:12px; cursor:pointer; }
+        .fb-type.active { background:rgba(139,170,255,0.15); color:white; border-color:rgba(139,170,255,0.4); }
+        #fbSend { padding:8px 20px; border-radius:10px; border:none; background:linear-gradient(135deg,#8b9aff,#6366f1); color:white; font-size:13px; font-weight:600; cursor:pointer; }
+        #fbSend:hover { filter:brightness(1.1); }
+        #fbSend:disabled { opacity:0.5; cursor:not-allowed; }
+    </style>
+
+    <!-- Feedback Button -->
+    <button id="fbBtn" onclick="fbCapture()" title="Feedback geben" style="display:none">
+        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12zM11 5h2v4h-2zm0 6h2v2h-2z"/></svg>
+    </button>
+
+    <!-- Feedback Overlay -->
+    <div id="fbOverlay">
+        <div id="fbToolbar">
+            <span style="font-size:13px;font-weight:600;color:white;margin-right:8px">📸 Feedback</span>
+            <button class="fb-tool active" onclick="fbSetTool('draw')" id="fbToolDraw">✏️ Zeichnen</button>
+            <button class="fb-tool" onclick="fbSetTool('arrow')" id="fbToolArrow">➡️ Pfeil</button>
+            <button class="fb-tool" onclick="fbSetTool('rect')" id="fbToolRect">▢ Rahmen</button>
+            <div style="width:1px;height:20px;background:rgba(255,255,255,0.1);margin:0 4px"></div>
+            <div class="fb-color active" style="background:#f87171" onclick="fbSetColor('#f87171')" data-color="#f87171"></div>
+            <div class="fb-color" style="background:#fbbf24" onclick="fbSetColor('#fbbf24')" data-color="#fbbf24"></div>
+            <div class="fb-color" style="background:#34d399" onclick="fbSetColor('#34d399')" data-color="#34d399"></div>
+            <div class="fb-color" style="background:#8b9aff" onclick="fbSetColor('#8b9aff')" data-color="#8b9aff"></div>
+            <div style="flex:1"></div>
+            <button class="fb-tool" onclick="fbUndo()">↩ Undo</button>
+            <button class="fb-tool" onclick="fbClose()" style="color:rgba(248,113,113,0.8)">✕ Schliessen</button>
+        </div>
+        <canvas id="fbCanvas"></canvas>
+        <div id="fbBottom">
+            <button class="fb-type active" onclick="fbSetType('bug')" id="fbTypeBug">🐛 Bug</button>
+            <button class="fb-type" onclick="fbSetType('wunsch')" id="fbTypeWunsch">💡 Wunsch</button>
+            <button class="fb-type" onclick="fbSetType('frage')" id="fbTypeFrage">❓ Frage</button>
+            <input id="fbComment" placeholder="Was ist dir aufgefallen?" maxlength="500" onkeydown="if(event.key==='Enter')fbSend()">
+            <button id="fbSend" onclick="fbSend()">Senden ➤</button>
+        </div>
+    </div>
+
+    <script>
+        // ── Feedback Widget ──────────────────────────
+        const fbState = { tool: 'draw', color: '#f87171', type: 'bug', drawing: false, history: [], baseImage: null, startX: 0, startY: 0 };
+
+        async function fbCapture() {
+            // Hide feedback button during capture
+            document.getElementById('fbBtn').style.display = 'none';
+            try {
+                const canvas = await html2canvas(document.body, { scale: window.devicePixelRatio > 1 ? 1.5 : 1, useCORS: true, logging: false, backgroundColor: '#0a0f1c' });
+                fbState.baseImage = new Image();
+                fbState.baseImage.onload = () => {
+                    const fbCanvas = document.getElementById('fbCanvas');
+                    const rect = fbCanvas.parentElement.getBoundingClientRect();
+                    const toolbarH = document.getElementById('fbToolbar').offsetHeight;
+                    const bottomH = document.getElementById('fbBottom').offsetHeight;
+                    fbCanvas.width = window.innerWidth;
+                    fbCanvas.height = window.innerHeight - toolbarH - bottomH;
+                    fbState.history = [];
+                    fbRedraw();
+                    document.getElementById('fbOverlay').classList.add('active');
+                    document.getElementById('fbComment').value = '';
+                };
+                fbState.baseImage.src = canvas.toDataURL('image/jpeg', 0.85);
+            } catch(e) {
+                console.error('Screenshot failed:', e);
+                showToast('Screenshot fehlgeschlagen', 'error');
+            }
+            document.getElementById('fbBtn').style.display = 'flex';
+        }
+
+        function fbRedraw() {
+            const c = document.getElementById('fbCanvas');
+            const ctx = c.getContext('2d');
+            // Draw base screenshot scaled to fit
+            const scale = Math.min(c.width / fbState.baseImage.width, c.height / fbState.baseImage.height);
+            const w = fbState.baseImage.width * scale;
+            const h = fbState.baseImage.height * scale;
+            const ox = (c.width - w) / 2;
+            const oy = (c.height - h) / 2;
+            ctx.fillStyle = '#0a0f1c';
+            ctx.fillRect(0, 0, c.width, c.height);
+            ctx.drawImage(fbState.baseImage, ox, oy, w, h);
+            // Replay annotations
+            for (const item of fbState.history) {
+                ctx.strokeStyle = item.color;
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                if (item.type === 'draw' && item.points.length > 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(item.points[0].x, item.points[0].y);
+                    for (let i = 1; i < item.points.length; i++) ctx.lineTo(item.points[i].x, item.points[i].y);
+                    ctx.stroke();
+                } else if (item.type === 'rect') {
+                    ctx.strokeRect(item.x, item.y, item.w, item.h);
+                } else if (item.type === 'arrow') {
+                    fbDrawArrow(ctx, item.x1, item.y1, item.x2, item.y2, item.color);
+                }
+            }
+        }
+
+        function fbDrawArrow(ctx, x1, y1, x2, y2, color) {
+            const headLen = 14;
+            const angle = Math.atan2(y2 - y1, x2 - x1);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+            ctx.stroke();
+        }
+
+        // Canvas events
+        const fbCanvas = document.getElementById('fbCanvas');
+        function fbXY(e) {
+            const r = fbCanvas.getBoundingClientRect();
+            const t = e.touches ? e.touches[0] : e;
+            return { x: (t.clientX - r.left) * (fbCanvas.width / r.width), y: (t.clientY - r.top) * (fbCanvas.height / r.height) };
+        }
+
+        fbCanvas.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            fbState.drawing = true;
+            const p = fbXY(e);
+            fbState.startX = p.x; fbState.startY = p.y;
+            if (fbState.tool === 'draw') {
+                fbState.history.push({ type: 'draw', color: fbState.color, points: [p] });
+            }
+        });
+
+        fbCanvas.addEventListener('pointermove', e => {
+            if (!fbState.drawing) return;
+            e.preventDefault();
+            const p = fbXY(e);
+            if (fbState.tool === 'draw') {
+                const last = fbState.history[fbState.history.length - 1];
+                if (last && last.type === 'draw') { last.points.push(p); fbRedraw(); }
+            } else if (fbState.tool === 'rect' || fbState.tool === 'arrow') {
+                fbRedraw();
+                const ctx = fbCanvas.getContext('2d');
+                ctx.strokeStyle = fbState.color;
+                ctx.lineWidth = 3;
+                if (fbState.tool === 'rect') {
+                    ctx.strokeRect(fbState.startX, fbState.startY, p.x - fbState.startX, p.y - fbState.startY);
+                } else {
+                    fbDrawArrow(ctx, fbState.startX, fbState.startY, p.x, p.y, fbState.color);
+                }
+            }
+        });
+
+        fbCanvas.addEventListener('pointerup', e => {
+            if (!fbState.drawing) return;
+            fbState.drawing = false;
+            const p = fbXY(e);
+            if (fbState.tool === 'rect') {
+                fbState.history.push({ type: 'rect', color: fbState.color, x: fbState.startX, y: fbState.startY, w: p.x - fbState.startX, h: p.y - fbState.startY });
+            } else if (fbState.tool === 'arrow') {
+                fbState.history.push({ type: 'arrow', color: fbState.color, x1: fbState.startX, y1: fbState.startY, x2: p.x, y2: p.y });
+            }
+            fbRedraw();
+        });
+
+        fbCanvas.addEventListener('pointerleave', () => { fbState.drawing = false; });
+
+        function fbSetTool(tool) {
+            fbState.tool = tool;
+            document.querySelectorAll('.fb-tool').forEach(el => el.classList.remove('active'));
+            document.getElementById('fbTool' + tool.charAt(0).toUpperCase() + tool.slice(1)).classList.add('active');
+        }
+
+        function fbSetColor(color) {
+            fbState.color = color;
+            document.querySelectorAll('.fb-color').forEach(el => el.classList.toggle('active', el.dataset.color === color));
+        }
+
+        function fbSetType(type) {
+            fbState.type = type;
+            document.querySelectorAll('.fb-type').forEach(el => el.classList.remove('active'));
+            document.getElementById('fbType' + type.charAt(0).toUpperCase() + type.slice(1)).classList.add('active');
+        }
+
+        function fbUndo() {
+            if (fbState.history.length > 0) { fbState.history.pop(); fbRedraw(); }
+        }
+
+        function fbClose() {
+            document.getElementById('fbOverlay').classList.remove('active');
+        }
+
+        async function fbSend() {
+            const comment = document.getElementById('fbComment').value.trim();
+            if (!comment) { document.getElementById('fbComment').focus(); document.getElementById('fbComment').style.borderColor='#f87171'; setTimeout(()=>document.getElementById('fbComment').style.borderColor='',1500); return; }
+            const btn = document.getElementById('fbSend');
+            btn.disabled = true; btn.textContent = 'Wird gesendet...';
+            try {
+                const imgData = document.getElementById('fbCanvas').toDataURL('image/jpeg', 0.7);
+                const section = document.querySelector('.nav-link.active')?.dataset?.section || 'unknown';
+                const r = await fetch(`${API}/feedback`, {
+                    method: 'POST',
+                    headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: fbState.type,
+                        comment: comment,
+                        screenshot: imgData,
+                        page: section,
+                        url: window.location.href,
+                        viewport: `${window.innerWidth}x${window.innerHeight}`,
+                        userAgent: navigator.userAgent.substring(0, 200)
+                    })
+                });
+                if (!r.ok) throw new Error('Send failed');
+                fbClose();
+                showToast('Feedback gesendet – danke! 🙏', 'success');
+            } catch(e) {
+                showToast('Senden fehlgeschlagen', 'error');
+                console.error('Feedback send:', e);
+            }
+            btn.disabled = false; btn.textContent = 'Senden ➤';
+        }
     </script>
 </body>
 </html>
