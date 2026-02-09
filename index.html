@@ -2045,15 +2045,20 @@
                     const statusBadge = u.is_active ? '<span class="user-badge active">Aktiv</span>' : '<span class="user-badge inactive">Inaktiv</span>';
                     const verifiedBadge = u.email_verified ? '<span class="user-badge active">✓</span>' : '<span class="user-badge inactive">✗</span>';
 
-                    // Role dropdown (not for self)
+                    // Role dropdown + admin toggle
                     const isSelf = u.email === currentUser.email;
+                    const adminToggle = !isSelf
+                        ? (u.is_admin
+                            ? `<button onclick="adminToggleAdmin('${u.id}','${u.email}',false)" style="font-size:9px;padding:2px 6px;margin-left:4px;background:transparent;color:rgba(248,113,113,0.6);border:1px solid rgba(248,113,113,0.2);border-radius:6px;cursor:pointer" title="Admin-Rechte entziehen">✕</button>`
+                            : `<button onclick="adminToggleAdmin('${u.id}','${u.email}',true)" style="font-size:9px;padding:2px 6px;margin-left:4px;background:transparent;color:rgba(251,191,36,0.5);border:1px solid rgba(251,191,36,0.2);border-radius:6px;cursor:pointer" title="Zum Admin ernennen">👑</button>`)
+                        : '';
                     const roleCell = u.is_admin
-                        ? `<span style="font-size:11px;padding:4px 10px;border-radius:12px;background:${ROLE_CONFIG.admin.color}18;color:${ROLE_CONFIG.admin.color};border:1px solid ${ROLE_CONFIG.admin.color}44;font-weight:600">Admin</span>`
+                        ? `<span style="font-size:11px;padding:4px 10px;border-radius:12px;background:${ROLE_CONFIG.admin.color}18;color:${ROLE_CONFIG.admin.color};border:1px solid ${ROLE_CONFIG.admin.color}44;font-weight:600">Admin</span>${adminToggle}`
                         : `<select onchange="adminSetRole('${u.id}',this.value)" style="font-size:11px;padding:4px 8px;background:${rc.color}12;color:${rc.color};border:1px solid ${rc.color}44;border-radius:8px;cursor:pointer;font-weight:600;appearance:auto">
                             ${Object.entries(ROLE_CONFIG).filter(([k]) => k !== 'admin').map(([k, v]) =>
                                 `<option value="${k}" ${k === userRole ? 'selected' : ''} style="color:#000">${v.label}</option>`
                             ).join('')}
-                        </select>`;
+                        </select>${adminToggle}`;
 
                     // CRM access controls (only for @fehradvice.com)
                     const isFa = u.email.toLowerCase().endsWith('@fehradvice.com');
@@ -2198,6 +2203,20 @@
                 if (!r.ok) { showToast('Fehler beim Setzen der Rolle', 'error'); return; }
                 const rc = ROLE_CONFIG[role] || ROLE_CONFIG.researcher;
                 showToast(`Rolle → ${rc.label} gesetzt`, 'success');
+                loadAdminData();
+            } catch(e) { showToast('Verbindungsfehler', 'error'); }
+        }
+
+        async function adminToggleAdmin(userId, email, makeAdmin) {
+            const action = makeAdmin ? `${email} zum Admin ernennen?` : `Admin-Rechte von ${email} entziehen?`;
+            if (!confirm(action)) return;
+            try {
+                const r = await fetch(`${API}/admin/users/${userId}/toggle-admin`, {
+                    method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_admin: makeAdmin })
+                });
+                if (!r.ok) { const d = await r.json().catch(()=>({})); showToast(d.detail || 'Fehler', 'error'); return; }
+                showToast(makeAdmin ? `${email} ist jetzt Admin 👑` : `Admin-Rechte entfernt`, 'success');
                 loadAdminData();
             } catch(e) { showToast('Verbindungsfehler', 'error'); }
         }
