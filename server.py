@@ -2732,6 +2732,148 @@ async def create_project(request: Request, user=Depends(require_auth)):
         import traceback; traceback.print_exc()
         return JSONResponse({"error": f"Fehler: {str(e)}"}, status_code=500)
 
+@app.get("/api/projects/{slug}/landing")
+async def get_project_landing(slug: str, user=Depends(require_auth)):
+    """Get project details + available customer resources for landing page"""
+    import urllib.request, ssl, yaml
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"}
+    gh_raw = {**gh, "Accept": "application/vnd.github.v3.raw"}
+
+    result = {"project": None, "resources": {}, "other_projects": []}
+
+    # 1. Load project.yaml
+    try:
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{slug}/project.yaml"
+        req = urllib.request.Request(url, headers=gh_raw)
+        project_data = yaml.safe_load(urllib.request.urlopen(req, context=ctx, timeout=15).read().decode()) or {}
+        result["project"] = project_data
+    except Exception as e:
+        logger.error(f"Landing: project load error: {e}")
+        return JSONResponse({"error": f"Projekt '{slug}' nicht gefunden"}, status_code=404)
+
+    # 2. Determine customer code/folder
+    client = project_data.get("client", {})
+    customer_code = (client.get("short_name") or client.get("customer_code") or "").lower()
+    if not customer_code:
+        # Try to extract from slug
+        customer_code = slug.split("-")[0] if "-" in slug else ""
+
+    # 3. Scan customer folder for available resources
+    if customer_code:
+        try:
+            cust_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/customers/{customer_code}"
+            req2 = urllib.request.Request(cust_url, headers=gh)
+            files = json.loads(urllib.request.urlopen(req2, context=ctx, timeout=15).read())
+
+            file_names = [f["name"] for f in files]
+            file_types = {f["name"]: f["type"] for f in files}
+            file_sizes = {f["name"]: f.get("size", 0) for f in files}
+
+            # Context vector
+            context_files = [f for f in file_names if "context" in f.lower() and f.endswith(".yaml")]
+            result["resources"]["context_vector"] = {
+                "available": len(context_files) > 0,
+                "count": len(context_files),
+                "files": context_files
+            }
+
+            # Models
+            model_files = [f for f in file_names if "model" in f.lower() and f.endswith(".yaml")]
+            result["resources"]["models"] = {
+                "available": len(model_files) > 0,
+                "count": len(model_files),
+                "files": model_files
+            }
+
+            # Profile
+            profile_files = [f for f in file_names if "profile" in f.lower() and f.endswith(".yaml")]
+            result["resources"]["profile"] = {
+                "available": len(profile_files) > 0,
+                "files": profile_files
+            }
+
+            # KPIs
+            kpi_files = [f for f in file_names if "kpi" in f.lower()]
+            result["resources"]["kpis"] = {
+                "available": len(kpi_files) > 0,
+                "files": kpi_files
+            }
+
+            # Scenarios
+            scenario_files = [f for f in file_names if "scenario" in f.lower()]
+            result["resources"]["scenarios"] = {
+                "available": len(scenario_files) > 0,
+                "count": len(scenario_files),
+                "files": scenario_files
+            }
+
+            # Personas
+            persona_files = [f for f in file_names if "persona" in f.lower()]
+            result["resources"]["personas"] = {
+                "available": len(persona_files) > 0,
+                "files": persona_files
+            }
+
+            # Documents (PDFs, MDs)
+            pdfs = [f for f in file_names if f.endswith(".pdf")]
+            mds = [f for f in file_names if f.endswith(".md")]
+            result["resources"]["documents"] = {
+                "available": len(pdfs) + len(mds) > 0,
+                "pdfs": len(pdfs),
+                "mds": len(mds),
+                "pdf_files": pdfs,
+                "md_files": mds
+            }
+
+            # Data files (CSVs)
+            csvs = [f for f in file_names if f.endswith(".csv")]
+            result["resources"]["data_files"] = {
+                "available": len(csvs) > 0,
+                "count": len(csvs),
+                "files": csvs
+            }
+
+            # Subfolders (project folders, etc.)
+            dirs = [f for f in file_names if file_types.get(f) == "dir"]
+            result["resources"]["folders"] = dirs
+
+            # Total files
+            result["resources"]["total_files"] = len(files)
+            result["resources"]["customer_code"] = customer_code
+
+        except urllib.error.HTTPError as he:
+            if he.code == 404:
+                result["resources"]["customer_folder_exists"] = False
+            else:
+                logger.warning(f"Landing: customer folder error: {he}")
+        except Exception as e:
+            logger.warning(f"Landing: customer scan error: {e}")
+
+    # 4. Find other projects for this customer (from lead-database)
+    try:
+        leads_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/sales/lead-database.yaml"
+        req3 = urllib.request.Request(leads_url, headers=gh_raw)
+        leads_data = yaml.safe_load(urllib.request.urlopen(req3, context=ctx, timeout=15).read().decode()) or {}
+        customer_name = (client.get("name") or "").lower()
+        for lead in leads_data.get("leads", []):
+            lead_company = (lead.get("company", {}).get("name", "") or "").lower()
+            lead_code = (lead.get("company", {}).get("short_name", "") or lead.get("code", "") or "").lower()
+            if customer_code and (customer_code in lead_code or customer_code in lead_company):
+                for p in lead.get("projects", []):
+                    p_name = p.get("name", "")
+                    result["other_projects"].append({
+                        "name": p_name,
+                        "status": p.get("status", ""),
+                        "id": p.get("id", ""),
+                        "period": p.get("period", ""),
+                        "deliverables_count": len(p.get("deliverables", p.get("deliverables_planned", []))),
+                    })
+    except Exception as e:
+        logger.warning(f"Landing: other projects error: {e}")
+
+    return result
+
 # Cache customer folders list
 _customer_folders_cache = {"data": [], "ts": 0}
 def _get_customer_folders():
