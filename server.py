@@ -693,7 +693,12 @@ def extract_text(file_path, file_type):
 @app.get("/")
 async def root():
     index_path = FRONTEND_DIR / "index.html"
-    if index_path.exists(): return FileResponse(str(index_path))
+    if index_path.exists():
+        r = FileResponse(str(index_path))
+        r.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        r.headers["Pragma"] = "no-cache"
+        r.headers["Expires"] = "0"
+        return r
     return {"message": "BEA Lab Upload API", "docs": "/docs"}
 
 @app.get("/static/{filepath:path}")
