@@ -269,6 +269,13 @@ def get_db():
                     # Auto-enable CRM for FehrAdvice admins (Senior Management)
                     conn.execute(text("""UPDATE users SET crm_access = TRUE, crm_role = 'admin' 
                         WHERE is_admin = TRUE AND email LIKE '%%@fehradvice.com' AND (crm_access IS NULL OR crm_access = FALSE)"""))
+                    # Also enable for known senior management
+                    conn.execute(text("""UPDATE users SET crm_access = TRUE, crm_role = 'admin', crm_owner_code = 'OWN-GF'
+                        WHERE email = 'gerhard.fehr@fehradvice.com' AND (crm_access IS NULL OR crm_access = FALSE)"""))
+                    conn.execute(text("""UPDATE users SET crm_access = TRUE, crm_role = 'admin', crm_owner_code = 'OWN-AF'
+                        WHERE email = 'andrea.fehr@fehradvice.com' AND (crm_access IS NULL OR crm_access = FALSE)"""))
+                    # Ensure known admins have is_admin flag
+                    conn.execute(text("""UPDATE users SET is_admin = TRUE WHERE email IN ('gerhard.fehr@fehradvice.com', 'andrea.fehr@fehradvice.com') AND is_admin = FALSE"""))
                     # Set initial roles for sales users
                     conn.execute(text("UPDATE users SET role = 'sales' WHERE email IN ('nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com') AND (role IS NULL OR role = 'researcher')"))
                     # Leads table
