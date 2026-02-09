@@ -1436,7 +1436,10 @@
                 <!-- Tab: Beratungsauftrag -->
                 <div class="prj-tab-content" id="prjTabAuftrag">
                     <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📋 Beratungsauftrag</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                            <div style="font-size:16px;font-weight:700;color:white">📋 Beratungsauftrag</div>
+                            <button onclick="prjStartEdit('auftrag')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                        </div>
                         <div id="prjAuftragContent" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.8"></div>
                     </div>
                 </div>
@@ -1444,7 +1447,10 @@
                 <!-- Tab: Projektplanung -->
                 <div class="prj-tab-content" id="prjTabPlanung">
                     <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📅 Projektplanung</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                            <div style="font-size:16px;font-weight:700;color:white">📅 Projektplanung</div>
+                            <button onclick="prjStartEdit('planung')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                        </div>
                         <div id="prjPlanungContent" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.8"></div>
                     </div>
                 </div>
@@ -1463,7 +1469,10 @@
                 <!-- Tab: Deliverables -->
                 <div class="prj-tab-content" id="prjTabDeliverables">
                     <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📦 Deliverables & Ergebnisse</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                            <div style="font-size:16px;font-weight:700;color:white">📦 Deliverables & Ergebnisse</div>
+                            <button onclick="prjStartEdit('deliverables')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                        </div>
                         <div id="prjDeliverablesContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
                     </div>
                 </div>
@@ -1487,7 +1496,10 @@
                 <!-- Tab: Risiken -->
                 <div class="prj-tab-content" id="prjTabRisiken">
                     <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">⚠ Risiken & Entscheidungen</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                            <div style="font-size:16px;font-weight:700;color:white">⚠ Risiken & Entscheidungen</div>
+                            <button onclick="prjStartEdit('risiken')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                        </div>
                         <div id="prjRisikenContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
                     </div>
                 </div>
@@ -1503,7 +1515,10 @@
                 <!-- Tab: Budget -->
                 <div class="prj-tab-content" id="prjTabBudget">
                     <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">💰 Budget & Abrechnung</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                            <div style="font-size:16px;font-weight:700;color:white">💰 Budget & Abrechnung</div>
+                            <button onclick="prjStartEdit('budget')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                        </div>
                         <div id="prjBudgetContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
                     </div>
                 </div>
@@ -2990,6 +3005,7 @@
         // PROJECT LANDING PAGE
         // ════════════════════════════════════════════════
         let prjLandingData = null;
+        let prjCurrentSlug = '';
 
         function prjBackToList() {
             document.getElementById('prjLandingView').style.display = 'none';
@@ -2997,6 +3013,7 @@
         }
 
         async function prjOpenLanding(slug) {
+            prjCurrentSlug = slug;
             document.getElementById('prjListView').style.display = 'none';
             document.getElementById('prjWizardView').style.display = 'none';
             document.getElementById('prjLandingView').style.display = '';
@@ -3599,7 +3616,263 @@
             }
         }
 
-        function prjAddMeeting() { showToast('Meeting-Erfassung kommt in nächster Version', 'info'); }
+        function prjAddMeeting() { prjStartEdit('meetings'); }
+
+        // ════════════════════════════════════════════════
+        // PROJECT EDIT SYSTEM
+        // ════════════════════════════════════════════════
+        let prjEditMode = false;
+
+        const prjInputStyle = 'width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;font-family:inherit;resize:vertical;outline:none;';
+        const prjBtnSave = 'padding:8px 20px;background:linear-gradient(135deg,#34d399,#2A7F8E);border:none;border-radius:8px;color:white;font-size:13px;font-weight:600;cursor:pointer;';
+        const prjBtnCancel = 'padding:8px 20px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:13px;cursor:pointer;';
+        const prjFieldLabel = 'font-size:11px;font-weight:600;color:rgba(255,255,255,0.4);margin-bottom:4px;';
+
+        function prjStartEdit(tab) {
+            prjEditMode = true;
+            const d = prjLandingData;
+            const p = d.project || {};
+
+            if (tab === 'auftrag') {
+                const obj = p.objective || {};
+                const scope = p.scope || {};
+                const project = p.project || {};
+                const fs = p.fehradvice_scope || {};
+                document.getElementById('prjAuftragContent').innerHTML = `
+                    <div style="display:flex;flex-direction:column;gap:16px">
+                        <div><div style="${prjFieldLabel}">Beratungsziel</div>
+                            <textarea id="prjEditObjSummary" style="${prjInputStyle}min-height:80px">${obj.summary || project.description || ''}</textarea></div>
+                        <div><div style="${prjFieldLabel}">Core Insight</div>
+                            <input id="prjEditCoreInsight" style="${prjInputStyle}" value="${(obj.core_insight||'').replace(/"/g,'&quot;')}" placeholder="Zentrale Erkenntnis…"></div>
+                        <div><div style="${prjFieldLabel}">In-Scope (eine Zeile pro Punkt)</div>
+                            <textarea id="prjEditInScope" style="${prjInputStyle}min-height:80px">${(scope.in_scope || fs.deliverables || []).map(s => typeof s === 'string' ? s : s.name || '').join('\n')}</textarea></div>
+                        <div><div style="${prjFieldLabel}">Out-of-Scope (eine Zeile pro Punkt)</div>
+                            <textarea id="prjEditOutScope" style="${prjInputStyle}min-height:60px">${(scope.out_of_scope || []).join('\n')}</textarea></div>
+                        <div><div style="${prjFieldLabel}">Behavioral Objectives (eine Zeile pro Ziel)</div>
+                            <textarea id="prjEditBehObj" style="${prjInputStyle}min-height:60px">${(fs.behavioral_objectives || []).join('\n')}</textarea></div>
+                        <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:8px">
+                            <button onclick="prjCancelEdit('auftrag')" style="${prjBtnCancel}">Abbrechen</button>
+                            <button onclick="prjSaveEdit('auftrag')" style="${prjBtnSave}">💾 Speichern</button>
+                        </div>
+                    </div>`;
+            }
+
+            else if (tab === 'planung') {
+                const tl = Array.isArray(p.timeline) ? p.timeline : [];
+                const rows = tl.map((m,i) => `
+                    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px" data-ms="${i}">
+                        <input style="${prjInputStyle}width:120px;flex-shrink:0" value="${m.date||''}" placeholder="YYYY-MM-DD">
+                        <input style="${prjInputStyle}flex:1" value="${(m.milestone||m.name||'').replace(/"/g,'&quot;')}" placeholder="Milestone">
+                        <select style="${prjInputStyle}width:110px;flex-shrink:0"><option ${m.status==='planned'?'selected':''}>planned</option><option ${m.status==='done'?'selected':''}>done</option><option ${m.status==='HEUTE'?'selected':''}>HEUTE</option></select>
+                        <button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(248,113,113,0.6);cursor:pointer;font-size:16px">✕</button>
+                    </div>`).join('');
+                document.getElementById('prjPlanungContent').innerHTML = `
+                    <div id="prjEditMilestones">${rows}</div>
+                    <button onclick="prjAddMilestone()" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;margin:10px 0">+ Milestone</button>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:8px">
+                        <button onclick="prjCancelEdit('planung')" style="${prjBtnCancel}">Abbrechen</button>
+                        <button onclick="prjSaveEdit('planung')" style="${prjBtnSave}">💾 Speichern</button>
+                    </div>`;
+            }
+
+            else if (tab === 'meetings') {
+                const now = new Date().toISOString().split('T')[0];
+                document.getElementById('prjMeetingsContent').innerHTML += `
+                    <div style="background:rgba(42,127,142,0.05);border:1px solid rgba(42,127,142,0.15);border-radius:10px;padding:16px;margin-top:12px">
+                        <div style="font-size:13px;font-weight:600;color:var(--accent-light);margin-bottom:12px">Neues Meeting</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                            <div><div style="${prjFieldLabel}">Datum</div><input id="prjNewMeetDate" type="date" value="${now}" style="${prjInputStyle}"></div>
+                            <div><div style="${prjFieldLabel}">Typ</div><select id="prjNewMeetType" style="${prjInputStyle}"><option>workshop</option><option>call</option><option>presentation</option><option>review</option><option>kickoff</option><option>offsite</option></select></div>
+                            <div><div style="${prjFieldLabel}">Zweck / Titel</div><input id="prjNewMeetPurpose" style="${prjInputStyle}" placeholder="Zweck des Meetings…"></div>
+                            <div><div style="${prjFieldLabel}">Modus</div><select id="prjNewMeetMode" style="${prjInputStyle}"><option>in-person</option><option>remote</option><option>hybrid</option></select></div>
+                        </div>
+                        <div style="margin-top:10px"><div style="${prjFieldLabel}">Notizen</div><textarea id="prjNewMeetNotes" style="${prjInputStyle}min-height:60px" placeholder="Agenda, Teilnehmer, Ergebnisse…"></textarea></div>
+                        <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:10px">
+                            <button onclick="prjCancelEdit('meetings')" style="${prjBtnCancel}">Abbrechen</button>
+                            <button onclick="prjSaveEdit('meetings')" style="${prjBtnSave}">💾 Meeting speichern</button>
+                        </div>
+                    </div>`;
+            }
+
+            else if (tab === 'deliverables') {
+                const deliverables = p.deliverables || p.final_deliverables || (p.fehradvice_scope||{}).deliverables || [];
+                const rows = deliverables.map((d,i) => {
+                    const name = typeof d === 'string' ? d : d.name || d.id || '';
+                    const desc = typeof d === 'object' ? d.description || '' : '';
+                    return `<div style="display:flex;gap:8px;align-items:start;margin-bottom:8px" data-del="${i}">
+                        <div style="flex:1"><input style="${prjInputStyle}" value="${name.replace(/"/g,'&quot;')}" placeholder="Name"><input style="${prjInputStyle}margin-top:4px;font-size:11px" value="${desc.replace(/"/g,'&quot;')}" placeholder="Beschreibung (optional)"></div>
+                        <button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(248,113,113,0.6);cursor:pointer;font-size:16px;margin-top:8px">✕</button>
+                    </div>`;
+                }).join('');
+                document.getElementById('prjDeliverablesContent').innerHTML = `
+                    <div id="prjEditDeliverables">${rows}</div>
+                    <button onclick="prjAddDeliverable()" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;margin:10px 0">+ Deliverable</button>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:8px">
+                        <button onclick="prjCancelEdit('deliverables')" style="${prjBtnCancel}">Abbrechen</button>
+                        <button onclick="prjSaveEdit('deliverables')" style="${prjBtnSave}">💾 Speichern</button>
+                    </div>`;
+            }
+
+            else if (tab === 'risiken') {
+                const risks = p.risks || [];
+                const rows = risks.map((r,i) => {
+                    const desc = typeof r === 'string' ? r : r.description || '';
+                    const mit = typeof r === 'object' ? r.mitigation || '' : '';
+                    return `<div style="display:flex;gap:8px;align-items:start;margin-bottom:8px;padding:10px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px" data-risk="${i}">
+                        <div style="flex:1"><input style="${prjInputStyle}" value="${desc.replace(/"/g,'&quot;')}" placeholder="Risiko-Beschreibung"><input style="${prjInputStyle}margin-top:4px;font-size:11px" value="${mit.replace(/"/g,'&quot;')}" placeholder="Mitigation"></div>
+                        <button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(248,113,113,0.6);cursor:pointer;font-size:16px;margin-top:8px">✕</button>
+                    </div>`;
+                }).join('');
+                document.getElementById('prjRisikenContent').innerHTML = `
+                    <div id="prjEditRisiken">${rows}</div>
+                    <button onclick="prjAddRisk()" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;margin:10px 0">+ Risiko</button>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:8px">
+                        <button onclick="prjCancelEdit('risiken')" style="${prjBtnCancel}">Abbrechen</button>
+                        <button onclick="prjSaveEdit('risiken')" style="${prjBtnSave}">💾 Speichern</button>
+                    </div>`;
+            }
+
+            else if (tab === 'budget') {
+                const tl = (typeof p.timeline === 'object' && !Array.isArray(p.timeline)) ? p.timeline : {};
+                document.getElementById('prjBudgetContent').innerHTML = `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                        <div><div style="${prjFieldLabel}">Budget (CHF)</div><input id="prjEditBudgetCHF" type="number" style="${prjInputStyle}" value="${tl.budget_chf||''}"></div>
+                        <div><div style="${prjFieldLabel}">Abrechnungsmodell</div><select id="prjEditBilling" style="${prjInputStyle}"><option value="">–</option><option ${tl.billing_type==='fixed'?'selected':''} value="fixed">Fixpreis</option><option ${tl.billing_type==='time_material'?'selected':''} value="time_material">Time & Material</option><option ${tl.billing_type==='retainer'?'selected':''} value="retainer">Retainer</option></select></div>
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:16px">
+                        <button onclick="prjCancelEdit('budget')" style="${prjBtnCancel}">Abbrechen</button>
+                        <button onclick="prjSaveEdit('budget')" style="${prjBtnSave}">💾 Speichern</button>
+                    </div>`;
+            }
+        }
+
+        function prjAddMilestone() {
+            const el = document.getElementById('prjEditMilestones');
+            if (!el) return;
+            el.insertAdjacentHTML('beforeend', `
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+                    <input style="${prjInputStyle}width:120px;flex-shrink:0" placeholder="YYYY-MM-DD">
+                    <input style="${prjInputStyle}flex:1" placeholder="Milestone">
+                    <select style="${prjInputStyle}width:110px;flex-shrink:0"><option>planned</option><option>done</option></select>
+                    <button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(248,113,113,0.6);cursor:pointer;font-size:16px">✕</button>
+                </div>`);
+        }
+
+        function prjAddDeliverable() {
+            const el = document.getElementById('prjEditDeliverables');
+            if (!el) return;
+            el.insertAdjacentHTML('beforeend', `
+                <div style="display:flex;gap:8px;align-items:start;margin-bottom:8px">
+                    <div style="flex:1"><input style="${prjInputStyle}" placeholder="Name"><input style="${prjInputStyle}margin-top:4px;font-size:11px" placeholder="Beschreibung (optional)"></div>
+                    <button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(248,113,113,0.6);cursor:pointer;font-size:16px;margin-top:8px">✕</button>
+                </div>`);
+        }
+
+        function prjAddRisk() {
+            const el = document.getElementById('prjEditRisiken');
+            if (!el) return;
+            el.insertAdjacentHTML('beforeend', `
+                <div style="display:flex;gap:8px;align-items:start;margin-bottom:8px;padding:10px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px">
+                    <div style="flex:1"><input style="${prjInputStyle}" placeholder="Risiko-Beschreibung"><input style="${prjInputStyle}margin-top:4px;font-size:11px" placeholder="Mitigation"></div>
+                    <button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(248,113,113,0.6);cursor:pointer;font-size:16px;margin-top:8px">✕</button>
+                </div>`);
+        }
+
+        function prjCancelEdit(tab) {
+            prjEditMode = false;
+            prjRenderTab(tab);
+        }
+
+        async function prjSaveEdit(tab) {
+            let section = '', data = {};
+
+            if (tab === 'auftrag') {
+                const summary = document.getElementById('prjEditObjSummary')?.value.trim() || '';
+                const insight = document.getElementById('prjEditCoreInsight')?.value.trim() || '';
+                const inScope = document.getElementById('prjEditInScope')?.value.split('\n').map(s=>s.trim()).filter(Boolean) || [];
+                const outScope = document.getElementById('prjEditOutScope')?.value.split('\n').map(s=>s.trim()).filter(Boolean) || [];
+                const behObj = document.getElementById('prjEditBehObj')?.value.split('\n').map(s=>s.trim()).filter(Boolean) || [];
+                // Save to multiple sections
+                try {
+                    await fetch(`${API}/projects/${prjCurrentSlug}`, { method:'PUT', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({section:'objective', data:{summary, core_insight:insight}})});
+                    await fetch(`${API}/projects/${prjCurrentSlug}`, { method:'PUT', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({section:'scope', data:{in_scope:inScope, out_of_scope:outScope}})});
+                    if (behObj.length) await fetch(`${API}/projects/${prjCurrentSlug}`, { method:'PUT', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({section:'fehradvice_scope', data:{behavioral_objectives:behObj}})});
+                    showToast('Beratungsauftrag gespeichert', 'success');
+                } catch(e) { showToast('Fehler: '+e.message,'error'); return; }
+            }
+
+            else if (tab === 'planung') {
+                const rows = document.querySelectorAll('#prjEditMilestones > div');
+                const milestones = [];
+                rows.forEach(r => {
+                    const inputs = r.querySelectorAll('input, select');
+                    if (inputs[0]?.value || inputs[1]?.value) {
+                        milestones.push({date:inputs[0].value, milestone:inputs[1].value, status:inputs[2].value});
+                    }
+                });
+                section = 'timeline'; data = milestones;
+            }
+
+            else if (tab === 'meetings') {
+                const date = document.getElementById('prjNewMeetDate')?.value || '';
+                const type = document.getElementById('prjNewMeetType')?.value || '';
+                const purpose = document.getElementById('prjNewMeetPurpose')?.value || '';
+                const mode = document.getElementById('prjNewMeetMode')?.value || '';
+                const notes = document.getElementById('prjNewMeetNotes')?.value || '';
+                if (!purpose) { showToast('Bitte Zweck eingeben','error'); return; }
+                const newSession = {id:`SES-${Date.now()}`, date, type, purpose, mode, status:'scheduled', notes};
+                section = 'sessions'; data = {action:'add', session:newSession};
+            }
+
+            else if (tab === 'deliverables') {
+                const rows = document.querySelectorAll('#prjEditDeliverables > div');
+                const items = [];
+                rows.forEach(r => {
+                    const inputs = r.querySelectorAll('input');
+                    if (inputs[0]?.value) items.push({name:inputs[0].value, description:inputs[1]?.value||''});
+                });
+                section = 'deliverables'; data = items;
+            }
+
+            else if (tab === 'risiken') {
+                const rows = document.querySelectorAll('#prjEditRisiken > div');
+                const items = [];
+                rows.forEach(r => {
+                    const inputs = r.querySelectorAll('input');
+                    if (inputs[0]?.value) items.push({description:inputs[0].value, mitigation:inputs[1]?.value||''});
+                });
+                section = 'risks'; data = items;
+            }
+
+            else if (tab === 'budget') {
+                const budgetCHF = document.getElementById('prjEditBudgetCHF')?.value || '';
+                const billing = document.getElementById('prjEditBilling')?.value || '';
+                section = 'budget'; data = {};
+                if (budgetCHF) data.budget_chf = parseInt(budgetCHF);
+                if (billing) data.billing_type = billing;
+            }
+
+            // Send to API (unless auftrag which was already sent above)
+            if (section && tab !== 'auftrag') {
+                try {
+                    const resp = await fetch(`${API}/projects/${prjCurrentSlug}`, {
+                        method: 'PUT', headers: {...H(), 'Content-Type':'application/json'},
+                        body: JSON.stringify({section, data})
+                    });
+                    if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || 'Fehler'); }
+                    showToast(`${tab} gespeichert → GitHub`, 'success');
+                } catch(e) { showToast('Fehler: '+e.message,'error'); return; }
+            }
+
+            // Reload project data
+            prjEditMode = false;
+            try {
+                const resp = await fetch(`${API}/projects/${prjCurrentSlug}/landing`, { headers: H() });
+                prjLandingData = await resp.json();
+                prjRenderLanding();
+                prjSwitchTab(tab);
+            } catch(e) { prjRenderTab(tab); }
+        }
 
         let crmCompanyFilter = null;
 
