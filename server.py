@@ -1859,15 +1859,38 @@ Frage: {question}"""
 # Relevance threshold: minimum score to use fast path
 FAST_PATH_THRESHOLD = 15
 
-# ── PROJECT CHAT: Natural language project creation ──
+# ── BEATRIX INTENT ROUTER: Universal natural language interface ──
 
-PROJECT_CHAT_SYSTEM = """Du bist BEATRIX, die Projekt-Assistentin von FehrAdvice & Partners AG.
-Der User möchte ein Projekt eröffnen oder ein bestehendes Projekt ergänzen – per natürlicher Sprache statt Formularfelder.
+CUSTOMERS_LIST = """ubs, erste-bank, lukb, alpla, a1-telekom, raiffeisen, zkb, gkb, valiant, julius-baer,
+vontobel, migros-bank, postfinance, css, helsana, swica, sanitas, kpt, concordia,
+groupe-mutuel, assura, atupri, visana, bmw, orf, srg, ringier-medien-schweiz,
+lindt-copacking, porr, neon, revolut, peek-cloppenburg, philoro, sob, spo, bfe,
+economiesuisse, prio-swiss, bekb, localsearch, zindel-united, plusminus, awe-sg"""
+
+INTENT_ROUTER_SYSTEM = """Du bist der BEATRIX Intent-Router. Analysiere die User-Nachricht und bestimme den Intent.
+
+VERFÜGBARE INTENTS:
+- "project": Projekt eröffnen, ergänzen, ändern, Status abfragen
+- "lead": Lead/Opportunity anlegen, Sales-Pipeline, Akquise
+- "model": BCM-Modell bauen, Ψ-Dimensionen, Kontextvektor, EBF-Integration, Behavioral Analysis
+- "context": Ausgangslage erfassen, Kundensituation beschreiben, Branchenkontext, Marktumfeld
+- "knowledge": Fachfrage zu Behavioral Economics, EBF, Decision Architecture (→ nutzt KB)
+- "general": Alles andere, Smalltalk, unklar
+
+Antworte NUR mit einem JSON-Objekt (keine Markdown-Backticks nötig):
+{"intent": "...", "confidence": 0.0-1.0, "entities": {"customer": "...", "project": "..."}}
+
+Erkenne Kunden auch bei ungefährer Nennung ("UBS" → "ubs", "Luzerner KB" → "lukb", "Erste" → "erste-bank").
+Extrahiere wenn möglich: customer (code), project (name/slug), und andere Schlüssel-Entitäten."""
+
+DOMAIN_PROMPTS = {
+    "project": """Du bist BEATRIX, die Projekt-Assistentin von FehrAdvice & Partners AG.
+Der User möchte ein Projekt eröffnen oder ein bestehendes Projekt ergänzen.
 
 Deine Aufgabe: Extrahiere strukturierte Projektdaten aus dem Gespräch.
 
-VERFÜGBARE FELDER:
-- customer_code: Kundencode (z.B. "ubs", "lukb", "erste-bank", "alpla")
+FELDER:
+- customer_code: Kundencode (z.B. "ubs", "lukb", "erste-bank")
 - name: Projektname (kurz, prägnant)
 - type: beratung | workshop | studie | intervention | keynote | training | retainer
 - project_category: mandat (bezahlt) | lead (Akquise) | probono (unentgeltlich)
@@ -1876,117 +1899,291 @@ VERFÜGBARE FELDER:
 - end_date: YYYY-MM-DD
 - budget_chf: Zahl (nur bei mandat)
 - billing_type: fixed | time_material | retainer
-- fa_owner: Kürzel des Projektleiters (GF=Gerhard Fehr, AF=Andrea Fehr, etc.)
+- fa_owner: Kürzel (GF=Gerhard Fehr, AF=Andrea Fehr)
 - fa_team: Liste von Team-Mitgliedern
 
-VERFÜGBARE KUNDEN (Auswahl):
-ubs, erste-bank, lukb, alpla, a1-telekom, raiffeisen, zkb, gkb, valiant, julius-baer,
-vontobel, migros-bank, postfinance, css, helsana, swica, sanitas, kpt, concordia,
-groupe-mutuel, assura, atupri, visana, bmw, orf, srg, ringier-medien-schweiz,
-lindt-copacking, porr, neon, revolut, peek-cloppenburg, philoro, sob, spo, bfe,
-economiesuisse, prio-swiss, bekb, localsearch, zindel-united, plusminus, awe-sg
+KUNDEN: """ + CUSTOMERS_LIST + """
 
 REGELN:
-1. Antworte IMMER mit einem JSON-Block in ```json ... ``` Tags
-2. Das JSON hat diese Struktur:
-{
-  "status": "complete" | "need_info",
-  "project": { ...alle erkannten Felder... },
-  "missing": ["liste", "fehlender", "pflichtfelder"],
-  "message": "Deine natürliche Antwort an den User",
-  "confidence": 0.0-1.0
-}
+1. Antworte mit JSON in ```json ... ``` Tags
+2. JSON-Struktur: {"intent":"project", "action":"create"|"update", "status":"complete"|"need_info", "data":{...felder...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
 3. Pflichtfelder: customer_code, name, project_category
-4. Bei "need_info": Frage freundlich und konkret nach den fehlenden Feldern
-5. Bei "complete": Fasse zusammen was du verstanden hast, confidence >= 0.8
-6. Wenn der User ein bestehendes Projekt ergänzen will (z.B. "füg Budget hinzu"), setze "action": "update" statt "create"
-7. Erkenne Kunden auch bei ungefährer Nennung ("UBS" → "ubs", "Luzerner KB" → "lukb", "Erste" → "erste-bank")
-8. Setze sinnvolle Defaults: type="beratung", billing="fixed", fa_owner="GF", start_date=heute
-9. Antworte auf Deutsch, kurz und professionell
-10. Wenn der User Änderungen an einem Vorschlag macht, übernimm sie in das aktualisierte JSON"""
+4. Sinnvolle Defaults: type="beratung", billing="fixed", fa_owner="GF", start_date=heute
+5. Deutsch, kurz, professionell""",
 
-@app.post("/api/chat/project-intent")
-async def chat_project_intent(request: Request, user=Depends(require_auth)):
-    """Use Claude to extract project data from natural language."""
-    import urllib.request, ssl
+    "lead": """Du bist BEATRIX, die Sales-Assistentin von FehrAdvice & Partners AG.
+Der User möchte einen Lead/eine Opportunity erfassen oder die Sales-Pipeline bearbeiten.
+
+FELDER:
+- customer_code: Kundencode (z.B. "ubs", "lukb")
+- customer_name: Voller Firmenname
+- contact_person: Ansprechpartner (Name)
+- contact_email: E-Mail
+- contact_role: Position/Rolle
+- opportunity: Kurzbeschreibung der Opportunity
+- type: beratung | workshop | studie | intervention | keynote | training | retainer
+- estimated_value_chf: Geschätzter Wert in CHF
+- probability: Gewinnwahrscheinlichkeit (0-100%)
+- stage: initial_contact | qualification | proposal | negotiation | won | lost
+- next_action: Nächster Schritt
+- next_action_date: YYYY-MM-DD
+- fa_owner: Kürzel (GF, AF, etc.)
+- source: Woher kam der Lead (referral, event, inbound, outbound, existing_client)
+- notes: Zusätzliche Infos
+
+KUNDEN: """ + CUSTOMERS_LIST + """
+
+REGELN:
+1. Antworte mit JSON in ```json ... ``` Tags
+2. JSON: {"intent":"lead", "action":"create"|"update", "status":"complete"|"need_info", "data":{...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
+3. Pflichtfelder: customer_name, opportunity, stage
+4. Defaults: stage="initial_contact", fa_owner="GF", source="inbound"
+5. Frage gezielt nach fehlenden Infos – nicht alles auf einmal
+6. Deutsch, professionell""",
+
+    "model": """Du bist BEATRIX, die Modell-Spezialistin von FehrAdvice & Partners AG.
+Der User möchte ein Behavioral-Modell erstellen oder bearbeiten, basierend auf dem Evidence-Based Framework (EBF).
+
+DU KANNST:
+- BCM (Behavioral Competence Model) Analysen erstellen
+- Ψ-Dimensionen (8 psychologische Kontextdimensionen) definieren
+- Kontextvektoren berechnen/beschreiben
+- Behavioral Objectives formulieren
+- Interventionsdesign vorschlagen
+- EBF-Axiome anwenden
+
+FELDER FÜR EIN MODELL:
+- customer_code: Für welchen Kunden
+- project_slug: Für welches Projekt (optional)
+- model_type: bcm | psi_profile | context_vector | intervention | behavioral_objectives
+- target_behavior: Welches Verhalten soll verändert werden?
+- target_group: Zielgruppe
+- psi_dimensions: Liste der relevanten Ψ-Dimensionen mit Einschätzung
+  (autonomy, certainty, fairness, belonging, status, trust, competence, meaning)
+- context_factors: Relevante Kontextfaktoren
+- current_state: Ausgangslage / Ist-Zustand
+- desired_state: Ziel-Zustand
+- hypotheses: Verhaltenshypothesen
+- interventions: Vorgeschlagene Interventionen
+- evidence_base: Wissenschaftliche Grundlage
+
+REGELN:
+1. Antworte mit JSON in ```json ... ``` Tags
+2. JSON: {"intent":"model", "action":"create"|"analyze", "status":"complete"|"need_info", "data":{...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
+3. Pflichtfelder: model_type, target_behavior ODER target_group
+4. Frage bei unklarem Scope nach: Was genau soll modelliert werden?
+5. Nutze echtes EBF/BCM-Wissen – keine generischen Antworten
+6. Deutsch, wissenschaftlich fundiert aber verständlich""",
+
+    "context": """Du bist BEATRIX, die Kontext-Analystin von FehrAdvice & Partners AG.
+Der User möchte die Ausgangslage eines Kunden oder Projekts erfassen, beschreiben oder analysieren.
+
+DU ERFASST:
+- Branchenkontext und Marktumfeld
+- Organisationskultur und -struktur
+- Aktuelle Herausforderungen und Pain Points
+- Stakeholder-Landschaft
+- Bestehende Initiativen und Maßnahmen
+- Regulatorisches Umfeld
+- Bisherige Zusammenarbeit mit FehrAdvice
+
+FELDER:
+- customer_code: Kundencode
+- project_slug: Projektbezug (optional)
+- context_type: market | organization | stakeholder | regulatory | behavioral | competitive
+- summary: Zusammenfassung der Ausgangslage
+- challenges: Liste der Herausforderungen
+- opportunities: Chancen
+- stakeholders: Relevante Stakeholder [{name, role, stance}]
+- market_factors: Marktfaktoren
+- behavioral_patterns: Beobachtete Verhaltensmuster
+- data_sources: Woher stammen die Infos
+- assessment: Eigene Einschätzung/Hypothese
+
+KUNDEN: """ + CUSTOMERS_LIST + """
+
+REGELN:
+1. Antworte mit JSON in ```json ... ``` Tags
+2. JSON: {"intent":"context", "action":"capture"|"analyze"|"update", "status":"complete"|"need_info", "data":{...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
+3. Pflichtfelder: customer_code, summary
+4. Frage gezielt nach: Welcher Kunde? Was ist die Situation? Was ist das Ziel?
+5. Strukturiere die Antwort so, dass sie direkt in ein Projekt-YAML fließen kann
+6. Deutsch, analytisch, auf den Punkt"""
+}
+
+def call_claude_json(system_prompt, messages, today):
+    """Call Claude API and extract JSON from response."""
+    import urllib.request, ssl, re
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
 
+    payload = json.dumps({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 2500,
+        "system": system_prompt + f"\n\nHeute ist: {today}",
+        "messages": messages
+    }).encode()
+    req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+        headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            "User-Agent": "BEATRIXLab/3.20"
+        })
+    resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=45).read())
+    answer = resp["content"][0]["text"]
+
+    # Try to extract JSON
+    json_match = re.search(r'```json\s*(.*?)\s*```', answer, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group(1)), answer
+        except json.JSONDecodeError:
+            pass
+    # Try raw JSON parse
+    try:
+        return json.loads(answer.strip()), answer
+    except:
+        pass
+    return None, answer
+
+
+@app.post("/api/chat/intent")
+async def chat_intent(request: Request, user=Depends(require_auth)):
+    """Universal intent router – detects what the user wants and routes to domain specialist."""
     body = await request.json()
     message = body.get("message", "").strip()
-    history = body.get("history", [])  # Previous messages in this project-chat
-    current_draft = body.get("current_draft", {})  # Current project draft
+    history = body.get("history", [])
+    current_draft = body.get("current_draft", {})
+    forced_intent = body.get("intent", "")  # Frontend can force an intent
 
     if not message:
         return JSONResponse({"error": "message required"}, status_code=400)
     if not ANTHROPIC_API_KEY:
         return JSONResponse({"error": "Claude API nicht konfiguriert"}, status_code=501)
 
-    # Build messages array with conversation history
     today = datetime.utcnow().strftime("%Y-%m-%d")
-    messages = []
 
-    # Add context about current draft if exists
-    context_note = ""
-    if current_draft:
-        context_note = f"\n\nAKTUELLER ENTWURF (vom User bereits bestätigt):\n```json\n{json.dumps(current_draft, ensure_ascii=False, indent=2)}\n```\nDer User möchte diesen Entwurf anpassen."
+    # ── Step 1: Route intent ──
+    intent = forced_intent
+    entities = {}
 
-    # Add conversation history
-    for h in history[-10:]:  # Last 10 messages
-        messages.append({"role": h["role"], "content": h["content"]})
+    if not intent:
+        # Quick classification call
+        try:
+            router_messages = [{"role": "user", "content": message}]
+            parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today)
+            if parsed:
+                intent = parsed.get("intent", "general")
+                entities = parsed.get("entities", {})
+                logger.info(f"Intent routed: {intent} (confidence: {parsed.get('confidence',0)}) for: {message[:60]}")
+            else:
+                intent = "general"
+        except Exception as e:
+            logger.warning(f"Router failed: {e}, defaulting to general")
+            intent = "general"
 
-    # Add current message
-    messages.append({"role": "user", "content": message})
-
-    system = PROJECT_CHAT_SYSTEM + f"\n\nHeute ist: {today}" + context_note
-
-    try:
-        payload = json.dumps({
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 2000,
-            "system": system,
-            "messages": messages
-        }).encode()
-        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-                "User-Agent": "BEATRIXLab/3.19"
-            })
-        resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=30).read())
-        answer = resp["content"][0]["text"]
-
-        # Extract JSON from response
-        import re
-        json_match = re.search(r'```json\s*(.*?)\s*```', answer, re.DOTALL)
-        if json_match:
-            try:
-                parsed = json.loads(json_match.group(1))
-                return {
-                    "ok": True,
-                    "status": parsed.get("status", "need_info"),
-                    "project": parsed.get("project", {}),
-                    "missing": parsed.get("missing", []),
-                    "message": parsed.get("message", ""),
-                    "confidence": parsed.get("confidence", 0),
-                    "action": parsed.get("action", "create"),
-                    "raw": answer
-                }
-            except json.JSONDecodeError:
-                pass
-
-        # Fallback: return raw answer
+    # ── Step 2: Handle knowledge/general via existing KB path ──
+    if intent in ("knowledge", "general"):
         return {
             "ok": True,
-            "status": "need_info",
-            "project": {},
-            "missing": [],
-            "message": answer,
-            "confidence": 0,
-            "action": "create"
+            "intent": intent,
+            "status": "redirect_kb",
+            "message": "",
+            "entities": entities
         }
+
+    # ── Step 3: Domain specialist ──
+    domain_prompt = DOMAIN_PROMPTS.get(intent, DOMAIN_PROMPTS.get("project"))
+
+    # Build messages with history
+    messages = []
+    for h in history[-10:]:
+        messages.append({"role": h["role"], "content": h["content"]})
+
+    # Add draft context
+    draft_note = ""
+    if current_draft:
+        draft_note = f"\n\nAKTUELLER ENTWURF:\n{json.dumps(current_draft, ensure_ascii=False, indent=2)}\nDer User möchte diesen Entwurf anpassen."
+
+    messages.append({"role": "user", "content": message})
+
+    try:
+        parsed, raw = call_claude_json(domain_prompt + draft_note, messages, today)
+
+        if parsed:
+            return {
+                "ok": True,
+                "intent": parsed.get("intent", intent),
+                "action": parsed.get("action", "create"),
+                "status": parsed.get("status", "need_info"),
+                "data": parsed.get("data", parsed.get("project", {})),
+                "missing": parsed.get("missing", []),
+                "message": parsed.get("message", ""),
+                "confidence": parsed.get("confidence", 0),
+                "entities": entities,
+                "raw": raw
+            }
+        else:
+            return {
+                "ok": True,
+                "intent": intent,
+                "status": "need_info",
+                "data": {},
+                "missing": [],
+                "message": raw,
+                "confidence": 0,
+                "entities": entities
+            }
     except Exception as e:
-        logger.error(f"Project intent error: {e}")
+        logger.error(f"Domain specialist error ({intent}): {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# Keep legacy endpoint as alias
+@app.post("/api/chat/project-intent")
+async def chat_project_intent(request: Request, user=Depends(require_auth)):
+    """Legacy alias → routes through universal intent router with forced project intent."""
+    from starlette.requests import Request as StarletteRequest
+    body = await request.json()
+    body["intent"] = "project"
+    # Remap legacy fields
+    if "current_draft" in body and "project" not in body.get("current_draft", {}):
+        body["current_draft"] = body.get("current_draft", {})
+    # Create a simple forwarding
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    message = body.get("message", "")
+    history = body.get("history", [])
+    current_draft = body.get("current_draft", {})
+    domain_prompt = DOMAIN_PROMPTS["project"]
+
+    messages = []
+    for h in history[-10:]:
+        messages.append({"role": h["role"], "content": h["content"]})
+    draft_note = ""
+    if current_draft:
+        draft_note = f"\n\nAKTUELLER ENTWURF:\n{json.dumps(current_draft, ensure_ascii=False, indent=2)}\nDer User möchte diesen Entwurf anpassen."
+    messages.append({"role": "user", "content": message})
+
+    try:
+        parsed, raw = call_claude_json(domain_prompt + draft_note, messages, today)
+        if parsed:
+            return {
+                "ok": True,
+                "intent": "project",
+                "status": parsed.get("status", "need_info"),
+                "project": parsed.get("data", parsed.get("project", {})),
+                "data": parsed.get("data", parsed.get("project", {})),
+                "missing": parsed.get("missing", []),
+                "message": parsed.get("message", ""),
+                "confidence": parsed.get("confidence", 0),
+                "action": parsed.get("action", "create")
+            }
+        return {"ok": True, "intent": "project", "status": "need_info", "project": {}, "data": {},
+                "missing": [], "message": raw, "confidence": 0, "action": "create"}
+    except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
