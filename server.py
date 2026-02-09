@@ -2293,7 +2293,70 @@ async def crm_get_companies_enriched(user=Depends(require_auth)):
                 except Exception as ce:
                     logger.warning(f"Contacts fetch: {ce}")
 
-                # Enrich each customer with contacts
+                # Fetch lead-database.yaml for full company list
+                try:
+                    url3 = f"https://api.github.com/repos/{GH_REPO}/contents/data/sales/lead-database.yaml"
+                    req3 = urllib.request.Request(url3, headers=gh_headers)
+                    leads_content = urllib.request.urlopen(req3, context=ctx, timeout=30).read().decode()
+                    leads_data = yaml.safe_load(leads_content)
+                    leads_list = leads_data.get("leads", [])
+                    
+                    # Build set of existing customer codes
+                    existing_codes = {c.get("code","").upper() for c in github_customers}
+                    
+                    # Add companies from leads that aren't in customer-registry
+                    for lead in leads_list:
+                        co = lead.get("company", {})
+                        if isinstance(co, str):
+                            co = {"name": co, "short_name": co}
+                        short = co.get("short_name", "")
+                        if not short or short.upper() in existing_codes:
+                            continue
+                        existing_codes.add(short.upper())
+                        
+                        # Extract contacts from lead
+                        lead_contacts = lead.get("contacts", [])
+                        contact_count = len(lead_contacts) if isinstance(lead_contacts, list) else 0
+                        
+                        # Extract EBF/context data
+                        ebf = lead.get("ebf_integration", {})
+                        
+                        github_customers.append({
+                            "id": lead.get("id", ""),
+                            "code": short,
+                            "name": co.get("name", short),
+                            "short_name": short,
+                            "type": "lead",
+                            "industry": lead.get("industry", ""),
+                            "country": (lead.get("headquarters", {}) or {}).get("country", "") if isinstance(lead.get("headquarters"), dict) else "",
+                            "status": lead.get("stage", ""),
+                            "profile_path": None,
+                            "context_path": None,
+                            "notes": lead.get("notes", ""),
+                            "lead_id": lead.get("id", ""),
+                            "segment": lead.get("segment", ""),
+                            "fit_score": lead.get("fit_score", 0),
+                            "engagement_score": lead.get("engagement_score", 0),
+                            "source": lead.get("source", ""),
+                            "hot_lead": lead.get("hot_lead", False),
+                            "priority": lead.get("priority", ""),
+                            "next_action": lead.get("next_action", ""),
+                            "next_action_date": lead.get("next_action_date", ""),
+                            "tags": lead.get("tags", []),
+                            "website": co.get("website", ""),
+                            "linkedin": co.get("linkedin", ""),
+                            "employee_count": lead.get("employee_count"),
+                            "revenue_eur": lead.get("revenue_eur"),
+                            "ebf_context_vectors": ebf.get("context_vectors") if isinstance(ebf, dict) else None,
+                            "ebf_applicable_models": ebf.get("applicable_models") if isinstance(ebf, dict) else None,
+                            "_lead_contacts": lead_contacts,
+                            "_contact_count": contact_count,
+                        })
+                    logger.info(f"Lead-database merged: {len(leads_list)} leads, now {len(github_customers)} total companies")
+                except Exception as le:
+                    logger.warning(f"Lead-database fetch: {le}")
+
+                # Enrich registry customers with contacts
                 for cust in github_customers:
                     code = cust.get("code", "")
                     if code in contacts_by_customer:
@@ -2369,16 +2432,33 @@ async def crm_get_companies_enriched(user=Depends(require_auth)):
                 "has_profile": bool(cust.get("profile_path")),
                 "has_context": bool(cust.get("context_path")),
                 "has_customer_folder": code.lower() in [d.lower() for d in customer_folders],
-                # CRM stats
+                # CRM stats from DB
                 "leads": ds.get("leads", 0),
                 "active_leads": ds.get("active", 0),
                 "won": ds.get("won", 0),
                 "pipeline": ds.get("pipeline", 0),
                 "db_contacts": contact_counts.get(db_match.get("id"), 0),
-                # Contact info from GitHub
-                "fa_owner": cc.get("fa_owner", ""),
-                "relationship_status": cc.get("relationship_status", ""),
-                "contact_persons": len(cc.get("contacts", [])) if isinstance(cc.get("contacts"), list) else 0,
+                # Contact info from GitHub customer-contacts
+                "fa_owner": cc.get("fa_owner", "") or cust.get("_contacts", {}).get("fa_owner", ""),
+                "relationship_status": cc.get("relationship_status", "") or cust.get("_contacts", {}).get("relationship_status", ""),
+                "contact_persons": len(cc.get("contacts", [])) if isinstance(cc.get("contacts"), list) else cust.get("_contact_count", 0),
+                # Lead-enriched fields (from lead-database.yaml)
+                "lead_id": cust.get("lead_id", ""),
+                "segment": cust.get("segment", ""),
+                "fit_score": cust.get("fit_score", 0),
+                "engagement_score": cust.get("engagement_score", 0),
+                "source": cust.get("source", ""),
+                "hot_lead": cust.get("hot_lead", False),
+                "priority": cust.get("priority", ""),
+                "next_action": cust.get("next_action", ""),
+                "next_action_date": cust.get("next_action_date", ""),
+                "tags": cust.get("tags", []),
+                "website": cust.get("website", ""),
+                "linkedin": cust.get("linkedin", ""),
+                "employee_count": cust.get("employee_count"),
+                "revenue_eur": cust.get("revenue_eur"),
+                "ebf_context_vectors": cust.get("ebf_context_vectors"),
+                "ebf_applicable_models": cust.get("ebf_applicable_models"),
             })
 
         result.sort(key=lambda x: (-x["leads"], x["name"]))
