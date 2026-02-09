@@ -999,13 +999,13 @@
         <div class="container">
             <div class="section-header">
                 <h2>CRM</h2>
-                <p>Pipeline, Kontakte und Deal-Management.</p>
+                <p>Pipeline, Kontakte und Lead-Management.</p>
             </div>
 
             <!-- KPI Cards -->
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:20px" id="crmKpis">
                 <div style="padding:14px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Aktive Deals</div>
+                    <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Aktive Leads</div>
                     <div id="crmKpiActive" style="font-size:24px;font-weight:700;color:white;margin:4px 0">–</div>
                 </div>
                 <div style="padding:14px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
@@ -1033,7 +1033,7 @@
                     <button class="fb-tool" id="crmViewTable" onclick="crmSetView('table')" style="border:none;border-radius:0;font-size:12px">☰ Tabelle</button>
                 </div>
                 <div style="flex:1"></div>
-                <button class="mb-btn mb-btn-primary" onclick="crmShowDealForm()" style="font-size:12px;padding:6px 14px">+ Neuer Deal</button>
+                <button class="mb-btn mb-btn-primary" onclick="crmShowDealForm()" style="font-size:12px;padding:6px 14px">+ Neuer Lead</button>
                 <button class="mb-btn mb-btn-back" onclick="crmSyncGithub()" style="font-size:12px;padding:6px 14px" id="crmSyncBtn">🔄 Synchronisieren</button>
             </div>
 
@@ -1046,9 +1046,9 @@
 
             <!-- New Deal Form (hidden) -->
             <div id="crmDealForm" style="display:none;padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
-                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px" id="crmDealFormTitle">Neuer Deal</div>
+                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px" id="crmDealFormTitle">Neuer Lead</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                    <input class="mb-input" id="crmDealTitle" placeholder="Deal-Titel / Projekt" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="crmDealTitle" placeholder="Lead-Titel / Projekt" style="font-size:13px;padding:8px 12px">
                     <input class="mb-input" id="crmDealCompany" placeholder="Firma" style="font-size:13px;padding:8px 12px">
                     <input class="mb-input" id="crmDealContact" placeholder="Kontaktperson" style="font-size:13px;padding:8px 12px">
                     <input class="mb-input" id="crmDealEmail" placeholder="E-Mail" style="font-size:13px;padding:8px 12px">
@@ -1087,7 +1087,7 @@
     <div id="crmDrawer" style="display:none;position:fixed;top:0;right:0;bottom:0;width:min(440px,90vw);z-index:9000;background:var(--navy-card);border-left:1px solid var(--border);box-shadow:-8px 0 30px rgba(0,0,0,0.4);overflow-y:auto;transition:transform 0.25s ease">
         <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
             <div style="flex:1">
-                <div style="font-size:16px;font-weight:700;color:white" id="crmDrawerTitle">Deal</div>
+                <div style="font-size:16px;font-weight:700;color:white" id="crmDrawerTitle">Lead</div>
                 <div style="font-size:12px;color:rgba(255,255,255,0.4)" id="crmDrawerCompany">Firma</div>
             </div>
             <button onclick="crmCloseDrawer()" style="border:none;background:none;color:rgba(255,255,255,0.4);font-size:18px;cursor:pointer;padding:4px">✕</button>
@@ -1780,7 +1780,7 @@
             if (!confirm('Kontext wirklich löschen?')) return;
             try {
                 await fetch(`${API}/contexts/${id}`, { method: 'DELETE', headers: H() });
-                showToast('Gelöscht', 'success');
+                showToast('Lead gelöscht', 'success');
                 ctxLoad();
             } catch(e) { showToast('Fehler', 'error'); }
         }
@@ -1887,7 +1887,7 @@
         }
 
         function crmRenderTable() {
-            if (!crmDeals.length) { document.getElementById('crmTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Keine Deals. Klicke «Synchronisieren» um Leads zu importieren.</div>'; return; }
+            if (!crmDeals.length) { document.getElementById('crmTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Keine Leads. Klicke «Synchronisieren» um Leads zu importieren.</div>'; return; }
             const stageMap = Object.fromEntries(CRM_STAGES.map(s => [s.id, s]));
             const rows = crmDeals.map(d => {
                 const s = stageMap[d.stage] || {};
@@ -1896,7 +1896,7 @@
                 const owner = (d.owner||'').replace('OWN-','');
                 return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer" onclick="crmOpenDeal('${d.id}')"><td style="padding:8px 10px;font-weight:500;color:white;font-size:13px">${d.title||'–'}</td><td style="padding:8px 10px;color:rgba(255,255,255,0.5);font-size:12px">${d.company_name||'–'}</td><td style="padding:8px 10px"><span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${s.color||'#94a3b8'}22;color:${s.color||'#94a3b8'};border:1px solid ${s.color||'#94a3b8'}33">${s.icon||''} ${s.label||d.stage}</span></td><td style="padding:8px 10px;color:rgba(255,255,255,0.5);font-size:12px">${val}</td><td style="padding:8px 10px;color:rgba(255,255,255,0.25);font-size:11px">${owner}</td><td style="padding:8px 10px;color:rgba(255,255,255,0.25);font-size:11px">${date}</td></tr>`;
             }).join('');
-            document.getElementById('crmTable').innerHTML = `<table style="width:100%;border-collapse:collapse"><thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08)"><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Deal</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Firma</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Stage</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Wert</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Owner</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Erstellt</th></tr></thead><tbody>${rows}</tbody></table>`;
+            document.getElementById('crmTable').innerHTML = `<table style="width:100%;border-collapse:collapse"><thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08)"><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Lead</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Firma</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Stage</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Wert</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Owner</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Erstellt</th></tr></thead><tbody>${rows}</tbody></table>`;
         }
 
         function crmShowDealForm() { const f=document.getElementById('crmDealForm'); f.style.display=f.style.display==='none'?'block':'none'; }
@@ -1904,12 +1904,12 @@
         async function crmSaveDeal() {
             const title = document.getElementById('crmDealTitle').value.trim();
             const company = document.getElementById('crmDealCompany').value.trim();
-            if (!title && !company) { showToast('Bitte Deal-Titel oder Firma', 'error'); return; }
+            if (!title && !company) { showToast('Bitte Lead-Titel oder Firma', 'error'); return; }
             try {
                 await fetch(`${API}/crm/deals`, { method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title: title||company, company_name: company, contact_name: document.getElementById('crmDealContact').value.trim(), contact_email: document.getElementById('crmDealEmail').value.trim(), value: parseFloat(document.getElementById('crmDealValue').value)||0, stage: document.getElementById('crmDealStage').value, source: document.getElementById('crmDealSource').value.trim(), next_action: document.getElementById('crmDealNextAction').value.trim(), notes: document.getElementById('crmDealNotes').value.trim() })
                 });
-                showToast('Deal erstellt ✓', 'success');
+                showToast('Lead erstellt ✓', 'success');
                 document.getElementById('crmDealForm').style.display = 'none';
                 ['crmDealTitle','crmDealCompany','crmDealContact','crmDealEmail','crmDealValue','crmDealSource','crmDealNextAction','crmDealNotes'].forEach(id => document.getElementById(id).value = '');
                 crmLoad();
@@ -1971,8 +1971,8 @@
         }
 
         async function crmDeleteDeal(id) {
-            if (!confirm('Deal löschen?')) return;
-            try { await fetch(`${API}/crm/deals/${id}`,{method:'DELETE',headers:H()}); crmCloseDrawer(); crmLoad(); showToast('Gelöscht','success'); } catch(e) { showToast('Fehler','error'); }
+            if (!confirm('Lead löschen?')) return;
+            try { await fetch(`${API}/crm/deals/${id}`,{method:'DELETE',headers:H()}); crmCloseDrawer(); crmLoad(); showToast('Lead gelöscht','success'); } catch(e) { showToast('Fehler','error'); }
         }
 
         async function crmSyncGithub() {
