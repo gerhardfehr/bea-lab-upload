@@ -845,6 +845,12 @@ def fact_check_user_claims(user_message: str, user_email: str, chat_doc_id: str 
             status_counts[r["status"]] = status_counts.get(r["status"], 0) + 1
         logger.info(f"🔍 Fact-check complete: {status_counts} for {user_email.split('@')[0]}")
 
+        # ── Sync user profile to GitHub after fact-check ──
+        try:
+            sync_user_profile_to_github(user_email)
+        except Exception as e:
+            logger.warning(f"GitHub profile sync failed: {e}")
+
     except Exception as e:
         logger.error(f"Fact-check KB search failed: {e}")
         db.rollback()
@@ -852,6 +858,269 @@ def fact_check_user_claims(user_message: str, user_email: str, chat_doc_id: str 
         db.close()
 
     return results
+
+
+def sync_user_profile_to_github(user_email: str):
+    """Build comprehensive user profile from all DB sources and push to GitHub.
+    Creates data/team/{user-slug}/profile.yaml with:
+    - Identity (name, role, company, expertise)
+    - Knowledge Calibration (accuracy, overconfidence, strengths, gaps)
+    - Behavioral Profile (Ψ-insights from onboarding)
+    - Activity (chat stats, customers worked on)
+    """
+    import yaml, re as _re
+    from sqlalchemy import text as sql_text
+
+    if not GH_TOKEN:
+        return
+
+    db = get_db()
+    try:
+        # ── 1) User identity from users table ──
+        user = db.query(User).filter(User.email == user_email).first()
+        if not user:
+            return
+
+        user_slug = _re.sub(r'[^a-z0-9]+', '-', user_email.split('@')[0].lower()).strip('-')
+        now = datetime.utcnow()
+
+        identity = {
+            "email": user.email,
+            "name": user.name or user_email.split('@')[0].replace('.', ' ').title(),
+            "role": user.role or "researcher",
+            "company": user.company or "FehrAdvice & Partners AG",
+            "position": user.position or None,
+            "expertise": user.expertise or [],
+            "linkedin_url": user.linkedin_url or None,
+            "crm_role": user.crm_role or "none",
+            "member_since": user.created_at.isoformat() if user.created_at else None,
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+        }
+
+        # ── 2) Knowledge Calibration from knowledge_checks ──
+        calibration = {"total_claims": 0}
+        try:
+            stats = db.execute(sql_text("""
+                SELECT COUNT(*),
+                       SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN verification_status='partially_verified' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN verification_status='unverified' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN verification_status='novel' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN is_quantitative=TRUE THEN 1 ELSE 0 END),
+                       AVG(confidence_score)
+                FROM knowledge_checks WHERE user_email=:e
+            """), {"e": user_email}).fetchone()
+
+            total_claims = stats[0] or 0
+            verified = stats[1] or 0
+            partial = stats[2] or 0
+            unverified = stats[3] or 0
+            novel = stats[4] or 0
+            quant = stats[5] or 0
+
+            checkable = verified + partial + unverified
+            accuracy = round(verified / checkable * 100, 1) if checkable > 0 else None
+
+            # Overconfidence
+            overconfident_pct = 0.0
+            certain_total = db.execute(sql_text(
+                "SELECT COUNT(*) FROM knowledge_checks WHERE user_email=:e AND user_certainty='certain'"
+            ), {"e": user_email}).scalar() or 0
+            if certain_total > 0:
+                oc = db.execute(sql_text("""
+                    SELECT COUNT(*) FROM knowledge_checks
+                    WHERE user_email=:e AND user_certainty='certain'
+                      AND verification_status IN ('unverified', 'novel')
+                """), {"e": user_email}).scalar() or 0
+                overconfident_pct = round(oc / certain_total * 100, 1)
+
+            # Label
+            if total_claims < 5:
+                label = "Zu wenig Daten"
+            elif accuracy and accuracy >= 70 and overconfident_pct < 20:
+                label = "Gut kalibriert"
+            elif overconfident_pct >= 30:
+                label = "Ueberschaetzt Wissen"
+            elif accuracy and accuracy >= 50:
+                label = "Vorsichtig"
+            elif novel > verified:
+                label = "Explorativ"
+            else:
+                label = "Wissensluecken"
+
+            # Topic strengths & gaps
+            strengths = db.execute(sql_text("""
+                SELECT claim_topic, COUNT(*) as cnt,
+                       SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v
+                FROM knowledge_checks
+                WHERE user_email=:e AND claim_topic IS NOT NULL AND claim_topic != ''
+                GROUP BY claim_topic HAVING COUNT(*) >= 2
+                ORDER BY (SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END)::float / COUNT(*)) DESC
+                LIMIT 5
+            """), {"e": user_email}).fetchall()
+
+            gaps = db.execute(sql_text("""
+                SELECT claim_topic, COUNT(*) as cnt,
+                       SUM(CASE WHEN verification_status IN ('unverified','novel') THEN 1 ELSE 0 END) as g
+                FROM knowledge_checks
+                WHERE user_email=:e AND claim_topic IS NOT NULL AND claim_topic != ''
+                GROUP BY claim_topic HAVING COUNT(*) >= 2
+                ORDER BY (SUM(CASE WHEN verification_status IN ('unverified','novel') THEN 1 ELSE 0 END)::float / COUNT(*)) DESC
+                LIMIT 5
+            """), {"e": user_email}).fetchall()
+
+            # Customer knowledge
+            cust_knowledge = db.execute(sql_text("""
+                SELECT customer_code, COUNT(*) as cnt,
+                       SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v,
+                       SUM(CASE WHEN verification_status='novel' THEN 1 ELSE 0 END) as n
+                FROM knowledge_checks
+                WHERE user_email=:e AND customer_code IS NOT NULL AND customer_code != ''
+                GROUP BY customer_code ORDER BY cnt DESC LIMIT 10
+            """), {"e": user_email}).fetchall()
+
+            calibration = {
+                "total_claims": total_claims,
+                "verified": verified,
+                "partially_verified": partial,
+                "unverified": unverified,
+                "novel_knowledge": novel,
+                "quantitative_claims": quant,
+                "accuracy_pct": accuracy,
+                "overconfidence_pct": overconfident_pct,
+                "calibration_label": label,
+                "strengths": [{"topic": s[0], "claims": s[1], "verified": s[2]} for s in strengths],
+                "gaps": [{"topic": g[0], "claims": g[1], "unverified": g[2]} for g in gaps],
+                "customer_knowledge": [
+                    {"customer": c[0], "claims": c[1], "verified": c[2], "novel": c[3]}
+                    for c in cust_knowledge
+                ],
+            }
+        except Exception as e:
+            logger.warning(f"Calibration data query failed: {e}")
+            db.rollback()
+
+        # ── 3) Behavioral Profile from user_insights (Ψ-dimensions) ──
+        behavioral = {}
+        try:
+            insights = db.execute(sql_text("""
+                SELECT question_category, answer_text, domain_signal, thinking_style,
+                       abstraction_level, autonomy_signal, latency_ms
+                FROM user_insights WHERE user_email=:e
+                ORDER BY created_at DESC LIMIT 20
+            """), {"e": user_email}).fetchall()
+
+            if insights:
+                domains = {}
+                styles = {}
+                for ins in insights:
+                    if ins[2]:  # domain_signal
+                        domains[ins[2]] = domains.get(ins[2], 0) + 1
+                    if ins[3]:  # thinking_style
+                        styles[ins[3]] = styles.get(ins[3], 0) + 1
+
+                avg_latency = None
+                latencies = [ins[6] for ins in insights if ins[6]]
+                if latencies:
+                    avg_latency = round(sum(latencies) / len(latencies))
+
+                behavioral = {
+                    "total_insights": len(insights),
+                    "domain_interests": dict(sorted(domains.items(), key=lambda x: -x[1])),
+                    "thinking_styles": dict(sorted(styles.items(), key=lambda x: -x[1])),
+                    "avg_response_latency_ms": avg_latency,
+                }
+        except Exception as e:
+            logger.warning(f"Behavioral profile query failed: {e}")
+            db.rollback()
+
+        # ── 4) Activity stats from chat ──
+        activity = {}
+        try:
+            chat_count = db.execute(sql_text(
+                "SELECT COUNT(*) FROM documents WHERE source_type='chat_insight' AND uploaded_by=:e"
+            ), {"e": user_email}).scalar() or 0
+
+            intent_dist = db.execute(sql_text("""
+                SELECT category, COUNT(*) FROM documents
+                WHERE source_type='chat_insight' AND uploaded_by=:e
+                GROUP BY category ORDER BY COUNT(*) DESC
+            """), {"e": user_email}).fetchall()
+
+            first_chat = db.execute(sql_text(
+                "SELECT MIN(created_at) FROM documents WHERE source_type='chat_insight' AND uploaded_by=:e"
+            ), {"e": user_email}).scalar()
+
+            activity = {
+                "total_chat_insights": chat_count,
+                "intent_distribution": {r[0]: r[1] for r in intent_dist},
+                "first_interaction": first_chat.isoformat() if first_chat else None,
+            }
+        except Exception as e:
+            logger.warning(f"Activity stats query failed: {e}")
+            db.rollback()
+
+        # ── 5) Build complete profile YAML ──
+        profile = {
+            "# BEATRIX User Profile": "Auto-generated from chat interactions and fact-checks",
+            "last_updated": now.isoformat(),
+            "identity": identity,
+            "knowledge_calibration": calibration,
+            "behavioral_profile": behavioral,
+            "activity": activity,
+        }
+
+        yaml_content = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # ── 6) Push to GitHub ──
+        gh_path = f"data/team/{user_slug}/profile.yaml"
+        result = gh_put_file(
+            GH_CONTEXT_REPO, gh_path, yaml_content,
+            f"👤 Profile update: {identity['name']} – {calibration.get('calibration_label', 'initial')}"
+        )
+        if result.get("ok"):
+            logger.info(f"👤→🐙 User profile synced to GitHub: {gh_path}")
+        else:
+            logger.warning(f"GitHub profile push failed: {result.get('error','')[:80]}")
+
+        # ── 7) Push calibration details separately (claim-level data) ──
+        try:
+            recent_checks = db.execute(sql_text("""
+                SELECT claim_text, claim_topic, customer_code, verification_status,
+                       confidence_score, is_quantitative, user_certainty, created_at
+                FROM knowledge_checks WHERE user_email=:e
+                ORDER BY created_at DESC LIMIT 50
+            """), {"e": user_email}).fetchall()
+
+            if recent_checks:
+                checks_data = {
+                    "last_updated": now.isoformat(),
+                    "user": user_email,
+                    "checks": [
+                        {
+                            "claim": r[0][:200],
+                            "topic": r[1],
+                            "customer": r[2],
+                            "status": r[3],
+                            "confidence": round(float(r[4] or 0), 2),
+                            "quantitative": bool(r[5]),
+                            "user_certainty": r[6],
+                            "date": r[7].isoformat() if r[7] else None,
+                        }
+                        for r in recent_checks
+                    ]
+                }
+                cal_yaml = yaml.dump(checks_data, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                cal_path = f"data/team/{user_slug}/calibration.yaml"
+                gh_put_file(GH_CONTEXT_REPO, cal_path, cal_yaml,
+                    f"🔍 Calibration update: {identity['name']} – {len(recent_checks)} checks")
+        except Exception as e:
+            logger.warning(f"Calibration detail push failed: {e}")
+
+    except Exception as e:
+        logger.error(f"sync_user_profile_to_github failed: {e}")
+    finally:
+        db.close()
 
 def vector_search(db, query: str, limit: int = 8) -> list:
     """Semantic search. Tries pgvector, falls back to JSON + Python cosine similarity."""
