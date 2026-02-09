@@ -999,6 +999,30 @@
         </div>
     </section>
 
+    <!-- ═══ Decision Confirmation Overlay ═══ -->
+    <div id="mbConfirmOverlay" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(8,12,24,0.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);opacity:0;transition:opacity 0.3s ease">
+        <div id="mbConfirmCard" style="position:absolute;bottom:0;left:0;right:0;background:var(--navy-mid);border-top:1px solid var(--border);padding:28px 24px 36px;transform:translateY(100%);transition:transform 0.35s cubic-bezier(0.22,1,0.36,1);max-height:70vh;overflow-y:auto">
+            <div style="max-width:680px;margin:0 auto">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                    <div id="mbConfirmIcon" style="font-size:28px;flex-shrink:0"></div>
+                    <div>
+                        <div id="mbConfirmStep" style="font-size:11px;color:var(--accent);font-weight:600;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:2px"></div>
+                        <div id="mbConfirmTitle" style="font-size:18px;font-weight:700;color:white"></div>
+                    </div>
+                </div>
+                <div id="mbConfirmBody" style="font-size:14px;line-height:1.7;color:rgba(255,255,255,0.7);margin-bottom:20px"></div>
+                <div id="mbConfirmImplication" style="background:rgba(139,170,255,0.06);border:1px solid rgba(139,170,255,0.12);border-radius:10px;padding:14px 16px;margin-bottom:24px">
+                    <div style="font-size:11px;font-weight:600;color:var(--accent);letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px">Was das bedeutet</div>
+                    <div id="mbConfirmImplText" style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.75)"></div>
+                </div>
+                <div style="display:flex;gap:12px">
+                    <button onclick="mbConfirmBack()" style="padding:12px 20px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);font-size:14px;cursor:pointer">← Andere Wahl</button>
+                    <button id="mbConfirmBtn" onclick="mbConfirmProceed()" style="flex:1;padding:12px 20px;border-radius:10px;border:none;background:var(--accent);color:white;font-size:14px;font-weight:600;cursor:pointer">Weiter →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <footer class="footer">BEATRIX – The Strategic Intelligence Suite · <a href="https://fehradvice.com" target="_blank">FehrAdvice & Partners AG</a> · Zürich</footer>
     <div class="toast-container" id="toastContainer"></div>
 
@@ -2075,7 +2099,7 @@
                     // Auto-select if nothing selected yet
                     const alreadySelected = panel.querySelector('.mb-choice.selected');
                     if (!alreadySelected) {
-                        mbSelect(choice, defaultValue);
+                        mbSelect(choice, defaultValue, true);  // silent, no confirmation
                         applied = true;
                     }
                 }
@@ -2508,7 +2532,82 @@ Antworte NUR als JSON Array:
             if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
         }
 
-        function mbSelect(el, value) {
+        // ── Choice Confirmation System ──────────────────
+        let mbPendingConfirm = null; // { step, value, nextAction }
+
+        const mbChoiceExplanations = {
+            // Step 1: Entry Point
+            'mbStep1': {
+                'theory': {
+                    icon: '📚', title: 'Theory-Driven',
+                    body: 'Du startest mit einem bestehenden EBF-Konzept aus den CORE Appendices (AAA–AW). BEATRIX leitet daraus die praktische Anwendung ab.',
+                    implication: 'BEATRIX wird zuerst relevante Theorien und Frameworks identifizieren, dann auf dein konkretes Problem anwenden. Ideal wenn du weisst, welches Konzept du nutzen möchtest.'
+                },
+                'practice': {
+                    icon: '🎯', title: 'Practice-Driven',
+                    body: 'Du startest mit deinem konkreten Problem oder Gestaltungsanlass. BEATRIX findet die passenden theoretischen Grundlagen automatisch.',
+                    implication: 'BEATRIX analysiert dein Problem und mapped es auf die relevanten BCM-Dimensionen. Der schnellste Weg zu einem anwendbaren Modell.'
+                },
+                'hybrid': {
+                    icon: '🔄', title: 'Hybrid (Iteration)',
+                    body: 'Abwechselnde Theorie-Praxis-Zyklen. Du pendelt zwischen EBF-Konzepten und praktischer Anwendung.',
+                    implication: 'BEATRIX wird iterativ vorgehen: Theorie → Praxis → Validierung → Anpassung. Braucht mehr Zeit, liefert aber das robusteste Modell.'
+                },
+                'custom': {
+                    icon: '🔧', title: 'Custom Entry Point',
+                    body: 'Du definierst den Startpunkt selbst. Maximale Flexibilität für erfahrene Modellierer.',
+                    implication: 'BEATRIX gibt dir volle Kontrolle über den Entry Point. Du kannst Theorie und Praxis frei kombinieren.'
+                }
+            },
+            // Step 2: Scope
+            'mbStep2': {
+                'decision': {
+                    icon: '⚖️', title: 'Decision (Einmalentscheidung)',
+                    body: 'Du modellierst eine diskrete Entscheidung: Ja/Nein, Option A vs. B. Typisch für Versicherungswahl, Impfentscheidung, Jobwechsel.',
+                    implication: 'Mathematik: Logistic / Binary Choice Model. BEATRIX berechnet die Wahrscheinlichkeit P(B=1) dass das Zielverhalten eintritt. Ergebnis ist eine klare Ja/Nein-Prognose mit Konfidenz.'
+                },
+                'continuous': {
+                    icon: '📈', title: 'Continuous (Wiederholtes Verhalten)',
+                    body: 'Du modellierst ein Verhalten mit variabler Intensität: Sparbetrag, Energieverbrauch, Trainingsfrequenz.',
+                    implication: 'Mathematik: CES Functional Form. BEATRIX berechnet den erwarteten Verhaltenslevel B* und die Elastizitäten der Einflussfaktoren.'
+                },
+                'process': {
+                    icon: '🔄', title: 'Process (Veränderung über Zeit)',
+                    body: 'Du modellierst eine Verhaltensveränderung über Zeit: Habit-Bildung, Adoption Journey, Lernprozesse.',
+                    implication: 'Mathematik: Dynamic BCJ Models. BEATRIX modelliert die Trajektorie und identifiziert kritische Übergangspunkte zwischen Stages.'
+                },
+                'custom': {
+                    icon: '🔧', title: 'Custom Scope',
+                    body: 'Du kombinierst oder erweiterst die Standard-Typen frei.',
+                    implication: 'Flexible Modell-Spezifikation – du definierst die funktionale Form und den Outcome-Typ selbst.'
+                }
+            },
+            // Step 3: Context Ψ
+            'mbStep3': {
+                'ggg-default': {
+                    icon: '📊', title: 'GGG Defaults',
+                    body: 'Vorkonfigurierte Ψ-Werte aus Tabelle GGG-1 basierend auf Domain und Level. Schnell und empirisch validiert.',
+                    implication: 'BEATRIX nutzt die Standard-Kalibrierung: trust, digital_adoption, autonomy, risk_aversion. Das spart ~15 Minuten und liefert robuste Baseline-Werte.'
+                },
+                'custom-psi': {
+                    icon: '🎛️', title: 'Custom Ψ-Dimensionen',
+                    body: 'Du definierst explizit welche Kontextfaktoren relevant sind – z.B. Saisonalität, Peer Effects, Availability.',
+                    implication: 'BEATRIX verwendet deine spezifischen Ψ-Dimensionen statt der Defaults. Ideal wenn du den Kontext besser kennst als die Standard-Kalibrierung.'
+                },
+                'full-8psi': {
+                    icon: '🔬', title: 'Alle 8 Ψ-Dimensionen',
+                    body: 'Vollständige Analyse aller 8 Kontextdimensionen: Institutional, Social, Knowledge, Cultural, Temporal, Economic, Motivational, Framing.',
+                    implication: 'Maximale Tiefe und Differenzierung. BEATRIX analysiert jeden Kontextfaktor einzeln und berechnet den gewichteten Gesamt-Ψ-Score. Dauert etwas länger, liefert aber die präziseste Kalibrierung.'
+                },
+                'custom': {
+                    icon: '🔧', title: 'Custom Context',
+                    body: 'Eigene Kontext-Konfiguration mit freier Ψ-Auswahl.',
+                    implication: 'Du wählst und gewichtest die Ψ-Dimensionen selbst. Für Experten mit spezifischen Kontext-Hypothesen.'
+                }
+            }
+        };
+
+        function mbSelect(el, value, silent) {
             const panel = el.closest('.mb-panel');
             panel.querySelectorAll('.mb-choice').forEach(c => c.classList.remove('selected'));
             el.classList.add('selected');
@@ -2516,6 +2615,62 @@ Antworte NUR als JSON Array:
             mbState.selections[stepId] = value;
             const btn = panel.querySelector('.mb-btn-primary');
             if (btn) btn.disabled = false;
+
+            // Show confirmation for Steps 1-3 (not on auto-default)
+            if (!silent) {
+                const expl = mbChoiceExplanations[stepId]?.[value];
+                if (expl) {
+                    const stepNum = stepId.replace('mbStep', '');
+                    const stepNames = { '1': 'Entry Point', '2': 'Scope', '3': 'Kontext Ψ' };
+                    mbPendingConfirm = { stepId, value, stepNum };
+                    mbShowConfirmation(
+                        `Schritt ${stepNum}: ${stepNames[stepNum] || ''}`,
+                        expl.icon, expl.title, expl.body, expl.implication
+                    );
+                }
+            }
+        }
+
+        function mbShowConfirmation(stepLabel, icon, title, body, implication) {
+            document.getElementById('mbConfirmStep').textContent = stepLabel;
+            document.getElementById('mbConfirmIcon').textContent = icon;
+            document.getElementById('mbConfirmTitle').textContent = title;
+            document.getElementById('mbConfirmBody').textContent = body;
+            document.getElementById('mbConfirmImplText').textContent = implication;
+
+            const overlay = document.getElementById('mbConfirmOverlay');
+            const card = document.getElementById('mbConfirmCard');
+            overlay.style.display = 'block';
+            requestAnimationFrame(() => {
+                overlay.style.opacity = '1';
+                card.style.transform = 'translateY(0)';
+            });
+        }
+
+        function mbHideConfirmation() {
+            const overlay = document.getElementById('mbConfirmOverlay');
+            const card = document.getElementById('mbConfirmCard');
+            card.style.transform = 'translateY(100%)';
+            overlay.style.opacity = '0';
+            setTimeout(() => { overlay.style.display = 'none'; }, 350);
+        }
+
+        function mbConfirmProceed() {
+            if (!mbPendingConfirm) return;
+            const { stepId, stepNum } = mbPendingConfirm;
+            mbHideConfirmation();
+
+            // Trigger the next step action
+            setTimeout(() => {
+                const nextBtn = document.querySelector(`#${stepId} .mb-btn-primary`);
+                if (nextBtn && !nextBtn.disabled) nextBtn.click();
+            }, 200);
+            mbPendingConfirm = null;
+        }
+
+        function mbConfirmBack() {
+            mbHideConfirmation();
+            mbPendingConfirm = null;
         }
 
         function mbSelectProblem(el, question) {
