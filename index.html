@@ -1021,8 +1021,8 @@
                     <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Conversion</div>
                     <div id="crmKpiConv" style="font-size:24px;font-weight:700;color:#fbbf24;margin:4px 0">–</div>
                 </div>
-                <div style="padding:14px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Firmen</div>
+                <div onclick="crmShowCompanies()" style="padding:14px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:border-color 0.2s" onmouseover="this.style.borderColor='rgba(255,255,255,0.15)'" onmouseout="this.style.borderColor='var(--border)'">
+                    <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Firmen ↗</div>
                     <div id="crmKpiCompanies" style="font-size:24px;font-weight:700;color:rgba(255,255,255,0.6);margin:4px 0">–</div>
                 </div>
             </div>
@@ -1073,6 +1073,13 @@
             </div>
 
             <!-- Kanban Board -->
+            <!-- Company Filter Banner -->
+            <div id="crmFilterBanner" style="display:none;align-items:center;gap:10px;padding:10px 16px;background:rgba(42,127,142,0.08);border:1px solid rgba(42,127,142,0.2);border-radius:10px;margin-bottom:12px">
+                <span style="font-size:12px;color:#2A7F8E">🏢 Gefiltert nach Firma</span>
+                <span style="flex:1"></span>
+                <button onclick="crmClearFilter()" style="font-size:11px;padding:4px 12px;background:rgba(42,127,142,0.15);color:#2A7F8E;border:1px solid rgba(42,127,142,0.3);border-radius:8px;cursor:pointer">✕ Filter aufheben</button>
+            </div>
+
             <div id="crmKanban" style="display:flex;gap:10px;overflow-x:auto;padding-bottom:12px;min-height:300px">
                 <!-- Columns injected by JS -->
             </div>
@@ -1094,6 +1101,21 @@
             <button onclick="crmCloseDrawer()" style="border:none;background:none;color:rgba(255,255,255,0.4);font-size:18px;cursor:pointer;padding:4px">✕</button>
         </div>
         <div id="crmDrawerContent" style="padding:16px"></div>
+    </div>
+
+    <!-- Companies Overlay -->
+    <div id="crmCompaniesOverlay" style="display:none;position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)" onclick="if(event.target===this)this.style.display='none'">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(800px,92vw);max-height:80vh;background:var(--navy-card);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;overflow:hidden">
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+                <div style="flex:1">
+                    <div style="font-size:16px;font-weight:700;color:white">🏢 Firmen</div>
+                    <div style="font-size:12px;color:rgba(255,255,255,0.4)" id="crmCompaniesCount"></div>
+                </div>
+                <input id="crmCompaniesSearch" type="text" placeholder="Suchen…" oninput="crmFilterCompanies()" style="font-size:12px;padding:6px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;width:180px;outline:none">
+                <button onclick="document.getElementById('crmCompaniesOverlay').style.display='none'" style="border:none;background:none;color:rgba(255,255,255,0.4);font-size:18px;cursor:pointer;padding:4px">✕</button>
+            </div>
+            <div id="crmCompaniesList" style="overflow-y:auto;padding:0"></div>
+        </div>
     </div>
 
     <section class="section" id="admin-section">
@@ -1848,23 +1870,36 @@
             crmRenderView();
         }
 
-        function crmRenderView() { if (crmView === 'kanban') crmRenderKanban(); else crmRenderTable(); }
+        function crmRenderView() {
+            // Show/hide filter banner
+            const banner = document.getElementById('crmFilterBanner');
+            if (banner) banner.style.display = crmCompanyFilter ? 'flex' : 'none';
+            if (crmView === 'kanban') crmRenderKanban(); else crmRenderTable();
+        }
+
+        function crmGetFilteredDeals() {
+            if (!crmCompanyFilter) return crmDeals;
+            return crmDeals.filter(d => d.company_id === crmCompanyFilter || d.company === crmCompanyFilter);
+        }
+
+        function crmClearFilter() { crmCompanyFilter = null; crmRenderView(); }
 
         function crmRenderKanban() {
             const container = document.getElementById('crmKanban');
+            const deals = crmGetFilteredDeals();
             container.innerHTML = CRM_PIPELINE.map(stageId => {
                 const stage = CRM_STAGES.find(s => s.id === stageId);
-                const deals = crmDeals.filter(d => d.stage === stageId);
-                const stageValue = deals.reduce((s, d) => s + (d.value || 0), 0);
+                const stageDeals = deals.filter(d => d.stage === stageId);
+                const stageValue = stageDeals.reduce((s, d) => s + (d.value || 0), 0);
                 return `<div class="crm-col" data-stage="${stageId}" ondragover="event.preventDefault();this.style.background='rgba(139,170,255,0.05)'" ondragleave="this.style.background=''" ondrop="crmDrop(event,'${stageId}');this.style.background=''">
                     <div style="padding:10px 12px;border-bottom:2px solid ${stage.color};display:flex;align-items:center;gap:6px">
                         <span style="font-size:11px">${stage.icon}</span>
                         <span style="font-size:12px;font-weight:600;color:white;flex:1">${stage.label}</span>
-                        <span style="font-size:11px;color:rgba(255,255,255,0.3)">${deals.length}</span>
+                        <span style="font-size:11px;color:rgba(255,255,255,0.3)">${stageDeals.length}</span>
                     </div>
                     <div style="padding:6px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;max-height:60vh">
-                        ${deals.length === 0 ? '<div style="text-align:center;padding:16px;font-size:11px;color:rgba(255,255,255,0.15)">–</div>' :
-                        deals.map(d => crmRenderCard(d, stage.color)).join('')}
+                        ${stageDeals.length === 0 ? '<div style="text-align:center;padding:16px;font-size:11px;color:rgba(255,255,255,0.15)">–</div>' :
+                        stageDeals.map(d => crmRenderCard(d, stage.color)).join('')}
                     </div>
                 </div>`;
             }).join('');
@@ -1902,9 +1937,10 @@
         }
 
         function crmRenderTable() {
-            if (!crmDeals.length) { document.getElementById('crmTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Keine Leads. Klicke «Synchronisieren» um Leads zu importieren.</div>'; return; }
+            const deals = crmGetFilteredDeals();
+            if (!deals.length) { document.getElementById('crmTable').innerHTML = `<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">${crmCompanyFilter ? 'Keine Leads für diese Firma.' : 'Keine Leads. Klicke «Synchronisieren» um Leads zu importieren.'} ${crmCompanyFilter ? '<br><a style="color:var(--accent);cursor:pointer" onclick="crmClearFilter()">Filter aufheben</a>' : ''}</div>`; return; }
             const stageMap = Object.fromEntries(CRM_STAGES.map(s => [s.id, s]));
-            const rows = crmDeals.map(d => {
+            const rows = deals.map(d => {
                 const s = stageMap[d.stage] || {};
                 const date = d.created_at ? new Date(d.created_at).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
                 const val = d.value ? new Intl.NumberFormat('de-CH').format(d.value) + ' CHF' : '–';
@@ -1968,6 +2004,92 @@
         }
 
         function crmCloseDrawer() { document.getElementById('crmDrawer').style.display = 'none'; }
+
+        let crmCompaniesData = [];
+        async function crmShowCompanies() {
+            document.getElementById('crmCompaniesOverlay').style.display = 'flex';
+            document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Laden…</div>';
+            try {
+                const [compR, dealsR] = await Promise.all([
+                    fetch(`${API}/crm/companies`, { headers: H() }),
+                    fetch(`${API}/crm/deals`, { headers: H() })
+                ]);
+                crmCompaniesData = compR.ok ? await compR.json() : [];
+                const deals = dealsR.ok ? await dealsR.json() : [];
+                // Enrich with deal counts
+                const dealsByCompany = {};
+                deals.forEach(d => {
+                    const cid = d.company_id || d.company;
+                    if (!cid) return;
+                    if (!dealsByCompany[cid]) dealsByCompany[cid] = { count: 0, active: 0, won: 0, pipeline: 0 };
+                    dealsByCompany[cid].count++;
+                    if (['Prospect','Qualified','Proposal','Negotiation','Active'].includes(d.stage)) dealsByCompany[cid].active++;
+                    if (d.stage === 'Won') dealsByCompany[cid].won++;
+                    dealsByCompany[cid].pipeline += parseFloat(d.value || 0);
+                });
+                crmCompaniesData.forEach(c => {
+                    const stats = dealsByCompany[c.id] || dealsByCompany[c.name] || { count: 0, active: 0, won: 0, pipeline: 0 };
+                    c._deals = stats.count;
+                    c._active = stats.active;
+                    c._won = stats.won;
+                    c._pipeline = stats.pipeline;
+                });
+                crmCompaniesData.sort((a, b) => (b._deals - a._deals) || a.name.localeCompare(b.name));
+                document.getElementById('crmCompaniesCount').textContent = `${crmCompaniesData.length} Firmen`;
+                crmFilterCompanies();
+            } catch(e) {
+                document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:var(--error)">Fehler beim Laden</div>';
+            }
+        }
+
+        function crmFilterCompanies() {
+            const q = (document.getElementById('crmCompaniesSearch')?.value || '').toLowerCase();
+            const filtered = q ? crmCompaniesData.filter(c =>
+                (c.name || '').toLowerCase().includes(q) ||
+                (c.industry || '').toLowerCase().includes(q) ||
+                (c.domain || '').toLowerCase().includes(q)
+            ) : crmCompaniesData;
+
+            if (!filtered.length) {
+                document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Keine Firmen gefunden</div>';
+                return;
+            }
+
+            const rows = filtered.map(c => {
+                const ind = c.industry ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(42,127,142,0.1);color:#2A7F8E;border:1px solid rgba(42,127,142,0.2)">${c.industry}</span>` : '';
+                const size = c.size ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">${c.size}</span>` : '';
+                const dealsBadge = c._deals > 0
+                    ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(251,191,36,0.1);color:#fbbf24">${c._deals} Lead${c._deals>1?'s':''}</span>`
+                    : '<span style="font-size:10px;color:rgba(255,255,255,0.15)">–</span>';
+                const wonBadge = c._won > 0 ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(52,211,153,0.1);color:#34d399">${c._won} Won</span>` : '';
+                const pipeline = c._pipeline > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">${new Intl.NumberFormat('de-CH',{notation:'compact'}).format(c._pipeline)} CHF</span>` : '';
+                const domain = c.domain ? `<span style="font-size:10px;color:rgba(255,255,255,0.25)">${c.domain}</span>` : '';
+                return `<div style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="crmShowCompanyDeals('${c.id}','${(c.name||'').replace(/'/g,'')}')">
+                    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,rgba(42,127,142,0.15),rgba(27,54,93,0.3));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#2A7F8E;flex-shrink:0">${(c.name||'?')[0].toUpperCase()}</div>
+                    <div style="flex:1;min-width:0">
+                        <div style="font-weight:600;color:white;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name || '–'}</div>
+                        <div style="display:flex;gap:6px;align-items:center;margin-top:2px;flex-wrap:wrap">${ind}${size}${domain}</div>
+                    </div>
+                    <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">${pipeline}${dealsBadge}${wonBadge}</div>
+                </div>`;
+            }).join('');
+            document.getElementById('crmCompaniesList').innerHTML = rows;
+        }
+
+        function crmShowCompanyDeals(companyId, companyName) {
+            document.getElementById('crmCompaniesOverlay').style.display = 'none';
+            // Filter deals view to this company
+            const searchInput = document.getElementById('crmCompaniesSearch');
+            if (searchInput) searchInput.value = '';
+            // Switch to table view and filter
+            if (crmView !== 'table') crmSetView('table');
+            // Set a filter (temporary)
+            crmCompanyFilter = companyId;
+            crmRenderView();
+            showToast(`Leads von ${companyName}`, 'info');
+        }
+
+        let crmCompanyFilter = null;
 
         async function crmChangeStage(dealId, ns) {
             try { await fetch(`${API}/crm/deals/${dealId}`, { method:'PUT', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({stage:ns}) }); crmCloseDrawer(); crmLoad(); showToast('Stage → '+ns, 'success'); } catch(e) { showToast('Fehler','error'); }
