@@ -635,7 +635,7 @@ def send_verification_email(email, name, token):
     except Exception as e:
         logger.error(f"Failed to send verification email to {email}: {e}")
         return False
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["https://bea-lab.io", "https://www.bea-lab.io", "https://bea-lab-frontend.vercel.app", "http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
 class RegisterRequest(BaseModel):
