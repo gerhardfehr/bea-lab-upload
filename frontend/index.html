@@ -60,9 +60,23 @@
         .nav-brand { display:flex; align-items:center; gap:14px; text-decoration:none; }
         .nav-logo-img { height:34px; width:auto; border-radius:6px; }
         .nav-title { font-size:16px; font-weight:700; color:var(--white); letter-spacing:1.5px; text-transform:uppercase; }
-        .nav-links { display:flex; align-items:center; gap:8px; }
+        .nav-links { display:flex; align-items:center; gap:4px; }
         .nav-link { padding:8px 16px; font-size:13px; font-weight:500; color:var(--text-secondary); text-decoration:none; border-radius:var(--radius-sm); transition:var(--transition); }
         .nav-link:hover, .nav-link.active { color:var(--white); background:var(--navy-mid); }
+        /* ── Nav Dropdowns ── */
+        .nav-dropdown { position:relative; }
+        .nav-dropdown-trigger { padding:8px 16px; font-size:13px; font-weight:500; color:var(--text-secondary); border-radius:var(--radius-sm); transition:var(--transition); cursor:pointer; display:flex; align-items:center; gap:6px; background:none; border:none; font-family:inherit; }
+        .nav-dropdown-trigger:hover, .nav-dropdown-trigger.active { color:var(--white); background:var(--navy-mid); }
+        .nav-dropdown-trigger svg { width:10px; height:10px; opacity:0.5; transition:transform 0.2s; }
+        .nav-dropdown.open .nav-dropdown-trigger svg { transform:rotate(180deg); }
+        .nav-dropdown-menu { display:none; position:absolute; top:calc(100% + 6px); left:0; min-width:200px; background:var(--navy-mid); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 12px 32px rgba(0,0,0,0.4); padding:6px; z-index:200; }
+        .nav-dropdown.open .nav-dropdown-menu { display:block; }
+        .nav-dropdown-item { display:flex; align-items:center; gap:10px; padding:10px 14px; font-size:13px; font-weight:500; color:var(--text-secondary); text-decoration:none; border-radius:var(--radius-sm); transition:var(--transition); cursor:pointer; white-space:nowrap; }
+        .nav-dropdown-item:hover { color:var(--white); background:rgba(255,255,255,0.06); }
+        .nav-dropdown-item.active { color:var(--white); background:rgba(255,255,255,0.08); }
+        .nav-dropdown-item svg { width:15px; height:15px; opacity:0.5; flex-shrink:0; }
+        .nav-dropdown-item:hover svg { opacity:0.8; }
+        .nav-dropdown-divider { height:1px; background:var(--border); margin:4px 6px; }
         .nav-right { display:flex; align-items:center; gap:12px; }
         .nav-status { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:500; color:var(--success); padding:5px 12px; background:var(--success-bg); border-radius:20px; }
         .nav-status .dot { width:6px; height:6px; border-radius:50%; background:var(--success); animation:pulse 2s infinite; }
@@ -480,21 +494,54 @@
     <nav class="nav">
         <a href="#" class="nav-brand" onclick="showSection('hero')"><img src="/logo.jpeg" alt="BEATRIX" class="nav-logo-img"><span class="nav-title">BEATRIX</span></a>
         <div class="nav-links">
-            <a href="#" class="nav-link active" data-section="chat" onclick="showSection('chat',this)">Fragen</a>
-            <a href="#" class="nav-link" data-section="model" onclick="showSection('model',this)">Modell-Building</a>
-            <a href="#" class="nav-link" data-section="upload" onclick="showSection('upload',this)">Upload</a>
-            <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
-            <a href="#" class="nav-link" data-section="profile" onclick="showSection('profile',this)">Profil</a>
-            <a href="#" class="nav-link" data-section="context" id="navContext" onclick="showSection('context',this)" style="display:none">Ausgangslage</a>
-            <a href="#" class="nav-link" data-section="leads" id="navLeads" onclick="showSection('leads',this)" style="display:none">CRM</a>
-            <a href="#" class="nav-link" data-section="companies" id="navCompanies" onclick="showSection('companies',this)" style="display:none">Firmen</a>
-            <a href="#" class="nav-link" data-section="projects" id="navProjects" onclick="showSection('projects',this)" style="display:none">Projekte</a>
-            <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">Admin</a>
+            <a href="#" class="nav-link active" data-section="chat" onclick="showSection('chat',this)">💬 Fragen</a>
+            <a href="#" class="nav-link" data-section="model" onclick="showSection('model',this)">🧠 Modell</a>
+            <div class="nav-dropdown" id="navDropWissen">
+                <button class="nav-dropdown-trigger" onclick="toggleDropdown('navDropWissen')">
+                    📚 Wissen <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-dropdown-menu">
+                    <a class="nav-dropdown-item" data-section="upload" onclick="navDropClick('upload',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload
+                    </a>
+                    <a class="nav-dropdown-item" data-section="documents" onclick="navDropClick('documents',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Dokumente
+                    </a>
+                </div>
+            </div>
+            <div class="nav-dropdown" id="navDropBusiness" style="display:none">
+                <button class="nav-dropdown-trigger" onclick="toggleDropdown('navDropBusiness')">
+                    📊 Business <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-dropdown-menu">
+                    <a class="nav-dropdown-item" id="navDropContext" data-section="context" onclick="navDropClick('context',this)" style="display:none">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        Ausgangslage
+                    </a>
+                    <a class="nav-dropdown-item" id="navDropLeads" data-section="leads" onclick="navDropClick('leads',this)" style="display:none">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        CRM
+                    </a>
+                    <a class="nav-dropdown-item" id="navDropCompanies" data-section="companies" onclick="navDropClick('companies',this)" style="display:none">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                        Firmen
+                    </a>
+                    <a class="nav-dropdown-item" id="navDropProjects" data-section="projects" onclick="navDropClick('projects',this)" style="display:none">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                        Projekte
+                    </a>
+                </div>
+            </div>
         </div>
         <div class="nav-right">
             <div class="nav-status"><span class="dot"></span> Online</div>
             <span style="font-size:10px;color:rgba(255,255,255,0.15);margin-left:4px" id="appVersion">v3.17</span>
-            <span class="nav-user" id="navUser" onclick="showSection('profile',document.querySelector('[data-section=profile]'))" title="Profil"></span>
+            <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none" title="Admin">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </a>
+            <span class="nav-user" id="navUser" onclick="showSection('profile')" title="Profil"></span>
             <button class="nav-logout" onclick="doLogout()">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 Abmelden
@@ -2047,7 +2094,15 @@
 
         // ── App Logic ───────────────────────────────────
         function showSection(name,el) {
-            if(el){document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));el.classList.add('active');}
+            // Close any open dropdowns
+            document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            // Clear all active states
+            document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
+            document.querySelectorAll('.nav-dropdown-trigger').forEach(t=>t.classList.remove('active'));
+            document.querySelectorAll('.nav-dropdown-item').forEach(i=>i.classList.remove('active'));
+            // Set active state
+            if(el && el.classList.contains('nav-link')) el.classList.add('active');
+            // Show section
             document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
             const sec=document.getElementById(name+'-section'); if(sec) sec.classList.add('active');
             document.getElementById('hero-section').style.display = (name==='upload') ? '' : 'none';
@@ -2061,6 +2116,44 @@
             if(name==='chat') { loadChatHistory(); document.getElementById('chatInput').focus(); }
             if(name==='model') { if (!mbUserProfile) mbLoadUserProfile().then(() => mbApplyDefault('start')); }
         }
+
+        function toggleDropdown(id) {
+            const dd = document.getElementById(id);
+            const wasOpen = dd.classList.contains('open');
+            document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            if (!wasOpen) dd.classList.add('open');
+        }
+
+        function navDropClick(section, itemEl) {
+            // Close dropdown
+            document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            // Clear all actives
+            document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
+            document.querySelectorAll('.nav-dropdown-trigger').forEach(t=>t.classList.remove('active'));
+            document.querySelectorAll('.nav-dropdown-item').forEach(i=>i.classList.remove('active'));
+            // Mark dropdown item + parent trigger as active
+            if(itemEl) itemEl.classList.add('active');
+            const parentTrigger = itemEl?.closest('.nav-dropdown')?.querySelector('.nav-dropdown-trigger');
+            if(parentTrigger) parentTrigger.classList.add('active');
+            // Show the section
+            document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+            const sec=document.getElementById(section+'-section'); if(sec) sec.classList.add('active');
+            document.getElementById('hero-section').style.display = (section==='upload') ? '' : 'none';
+            if(section==='documents') loadDocuments();
+            if(section==='admin') loadAdminData();
+            if(section==='context') ctxLoad();
+            if(section==='leads') crmLoad();
+            if(section==='companies') crmLoadCompanies();
+            if(section==='projects') prjLoad();
+            if(section==='profile') loadProfile();
+        }
+
+        // Close dropdowns on outside click
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.nav-dropdown')) {
+                document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            }
+        });
         function switchTab(tab,el) { currentTab=tab; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); document.getElementById('file-section').classList.toggle('active',tab==='file'); document.getElementById('text-section').classList.toggle('active',tab==='text'); updateCount(); }
         function selectDB(el) { document.querySelectorAll('.db-option').forEach(o=>o.classList.remove('selected')); el.classList.add('selected'); selectedDB=el.dataset.db; }
 
@@ -2124,28 +2217,32 @@
             const hasCrmAccess = currentUser?.crm_access || false;
             console.log('applyUserTabs - email:', email, 'admin:', isAdmin, 'role:', role, 'crm:', hasCrmAccess);
 
-            // Admin tab (only for admins)
+            // Admin gear icon (only for admins)
             const adminEl = document.getElementById('navAdmin');
             if (adminEl) adminEl.style.display = isAdmin ? 'inline' : 'none';
 
-            // CRM tab: only for @fehradvice.com with explicit crm_access
-            const crmEl = document.getElementById('navLeads');
-            if (crmEl) {
-                const showCrm = isFehrAdvice && hasCrmAccess;
-                crmEl.style.display = showCrm ? 'inline' : 'none';
-                console.log('CRM tab', showCrm ? 'SHOWN' : 'hidden', '(FA:', isFehrAdvice, 'access:', hasCrmAccess + ')');
-                // Firmen tab: same visibility as CRM
-                const compEl = document.getElementById('navCompanies');
-                if (compEl) compEl.style.display = showCrm ? 'inline' : 'none';
-                // Projekte tab: same visibility as CRM
-                const projEl = document.getElementById('navProjects');
-                if (projEl) projEl.style.display = showCrm ? 'inline' : 'none';
+            // Business dropdown items
+            const showCrm = isFehrAdvice && hasCrmAccess;
+            const visibleTabs = isAdmin ? ['context'] : (ROLE_TABS[role] || []);
+            const showContext = visibleTabs.includes('context');
+
+            const ctxEl = document.getElementById('navDropContext');
+            if (ctxEl) ctxEl.style.display = showContext ? 'flex' : 'none';
+            const leadsEl = document.getElementById('navDropLeads');
+            if (leadsEl) leadsEl.style.display = showCrm ? 'flex' : 'none';
+            const compEl = document.getElementById('navDropCompanies');
+            if (compEl) compEl.style.display = showCrm ? 'flex' : 'none';
+            const projEl = document.getElementById('navDropProjects');
+            if (projEl) projEl.style.display = showCrm ? 'flex' : 'none';
+
+            // Show/hide entire Business dropdown based on whether any item is visible
+            const businessDrop = document.getElementById('navDropBusiness');
+            if (businessDrop) {
+                const anyBusinessVisible = showContext || showCrm;
+                businessDrop.style.display = anyBusinessVisible ? 'flex' : 'none';
             }
 
-            // Context/Ausgangslage tab: role-based
-            const ctxEl = document.getElementById('navContext');
-            const visibleTabs = isAdmin ? ['context'] : (ROLE_TABS[role] || []);
-            if (ctxEl) ctxEl.style.display = visibleTabs.includes('context') ? 'inline' : 'none';
+            console.log('Nav: Business=' + (showContext || showCrm), 'CRM=' + showCrm, 'Context=' + showContext, 'Admin=' + isAdmin);
         }
 
         // ── Kontext / Ausgangslage ──────────────────────
@@ -6677,7 +6774,7 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
     async function fbAnalyzeScreen() {
         const colors = ['#f87171', '#fbbf24', '#34d399'];
         try {
-            const section = document.querySelector('.nav-link.active')?.dataset?.section || 'unknown';
+            const section = (document.querySelector('.nav-link.active')?.dataset?.section || document.querySelector('.nav-dropdown-item.active')?.dataset?.section || 'unknown');
             const r = await fetch(`${API}/feedback/analyze`, {
                 method: 'POST',
                 headers: { ...H(), 'Content-Type': 'application/json' },
@@ -6821,7 +6918,7 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
         const btn = document.getElementById('fbSend'); btn.disabled = true; btn.textContent = '...';
         try {
             const imgData = document.getElementById('fbCanvas').toDataURL('image/jpeg', 0.7);
-            const section = document.querySelector('.nav-link.active')?.dataset?.section || 'unknown';
+            const section = (document.querySelector('.nav-link.active')?.dataset?.section || document.querySelector('.nav-dropdown-item.active')?.dataset?.section || 'unknown');
             const r = await fetch(`${API}/feedback`, { method:'POST', headers:{...H(),'Content-Type':'application/json'},
                 body: JSON.stringify({ type:fbState.type, comment, screenshot:imgData, page:section, url:window.location.href, viewport:`${window.innerWidth}x${window.innerHeight}`, userAgent:navigator.userAgent.substring(0,200) })
             });
