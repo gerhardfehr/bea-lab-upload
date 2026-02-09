@@ -248,6 +248,63 @@ def get_db():
                         notes TEXT, created_by VARCHAR(320),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    # ── CRM Tables ──
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS crm_companies (
+                        id VARCHAR PRIMARY KEY,
+                        name VARCHAR(500) NOT NULL,
+                        domain VARCHAR(200),
+                        industry VARCHAR(200),
+                        size VARCHAR(50),
+                        website VARCHAR(500),
+                        address TEXT,
+                        notes TEXT,
+                        created_by VARCHAR(320),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS crm_contacts (
+                        id VARCHAR PRIMARY KEY,
+                        company_id VARCHAR REFERENCES crm_companies(id),
+                        name VARCHAR(300) NOT NULL,
+                        email VARCHAR(320),
+                        phone VARCHAR(50),
+                        position VARCHAR(200),
+                        role_type VARCHAR(50) DEFAULT 'kontakt',
+                        psi_profile JSON,
+                        notes TEXT,
+                        created_by VARCHAR(320),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS crm_deals (
+                        id VARCHAR PRIMARY KEY,
+                        company_id VARCHAR REFERENCES crm_companies(id),
+                        contact_id VARCHAR REFERENCES crm_contacts(id),
+                        title VARCHAR(500) NOT NULL,
+                        stage VARCHAR(50) DEFAULT 'erstkontakt',
+                        value REAL DEFAULT 0,
+                        probability INTEGER DEFAULT 10,
+                        source VARCHAR(200),
+                        next_action VARCHAR(500),
+                        next_action_date DATE,
+                        owner VARCHAR(320),
+                        context_id VARCHAR,
+                        notes TEXT,
+                        closed_at TIMESTAMP,
+                        lost_reason TEXT,
+                        created_by VARCHAR(320),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS crm_activities (
+                        id VARCHAR PRIMARY KEY,
+                        deal_id VARCHAR REFERENCES crm_deals(id),
+                        company_id VARCHAR REFERENCES crm_companies(id),
+                        contact_id VARCHAR REFERENCES crm_contacts(id),
+                        type VARCHAR(30) NOT NULL,
+                        subject VARCHAR(500),
+                        description TEXT,
+                        due_date TIMESTAMP,
+                        done BOOLEAN DEFAULT FALSE,
+                        created_by VARCHAR(320),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     # Contexts / Ausgangslage table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS contexts (
                         id VARCHAR PRIMARY KEY, client VARCHAR(500),
@@ -2060,6 +2117,492 @@ async def admin_embed_all(user=Depends(require_auth)):
     finally: db.close()
 
 # ── Leads API ────────────────────────────────────
+# ══════════════════════════════════════════════════════
+# ── CRM API ──────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+
+CRM_STAGES = ['prospect', 'qualified', 'proposal', 'negotiation', 'won', 'active', 'dormant', 'churned', 'lost']
+CRM_STAGE_PROB = {'prospect': 10, 'qualified': 25, 'proposal': 50, 'negotiation': 75, 'won': 100, 'active': 100, 'dormant': 5, 'churned': 0, 'lost': 0, 'closed_won': 100}
+
+# ── Companies ──
+@app.get("/api/crm/companies")
+async def crm_get_companies(user=Depends(require_auth)):
+    db = get_db()
+    try:
+        rows = db.execute(text("SELECT * FROM crm_companies ORDER BY updated_at DESC")).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except: return []
+    finally: db.close()
+
+@app.post("/api/crm/companies")
+async def crm_create_company(request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        data = await request.json()
+        cid = str(uuid.uuid4())[:8]
+        db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, size, website, address, notes, created_by)
+            VALUES (:id, :name, :domain, :industry, :size, :website, :address, :notes, :cb)"""),
+            {"id": cid, "name": data.get("name",""), "domain": data.get("domain",""),
+             "industry": data.get("industry",""), "size": data.get("size",""),
+             "website": data.get("website",""), "address": data.get("address",""),
+             "notes": data.get("notes",""), "cb": user["sub"]})
+        db.commit()
+        return {"id": cid, "status": "created"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.put("/api/crm/companies/{cid}")
+async def crm_update_company(cid: str, request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        data = await request.json()
+        sets, params = [], {"id": cid}
+        for f in ["name","domain","industry","size","website","address","notes"]:
+            if f in data: sets.append(f"{f} = :{f}"); params[f] = data[f]
+        if not sets: return {"status": "no changes"}
+        sets.append("updated_at = CURRENT_TIMESTAMP")
+        db.execute(text(f"UPDATE crm_companies SET {', '.join(sets)} WHERE id = :id"), params)
+        db.commit()
+        return {"status": "updated"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+# ── Contacts ──
+@app.get("/api/crm/contacts")
+async def crm_get_contacts(user=Depends(require_auth), company_id: str = None):
+    db = get_db()
+    try:
+        if company_id:
+            rows = db.execute(text("SELECT * FROM crm_contacts WHERE company_id = :cid ORDER BY updated_at DESC"), {"cid": company_id}).fetchall()
+        else:
+            rows = db.execute(text("SELECT * FROM crm_contacts ORDER BY updated_at DESC")).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except: return []
+    finally: db.close()
+
+@app.post("/api/crm/contacts")
+async def crm_create_contact(request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        data = await request.json()
+        cid = str(uuid.uuid4())[:8]
+        db.execute(text("""INSERT INTO crm_contacts (id, company_id, name, email, phone, position, role_type, notes, created_by)
+            VALUES (:id, :company_id, :name, :email, :phone, :position, :role_type, :notes, :cb)"""),
+            {"id": cid, "company_id": data.get("company_id"), "name": data.get("name",""),
+             "email": data.get("email",""), "phone": data.get("phone",""),
+             "position": data.get("position",""), "role_type": data.get("role_type","kontakt"),
+             "notes": data.get("notes",""), "cb": user["sub"]})
+        db.commit()
+        return {"id": cid, "status": "created"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.put("/api/crm/contacts/{cid}")
+async def crm_update_contact(cid: str, request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        data = await request.json()
+        sets, params = [], {"id": cid}
+        for f in ["company_id","name","email","phone","position","role_type","psi_profile","notes"]:
+            if f in data: sets.append(f"{f} = :{f}"); params[f] = data[f] if f != "psi_profile" else json.dumps(data[f])
+        if not sets: return {"status": "no changes"}
+        sets.append("updated_at = CURRENT_TIMESTAMP")
+        db.execute(text(f"UPDATE crm_contacts SET {', '.join(sets)} WHERE id = :id"), params)
+        db.commit()
+        return {"status": "updated"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+# ── Deals ──
+@app.get("/api/crm/deals")
+async def crm_get_deals(user=Depends(require_auth), stage: str = None):
+    db = get_db()
+    try:
+        q = """SELECT d.*, c.name as company_name, ct.name as contact_name, ct.email as contact_email
+               FROM crm_deals d
+               LEFT JOIN crm_companies c ON d.company_id = c.id
+               LEFT JOIN crm_contacts ct ON d.contact_id = ct.id"""
+        params = {}
+        if stage:
+            q += " WHERE d.stage = :stage"
+            params["stage"] = stage
+        q += " ORDER BY d.updated_at DESC"
+        rows = db.execute(text(q), params).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except Exception as e:
+        logger.error(f"CRM deals fetch: {e}")
+        return []
+    finally: db.close()
+
+@app.post("/api/crm/deals")
+async def crm_create_deal(request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        data = await request.json()
+        did = str(uuid.uuid4())[:8]
+        stage = data.get("stage", "erstkontakt")
+        prob = data.get("probability", CRM_STAGE_PROB.get(stage, 10))
+
+        # Auto-create company if name provided but no company_id
+        company_id = data.get("company_id")
+        if not company_id and data.get("company_name"):
+            company_id = str(uuid.uuid4())[:8]
+            db.execute(text("""INSERT INTO crm_companies (id, name, created_by)
+                VALUES (:id, :name, :cb)"""),
+                {"id": company_id, "name": data["company_name"], "cb": user["sub"]})
+
+        # Auto-create contact if name provided but no contact_id
+        contact_id = data.get("contact_id")
+        if not contact_id and data.get("contact_name"):
+            contact_id = str(uuid.uuid4())[:8]
+            db.execute(text("""INSERT INTO crm_contacts (id, company_id, name, email, created_by)
+                VALUES (:id, :cid, :name, :email, :cb)"""),
+                {"id": contact_id, "cid": company_id, "name": data["contact_name"],
+                 "email": data.get("contact_email",""), "cb": user["sub"]})
+
+        db.execute(text("""INSERT INTO crm_deals (id, company_id, contact_id, title, stage, value, probability, source, next_action, next_action_date, owner, context_id, notes, created_by)
+            VALUES (:id, :company_id, :contact_id, :title, :stage, :value, :prob, :source, :next_action, :nad, :owner, :ctx, :notes, :cb)"""),
+            {"id": did, "company_id": company_id, "contact_id": contact_id,
+             "title": data.get("title",""), "stage": stage, "value": data.get("value",0),
+             "prob": prob, "source": data.get("source",""),
+             "next_action": data.get("next_action",""), "nad": data.get("next_action_date"),
+             "owner": data.get("owner", user["sub"]), "ctx": data.get("context_id"),
+             "notes": data.get("notes",""), "cb": user["sub"]})
+        db.commit()
+        logger.info(f"CRM deal created: {did} by {user['sub']}")
+        return {"id": did, "company_id": company_id, "contact_id": contact_id, "status": "created"}
+    except Exception as e:
+        db.rollback(); logger.error(f"CRM deal create: {e}"); raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.put("/api/crm/deals/{did}")
+async def crm_update_deal(did: str, request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        data = await request.json()
+        sets, params = [], {"id": did}
+        for f in ["company_id","contact_id","title","stage","value","probability","source","next_action","next_action_date","owner","context_id","notes","lost_reason"]:
+            if f in data:
+                sets.append(f"{f} = :{f}"); params[f] = data[f]
+        if "stage" in data:
+            if data["stage"] == "won" or data["stage"] == "lost":
+                sets.append("closed_at = CURRENT_TIMESTAMP")
+            if data["stage"] in CRM_STAGE_PROB and "probability" not in data:
+                sets.append("probability = :auto_prob")
+                params["auto_prob"] = CRM_STAGE_PROB[data["stage"]]
+        if not sets: return {"status": "no changes"}
+        sets.append("updated_at = CURRENT_TIMESTAMP")
+        db.execute(text(f"UPDATE crm_deals SET {', '.join(sets)} WHERE id = :id"), params)
+        db.commit()
+        return {"status": "updated"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.delete("/api/crm/deals/{did}")
+async def crm_delete_deal(did: str, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        db.execute(text("DELETE FROM crm_activities WHERE deal_id = :id"), {"id": did})
+        db.execute(text("DELETE FROM crm_deals WHERE id = :id"), {"id": did})
+        db.commit()
+        return {"status": "deleted"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+# ── Activities ──
+@app.get("/api/crm/activities")
+async def crm_get_activities(user=Depends(require_auth), deal_id: str = None, company_id: str = None):
+    db = get_db()
+    try:
+        q = "SELECT * FROM crm_activities WHERE 1=1"
+        params = {}
+        if deal_id: q += " AND deal_id = :did"; params["did"] = deal_id
+        if company_id: q += " AND company_id = :cid"; params["cid"] = company_id
+        q += " ORDER BY created_at DESC LIMIT 100"
+        rows = db.execute(text(q), params).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except: return []
+    finally: db.close()
+
+@app.post("/api/crm/activities")
+async def crm_create_activity(request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        data = await request.json()
+        aid = str(uuid.uuid4())[:8]
+        db.execute(text("""INSERT INTO crm_activities (id, deal_id, company_id, contact_id, type, subject, description, due_date, created_by)
+            VALUES (:id, :did, :cid, :ctid, :type, :subject, :desc, :due, :cb)"""),
+            {"id": aid, "did": data.get("deal_id"), "cid": data.get("company_id"),
+             "ctid": data.get("contact_id"), "type": data.get("type","note"),
+             "subject": data.get("subject",""), "desc": data.get("description",""),
+             "due": data.get("due_date"), "cb": user["sub"]})
+        db.commit()
+        return {"id": aid, "status": "created"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+# ── CRM Stats ──
+@app.get("/api/crm/stats")
+async def crm_stats(user=Depends(require_auth)):
+    db = get_db()
+    try:
+        deals = db.execute(text("SELECT stage, value, probability, created_at, closed_at FROM crm_deals")).fetchall()
+        deals = [dict(r._mapping) for r in deals]
+        active = [d for d in deals if d['stage'] not in ('won','lost')]
+        won = [d for d in deals if d['stage'] == 'won']
+        now = datetime.utcnow()
+        this_month = [d for d in deals if d['created_at'] and d['created_at'].month == now.month and d['created_at'].year == now.year]
+        pipeline_value = sum(d.get('value',0) * d.get('probability',10) / 100 for d in active)
+        total_value = sum(d.get('value',0) for d in active)
+        conv_rate = round(len(won) / len(deals) * 100) if deals else 0
+        stages = {}
+        for d in deals:
+            s = d['stage']
+            if s not in stages: stages[s] = {"count": 0, "value": 0}
+            stages[s]["count"] += 1
+            stages[s]["value"] += d.get('value',0)
+        companies = db.execute(text("SELECT COUNT(*) FROM crm_companies")).scalar()
+        contacts = db.execute(text("SELECT COUNT(*) FROM crm_contacts")).scalar()
+        return {
+            "total_deals": len(deals), "active_deals": len(active), "won_deals": len(won),
+            "new_this_month": len(this_month), "pipeline_value": pipeline_value,
+            "total_value": total_value, "conversion_rate": conv_rate,
+            "stages": stages, "companies": companies or 0, "contacts": contacts or 0
+        }
+    except Exception as e:
+        logger.error(f"CRM stats: {e}")
+        return {"total_deals":0,"active_deals":0,"won_deals":0,"new_this_month":0,"pipeline_value":0,"total_value":0,"conversion_rate":0,"stages":{},"companies":0,"contacts":0}
+    finally: db.close()
+
+# ── Migrate old leads → CRM ──
+@app.post("/api/crm/migrate-leads")
+async def crm_migrate_leads(request: Request, user=Depends(require_auth)):
+    if not user.get("admin"): raise HTTPException(403, "Admin only")
+    db = get_db()
+    try:
+        leads = db.execute(text("SELECT * FROM leads")).fetchall()
+        migrated = 0
+        stage_map = {'kontakt':'erstkontakt','qualifiziert':'discovery','proposal':'proposal','won':'won','lost':'lost'}
+        for lead in leads:
+            l = dict(lead._mapping)
+            # Check if already migrated
+            existing = db.execute(text("SELECT id FROM crm_deals WHERE notes LIKE :ref"), {"ref": f"%migrated:lead:{l['id']}%"}).fetchone()
+            if existing: continue
+            # Create company
+            cid = str(uuid.uuid4())[:8]
+            db.execute(text("INSERT INTO crm_companies (id, name, created_by) VALUES (:id, :name, :cb)"),
+                {"id": cid, "name": l.get('company','Unbekannt'), "cb": l.get('created_by','system')})
+            # Create contact if exists
+            ctid = None
+            if l.get('contact'):
+                ctid = str(uuid.uuid4())[:8]
+                db.execute(text("INSERT INTO crm_contacts (id, company_id, name, email, created_by) VALUES (:id, :cid, :name, :email, :cb)"),
+                    {"id": ctid, "cid": cid, "name": l['contact'], "email": l.get('email',''), "cb": l.get('created_by','system')})
+            # Create deal
+            did = str(uuid.uuid4())[:8]
+            new_stage = stage_map.get(l.get('stage','kontakt'), 'erstkontakt')
+            notes = f"{l.get('notes','')}\n[migrated:lead:{l['id']}]".strip()
+            db.execute(text("""INSERT INTO crm_deals (id, company_id, contact_id, title, stage, value, probability, source, notes, created_by, created_at)
+                VALUES (:id, :cid, :ctid, :title, :stage, :val, :prob, :src, :notes, :cb, :ca)"""),
+                {"id": did, "cid": cid, "ctid": ctid, "title": l.get('company','Deal'),
+                 "stage": new_stage, "val": l.get('value',0),
+                 "prob": CRM_STAGE_PROB.get(new_stage, 10), "src": l.get('source',''),
+                 "notes": notes, "cb": l.get('created_by','system'),
+                 "ca": l.get('created_at', datetime.utcnow())})
+            migrated += 1
+        db.commit()
+        logger.info(f"CRM migration: {migrated} leads migrated")
+        return {"migrated": migrated, "total_leads": len(leads)}
+    except Exception as e:
+        db.rollback(); logger.error(f"CRM migration: {e}"); raise HTTPException(500, str(e))
+    finally: db.close()
+
+# ── GitHub YAML → PostgreSQL Sync ──
+@app.post("/api/crm/sync-github")
+async def crm_sync_github(user=Depends(require_auth)):
+    """Sync leads, customers, contacts from GitHub YAML files into PostgreSQL CRM tables"""
+    import yaml, urllib.request as ureq
+    db = get_db()
+    try:
+        gh_token = os.getenv("GITHUB_TOKEN", "")
+        repo = "FehrAdvice-Partners-AG/complementarity-context-framework"
+        headers_gh = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3.raw", "User-Agent": "BEATRIXLab/3.18"}
+        ssl_ctx = __import__('ssl').create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = __import__('ssl').CERT_NONE
+
+        def gh_read(path):
+            req = ureq.Request(f"https://api.github.com/repos/{repo}/contents/{path}", headers=headers_gh)
+            return ureq.urlopen(req, context=ssl_ctx).read().decode()
+
+        stats = {"companies": 0, "contacts": 0, "deals": 0, "activities": 0, "skipped": 0}
+
+        # ── 1. Read lead-database.yaml ──
+        logger.info("CRM Sync: Reading lead-database.yaml...")
+        lead_yaml = yaml.safe_load(gh_read("data/sales/lead-database.yaml"))
+        leads_list = lead_yaml.get("leads", [])
+        if not leads_list:
+            # Try alternate structure
+            leads_list = lead_yaml.get("pipeline", {}).get("leads", [])
+        logger.info(f"CRM Sync: Found {len(leads_list)} leads")
+
+        # ── 2. Read customer-registry.yaml ──
+        logger.info("CRM Sync: Reading customer-registry.yaml...")
+        cust_yaml = yaml.safe_load(gh_read("data/customer-registry.yaml"))
+        customers_list = cust_yaml.get("customers", [])
+        logger.info(f"CRM Sync: Found {len(customers_list)} customers in registry")
+
+        # ── 3. Read person-registry.yaml ──
+        logger.info("CRM Sync: Reading person-registry.yaml...")
+        person_yaml = yaml.safe_load(gh_read("data/person-registry.yaml"))
+
+        # ── 4. Sync customers from registry ──
+        for cust in customers_list:
+            cid = cust.get("id", cust.get("code", ""))
+            if not cid: continue
+            existing = db.execute(text("SELECT id FROM crm_companies WHERE id = :id"), {"id": cid}).fetchone()
+            if existing:
+                stats["skipped"] += 1
+                continue
+            db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, size, website, notes, created_by)
+                VALUES (:id, :name, :domain, :industry, :size, :website, :notes, :cb)"""),
+                {"id": cid, "name": cust.get("name",""), "domain": cust.get("code",""),
+                 "industry": cust.get("industry",""), "size": cust.get("type",""),
+                 "website": "", "notes": cust.get("notes",""), "cb": "github-sync"})
+            stats["companies"] += 1
+
+        # ── 5. Sync leads as deals + companies + contacts ──
+        stage_map = {
+            'PROSPECT': 'prospect', 'QUALIFIED': 'qualified', 'PROPOSAL': 'proposal',
+            'NEGOTIATION': 'negotiation', 'WON': 'won', 'ACTIVE': 'active',
+            'DORMANT': 'dormant', 'CHURNED': 'churned', 'LOST': 'lost', 'CLOSED_WON': 'won'
+        }
+
+        for lead in leads_list:
+            lead_id = lead.get("id", "")
+            if not lead_id: continue
+
+            # Check if already synced
+            existing = db.execute(text("SELECT id FROM crm_deals WHERE id = :id"), {"id": lead_id}).fetchone()
+            if existing:
+                stats["skipped"] += 1
+                continue
+
+            # Company info
+            company = lead.get("company", {})
+            if isinstance(company, str):
+                company = {"name": company, "short_name": company}
+            company_name = company.get("name", "")
+            short_name = company.get("short_name", company_name)
+
+            # Create or find company
+            company_id = None
+            ebf = lead.get("ebf_integration", {})
+            cus_ref = ebf.get("customer_registry_ref", "")
+            if cus_ref:
+                company_id = cus_ref
+                existing_co = db.execute(text("SELECT id FROM crm_companies WHERE id = :id"), {"id": cus_ref}).fetchone()
+                if not existing_co:
+                    db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, size, website, address, notes, created_by)
+                        VALUES (:id, :name, :domain, :ind, :size, :web, :addr, :notes, :cb)"""),
+                        {"id": cus_ref, "name": company_name, "domain": short_name,
+                         "ind": lead.get("industry",""), "size": lead.get("segment",""),
+                         "web": company.get("website",""),
+                         "addr": f"{lead.get('headquarters',{}).get('city','')}, {lead.get('headquarters',{}).get('country','')}",
+                         "notes": f"Employees: {lead.get('employee_count','?')}, Revenue: {lead.get('revenue_eur','?')} EUR",
+                         "cb": "github-sync"})
+                    stats["companies"] += 1
+            else:
+                company_id = f"CO-{lead_id}"
+                db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, notes, created_by)
+                    VALUES (:id, :name, :domain, :ind, :notes, :cb)"""),
+                    {"id": company_id, "name": company_name, "domain": short_name,
+                     "ind": lead.get("industry",""), "notes": "", "cb": "github-sync"})
+                stats["companies"] += 1
+
+            # Create contacts
+            first_contact_id = None
+            for ct in lead.get("contacts", []):
+                ct_name = ct.get("name", "")
+                if not ct_name or ct_name.startswith("["):
+                    continue
+                ct_id = f"CT-{lead_id}-{ct_name[:10].replace(' ','-')}"
+                existing_ct = db.execute(text("SELECT id FROM crm_contacts WHERE id = :id"), {"id": ct_id}).fetchone()
+                if not existing_ct:
+                    db.execute(text("""INSERT INTO crm_contacts (id, company_id, name, email, phone, position, role_type, notes, created_by)
+                        VALUES (:id, :cid, :name, :email, :phone, :pos, :role, :notes, :cb)"""),
+                        {"id": ct_id, "cid": company_id, "name": ct_name,
+                         "email": ct.get("email","") or "", "phone": ct.get("phone","") or "",
+                         "pos": ct.get("role",""), "role": "champion" if ct.get("is_champion") else "kontakt",
+                         "notes": f"Relationship: {ct.get('relationship_strength','?')}", "cb": "github-sync"})
+                    stats["contacts"] += 1
+                if not first_contact_id:
+                    first_contact_id = ct_id
+
+            # Create deal
+            rel = lead.get("relationship", {})
+            stage_raw = lead.get("stage", "PROSPECT")
+            stage = stage_map.get(stage_raw, stage_raw.lower())
+            prob = CRM_STAGE_PROB.get(stage, 10)
+            value = lead.get("relationship", {}).get("contract_value_eur", 0) or 0
+            owner = rel.get("owner", "GF")
+
+            # Build notes with key info
+            notes_parts = []
+            if lead.get("notes"): notes_parts.append(str(lead["notes"]).strip())
+            if lead.get("fit_score"): notes_parts.append(f"Fit Score: {lead['fit_score']}")
+            if lead.get("engagement_score"): notes_parts.append(f"Engagement: {lead['engagement_score']}")
+            if lead.get("hot_lead"): notes_parts.append(f"🔥 HOT LEAD: {lead.get('hot_lead_reason','')}")
+            if lead.get("priority"): notes_parts.append(f"Priority: {lead['priority']} - {lead.get('priority_reason','')}")
+            if lead.get("tags"): notes_parts.append(f"Tags: {', '.join(lead['tags'])}")
+            notes_text = "\n".join(notes_parts)
+
+            source_info = lead.get("source", {})
+            source_str = f"{source_info.get('channel','')} {source_info.get('subchannel','')} {source_info.get('referrer','')}".strip()
+
+            db.execute(text("""INSERT INTO crm_deals (id, company_id, contact_id, title, stage, value, probability, source,
+                next_action, next_action_date, owner, notes, created_by, created_at)
+                VALUES (:id, :cid, :ctid, :title, :stage, :val, :prob, :src, :na, :nad, :owner, :notes, :cb, :ca)"""),
+                {"id": lead_id, "cid": company_id, "ctid": first_contact_id,
+                 "title": f"{short_name} – {lead.get('industry','')}",
+                 "stage": stage, "val": value, "prob": prob, "src": source_str,
+                 "na": lead.get("next_action",""), "nad": lead.get("next_action_date"),
+                 "owner": f"OWN-{owner}", "notes": notes_text, "cb": "github-sync",
+                 "ca": lead.get("created", lead.get("created_at", datetime.utcnow()))})
+            stats["deals"] += 1
+
+            # Import contact_log as activities
+            for log in lead.get("contact_log", []):
+                act_id = f"ACT-{lead_id}-{log.get('date','')[:10]}"
+                existing_act = db.execute(text("SELECT id FROM crm_activities WHERE id = :id"), {"id": act_id}).fetchone()
+                if existing_act: continue
+                db.execute(text("""INSERT INTO crm_activities (id, deal_id, company_id, type, subject, description, created_by, created_at)
+                    VALUES (:id, :did, :cid, :type, :subj, :desc, :cb, :ca)"""),
+                    {"id": act_id, "did": lead_id, "cid": company_id,
+                     "type": log.get("type", "note"), "subj": log.get("notes","")[:200],
+                     "desc": f"Contact: {log.get('contact_person','')}\nOutcome: {log.get('outcome','')}\n{log.get('notes','')}",
+                     "cb": log.get("logged_by", "github-sync"),
+                     "ca": log.get("date", datetime.utcnow())})
+                stats["activities"] += 1
+
+        db.commit()
+        logger.info(f"CRM Sync complete: {stats}")
+        return {"status": "synced", "stats": stats}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"CRM Sync error: {e}")
+        import traceback; traceback.print_exc()
+        raise HTTPException(500, f"Sync failed: {str(e)}")
+    finally: db.close()
+
+# ── Legacy Leads API (kept for backward compat) ──────
 @app.get("/api/leads")
 async def get_leads(user=Depends(require_auth)):
     db = get_db()
