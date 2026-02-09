@@ -1110,15 +1110,15 @@
                 if (data.choices && data.choices.length > 0) {
                     choicesEl.innerHTML = data.choices.map((c, i) => `
                         <div onclick="insightSelectChoice(this, ${i + 1}, '${(c.label || '').replace(/'/g, "\\'")}')"
-                             style="display:flex;align-items:center;gap:14px;padding:14px 18px;border-radius:14px;border:1px solid rgba(139,170,255,0.12);background:rgba(255,255,255,0.03);cursor:pointer;transition:all 0.2s"
-                             onmouseover="this.style.borderColor='rgba(139,170,255,0.4)';this.style.background='rgba(139,170,255,0.08)'"
-                             onmouseout="if(!this.classList.contains('ins-selected')){this.style.borderColor='rgba(139,170,255,0.12)';this.style.background='rgba(255,255,255,0.03)'}">
-                            <div style="font-size:22px;flex-shrink:0">${c.icon || '○'}</div>
-                            <div style="font-size:15px;color:rgba(255,255,255,0.85);line-height:1.4">${c.label}</div>
+                             style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);cursor:pointer;transition:background 0.15s;-webkit-tap-highlight-color:rgba(139,170,255,0.2)"
+                             onmouseover="this.style.background='rgba(255,255,255,0.06)'"
+                             onmouseout="if(!this.classList.contains('ins-selected'))this.style.background='transparent'">
+                            <div style="font-size:18px;flex-shrink:0;width:28px;text-align:center">${c.icon || '○'}</div>
+                            <div style="font-size:15px;color:rgba(255,255,255,0.8)">${c.label}</div>
                         </div>
                     `).join('');
                 } else {
-                    choicesEl.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.4);padding:20px">Keine Optionen verfügbar</div>';
+                    choicesEl.innerHTML = '';
                 }
 
                 // Skip button
@@ -1140,18 +1140,15 @@
         }
 
         async function insightSelectChoice(el, choiceIndex, choiceLabel) {
-            // Visual selection
+            // Mark selected
             el.parentElement.querySelectorAll('div[onclick]').forEach(c => {
                 c.classList.remove('ins-selected');
-                c.style.borderColor = 'rgba(139,170,255,0.12)';
-                c.style.background = 'rgba(255,255,255,0.03)';
+                c.style.background = 'transparent';
             });
             el.classList.add('ins-selected');
-            el.style.borderColor = 'var(--accent)';
-            el.style.background = 'rgba(139,170,255,0.15)';
+            el.style.background = 'rgba(139,170,255,0.12)';
 
-            // Brief delay for visual feedback
-            await new Promise(r => setTimeout(r, 400));
+            await new Promise(r => setTimeout(r, 300));
 
             const latency = Date.now() - insightState.startTime;
             const q = insightState.currentQuestion;
