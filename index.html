@@ -476,7 +476,7 @@
         </div>
         <div class="nav-right">
             <div class="nav-status"><span class="dot"></span> Online</div>
-            <span style="font-size:10px;color:rgba(255,255,255,0.15);margin-left:4px" id="appVersion">v3.12</span>
+            <span style="font-size:10px;color:rgba(255,255,255,0.15);margin-left:4px" id="appVersion">v3.14</span>
             <span class="nav-user" id="navUser" onclick="showSection('profile',document.querySelector('[data-section=profile]'))" title="Profil"></span>
             <button class="nav-logout" onclick="doLogout()">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -1270,6 +1270,7 @@
                         document.getElementById('navUser').textContent = currentUser.name || currentUser.email;
                         if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
                         applyUserTabs();
+                        console.log('Session restore:', currentUser.email, 'admin:', currentUser.admin);
                         loadStats();
                         return;
                     }
@@ -1291,6 +1292,7 @@
             document.getElementById('navUser').textContent = data.user.name || data.user.email;
             if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
             applyUserTabs();
+            console.log('Auth success:', currentUser.email, 'admin:', currentUser.admin);
             loadStats();
             showToast(`Willkommen, ${data.user.name || data.user.email}!`, 'success');
             // Trigger insight question after login
