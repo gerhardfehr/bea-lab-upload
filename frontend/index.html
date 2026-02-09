@@ -208,6 +208,8 @@
         .comp-cat-tab.active .comp-cat-count { background:rgba(42,127,142,0.2);color:rgba(255,255,255,0.6); }
         .comp-card:hover { transform:translateY(-2px);border-color:rgba(42,127,142,0.3) !important;background:rgba(255,255,255,0.03) !important; }
         .comp-card.active { border-color:rgba(42,127,142,0.5) !important;background:rgba(42,127,142,0.08) !important;box-shadow:0 0 20px rgba(42,127,142,0.1); }
+        .prj-mode-card:hover { transform:translateY(-2px);border-color:rgba(42,127,142,0.3) !important; }
+        .prj-mode-card.active { border-color:rgba(42,127,142,0.5) !important;background:rgba(42,127,142,0.08) !important;box-shadow:0 0 20px rgba(42,127,142,0.1); }
         .nav-link.admin-link:hover,.nav-link.admin-link.active { color:var(--warning); background:rgba(251,191,36,0.08); }
 
         /* ── Password Modal ──────────────────────────────── */
@@ -481,6 +483,7 @@
             <a href="#" class="nav-link" data-section="context" id="navContext" onclick="showSection('context',this)" style="display:none">Ausgangslage</a>
             <a href="#" class="nav-link" data-section="leads" id="navLeads" onclick="showSection('leads',this)" style="display:none">CRM</a>
             <a href="#" class="nav-link" data-section="companies" id="navCompanies" onclick="showSection('companies',this)" style="display:none">Firmen</a>
+            <a href="#" class="nav-link" data-section="projects" id="navProjects" onclick="showSection('projects',this)" style="display:none">Projekte</a>
             <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">Admin</a>
         </div>
         <div class="nav-right">
@@ -1166,6 +1169,223 @@
         </div>
     </section>
 
+    <!-- Projects Section -->
+    <section class="section" id="projects-section">
+        <div class="container">
+            <!-- Projects List View -->
+            <div id="prjListView">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+                    <div style="flex:1">
+                        <h2 style="margin:0;font-size:22px;color:white">📋 Projekte</h2>
+                        <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="prjCount"></div>
+                    </div>
+                    <button onclick="prjStartWizard()" style="padding:8px 18px;background:linear-gradient(135deg,var(--accent),#2A7F8E);border:none;border-radius:8px;color:white;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s">+ Neues Projekt</button>
+                </div>
+                <!-- KPI Cards -->
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+                        <div style="font-size:22px;font-weight:700;color:#34d399" id="prjCountActive">0</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4)">Aktiv</div>
+                    </div>
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+                        <div style="font-size:22px;font-weight:700;color:#fbbf24" id="prjCountPlanning">0</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4)">In Planung</div>
+                    </div>
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+                        <div style="font-size:22px;font-weight:700;color:rgba(139,170,255,0.6)" id="prjCountCompleted">0</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4)">Abgeschlossen</div>
+                    </div>
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+                        <div style="font-size:22px;font-weight:700;color:white" id="prjCountTotal">0</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4)">Total</div>
+                    </div>
+                </div>
+                <div id="prjList" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
+            </div>
+
+            <!-- Wizard View -->
+            <div id="prjWizardView" style="display:none">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+                    <button onclick="prjCancelWizard()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer">← Abbrechen</button>
+                    <h2 style="margin:0;font-size:20px;color:white">Neues Projekt eröffnen</h2>
+                </div>
+
+                <!-- Mode Selector -->
+                <div id="prjModeSelector" style="display:flex;gap:12px;margin-bottom:24px">
+                    <div class="prj-mode-card active" data-mode="schnell" onclick="prjSetMode('schnell')" style="flex:1;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:all 0.15s;text-align:center">
+                        <div style="font-size:24px;margin-bottom:8px">⚡</div>
+                        <div style="font-size:14px;font-weight:600;color:white">Schnell</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:4px">Firma wählen, Rest auto-fill<br>~30 Sekunden</div>
+                    </div>
+                    <div class="prj-mode-card" data-mode="gefuehrt" onclick="prjSetMode('gefuehrt')" style="flex:1;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:all 0.15s;text-align:center">
+                        <div style="font-size:24px;margin-bottom:8px">🧭</div>
+                        <div style="font-size:14px;font-weight:600;color:white">Geführt</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:4px">5 Schritte, vollständig<br>~5 Minuten</div>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div id="prjProgress" style="display:none;margin-bottom:24px">
+                    <div style="display:flex;gap:4px" id="prjProgressSteps"></div>
+                    <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:6px" id="prjProgressLabel"></div>
+                </div>
+
+                <!-- Step 1: Firma & Lead -->
+                <div class="prj-step" id="prjStep1" style="display:none">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:15px;font-weight:600;color:white;margin-bottom:16px">1 · Firma & Lead wählen</div>
+                        <div style="margin-bottom:16px">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Firma *</label>
+                            <select id="prjFirma" onchange="prjOnFirmaChange()" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px">
+                                <option value="">Firma auswählen…</option>
+                            </select>
+                        </div>
+                        <div id="prjFirmaInfo" style="display:none;padding:12px;background:rgba(42,127,142,0.05);border:1px solid rgba(42,127,142,0.15);border-radius:8px;margin-bottom:16px;font-size:12px;color:rgba(255,255,255,0.5)"></div>
+                        <div style="margin-bottom:16px">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Lead verknüpfen (optional)</label>
+                            <select id="prjLead" onchange="prjOnLeadChange()" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px">
+                                <option value="">Kein Lead / Neues Projekt</option>
+                            </select>
+                        </div>
+                        <div id="prjLeadInfo" style="display:none;padding:12px;background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.1);border-radius:8px;font-size:12px;color:rgba(255,255,255,0.5)"></div>
+                        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+                            <button onclick="prjGoStep(2)" id="prjStep1Next" disabled style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;color:white;font-size:13px;font-weight:600;cursor:pointer;opacity:0.5">Weiter →</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Projektdefinition -->
+                <div class="prj-step" id="prjStep2" style="display:none">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:15px;font-weight:600;color:white;margin-bottom:16px">2 · Projektdefinition</div>
+                        <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
+                            <div>
+                                <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Projektname *</label>
+                                <input id="prjName" type="text" placeholder="z.B. Off-Site Kader 2026" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;box-sizing:border-box">
+                            </div>
+                            <div>
+                                <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Typ *</label>
+                                <select id="prjType" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px">
+                                    <option value="beratung">Beratung</option>
+                                    <option value="workshop">Workshop / Off-Site</option>
+                                    <option value="studie">Studie / Research</option>
+                                    <option value="intervention">Intervention</option>
+                                    <option value="keynote">Keynote / Vortrag</option>
+                                    <option value="training">Training / Schulung</option>
+                                    <option value="retainer">Retainer / laufend</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="margin-top:16px">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Beschreibung / Ziele</label>
+                            <textarea id="prjDesc" rows="3" placeholder="Was soll erreicht werden?" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin-top:20px">
+                            <button onclick="prjGoStep(1)" style="padding:8px 20px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:13px;cursor:pointer">← Zurück</button>
+                            <button onclick="prjGoStep(3)" style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;color:white;font-size:13px;font-weight:600;cursor:pointer">Weiter →</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Timeline & Budget -->
+                <div class="prj-step" id="prjStep3" style="display:none">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:15px;font-weight:600;color:white;margin-bottom:16px">3 · Timeline & Budget</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+                            <div>
+                                <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Startdatum</label>
+                                <input id="prjStart" type="date" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;box-sizing:border-box">
+                            </div>
+                            <div>
+                                <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Enddatum</label>
+                                <input id="prjEnd" type="date" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;box-sizing:border-box">
+                            </div>
+                            <div>
+                                <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Budget (CHF)</label>
+                                <input id="prjBudget" type="number" placeholder="z.B. 85000" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;box-sizing:border-box">
+                            </div>
+                        </div>
+                        <div style="margin-top:16px">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Abrechnungsmodell</label>
+                            <div style="display:flex;gap:8px">
+                                <label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;color:rgba(255,255,255,0.6)"><input type="radio" name="prjBilling" value="fixed" checked> Fixpreis</label>
+                                <label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;color:rgba(255,255,255,0.6)"><input type="radio" name="prjBilling" value="time_material"> Time & Material</label>
+                                <label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;color:rgba(255,255,255,0.6)"><input type="radio" name="prjBilling" value="retainer"> Retainer</label>
+                            </div>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin-top:20px">
+                            <button onclick="prjGoStep(2)" style="padding:8px 20px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:13px;cursor:pointer">← Zurück</button>
+                            <button onclick="prjGoStep(4)" style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;color:white;font-size:13px;font-weight:600;cursor:pointer">Weiter →</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Team -->
+                <div class="prj-step" id="prjStep4" style="display:none">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:15px;font-weight:600;color:white;margin-bottom:16px">4 · Team</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                            <div>
+                                <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">FA Owner / Projektleiter *</label>
+                                <select id="prjOwner" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px">
+                                    <option value="GF">Gerhard Fehr (GF)</option>
+                                    <option value="MFA">Michael Fehr (MFA)</option>
+                                    <option value="NGS">Nora Gavazaj Susuri (NGS)</option>
+                                    <option value="AFA">Andrea Fehr (AFA)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">FA Teammitglieder</label>
+                                <input id="prjTeam" type="text" placeholder="z.B. MFA, NGS" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;box-sizing:border-box">
+                            </div>
+                        </div>
+                        <div style="margin-top:16px">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Kunden-Ansprechpartner</label>
+                            <div id="prjClientContacts" style="font-size:12px;color:rgba(255,255,255,0.5);padding:8px 0">Wird aus Firma/Lead geladen…</div>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin-top:20px">
+                            <button onclick="prjGoStep(3)" style="padding:8px 20px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:13px;cursor:pointer">← Zurück</button>
+                            <button onclick="prjGoStep(5)" style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;color:white;font-size:13px;font-weight:600;cursor:pointer">Review →</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 5: Review & Eröffnen -->
+                <div class="prj-step" id="prjStep5" style="display:none">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:15px;font-weight:600;color:white;margin-bottom:16px">5 · Review & Eröffnen</div>
+                        <div id="prjReviewContent" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.8"></div>
+                        <div style="display:flex;justify-content:space-between;margin-top:20px">
+                            <button onclick="prjGoStep(4)" style="padding:8px 20px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:13px;cursor:pointer">← Zurück</button>
+                            <button onclick="prjCreate()" id="prjCreateBtn" style="padding:10px 24px;background:linear-gradient(135deg,#34d399,#2A7F8E);border:none;border-radius:8px;color:white;font-size:14px;font-weight:700;cursor:pointer">✓ Projekt eröffnen → GitHub</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Schnell Mode Panel -->
+                <div id="prjSchnellPanel" style="display:none">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:15px;font-weight:600;color:white;margin-bottom:16px">⚡ Schnell-Eröffnung</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+                            <div>
+                                <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Firma *</label>
+                                <select id="prjSchnellFirma" onchange="prjSchnellAutoFill()" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px">
+                                    <option value="">Firma auswählen…</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Projektname *</label>
+                                <input id="prjSchnellName" type="text" placeholder="Projektname" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;box-sizing:border-box">
+                            </div>
+                        </div>
+                        <div id="prjSchnellPreview" style="display:none;padding:14px;background:rgba(42,127,142,0.05);border:1px solid rgba(42,127,142,0.15);border-radius:8px;margin-bottom:16px;font-size:12px;color:rgba(255,255,255,0.5);line-height:1.6"></div>
+                        <button onclick="prjSchnellCreate()" id="prjSchnellBtn" disabled style="width:100%;padding:12px;background:linear-gradient(135deg,#34d399,#2A7F8E);border:none;border-radius:8px;color:white;font-size:14px;font-weight:700;cursor:pointer;opacity:0.5">✓ Jetzt eröffnen → GitHub</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <section class="section" id="admin-section">
         <div class="container">
             <div class="section-header"><h2>⚙ Administration</h2><p>Benutzer verwalten und Systemeinstellungen konfigurieren.</p></div>
@@ -1658,6 +1878,7 @@
             if(name==='context') ctxLoad();
             if(name==='leads') crmLoad();
             if(name==='companies') crmLoadCompanies();
+            if(name==='projects') prjLoad();
             if(name==='profile') loadProfile();
             if(name==='chat') { loadChatHistory(); document.getElementById('chatInput').focus(); }
             if(name==='model') { if (!mbUserProfile) mbLoadUserProfile().then(() => mbApplyDefault('start')); }
@@ -1738,6 +1959,9 @@
                 // Firmen tab: same visibility as CRM
                 const compEl = document.getElementById('navCompanies');
                 if (compEl) compEl.style.display = showCrm ? 'inline' : 'none';
+                // Projekte tab: same visibility as CRM
+                const projEl = document.getElementById('navProjects');
+                if (projEl) projEl.style.display = showCrm ? 'inline' : 'none';
             }
 
             // Context/Ausgangslage tab: role-based
@@ -2303,6 +2527,331 @@
             document.getElementById('companyProfileContent').innerHTML = ph;
         }
 
+
+        // ── PROJECT WIZARD ──
+        let prjMode = 'schnell';
+        let prjStep = 1;
+        let prjCompaniesCache = null;
+
+        async function prjLoad() {
+            document.getElementById('prjListView').style.display = '';
+            document.getElementById('prjWizardView').style.display = 'none';
+            document.getElementById('prjList').innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Lade Projekte aus GitHub…</div>';
+            try {
+                const resp = await fetch(`${API}/projects`, { headers: H() });
+                const projects = resp.ok ? await resp.json() : [];
+                const active = projects.filter(p => p.status === 'active').length;
+                const planning = projects.filter(p => p.status === 'planning').length;
+                const completed = projects.filter(p => p.status === 'completed').length;
+                document.getElementById('prjCountActive').textContent = active;
+                document.getElementById('prjCountPlanning').textContent = planning;
+                document.getElementById('prjCountCompleted').textContent = completed;
+                document.getElementById('prjCountTotal').textContent = projects.length;
+                document.getElementById('prjCount').textContent = `${projects.length} Projekte · Quelle: GitHub data/projects/`;
+
+                if (!projects.length) {
+                    document.getElementById('prjList').innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Noch keine Projekte. Klicke „+ Neues Projekt" um zu starten.</div>';
+                    return;
+                }
+
+                const statusColors = {active:'#34d399',planning:'#fbbf24',completed:'rgba(139,170,255,0.5)',on_hold:'rgba(255,255,255,0.2)'};
+                const statusLabels = {active:'Aktiv',planning:'Planung',completed:'Abgeschlossen',on_hold:'On Hold'};
+                const typeLabels = {beratung:'Beratung',workshop:'Workshop',studie:'Studie',intervention:'Intervention',keynote:'Keynote',training:'Training',retainer:'Retainer'};
+
+                const rows = projects.map(p => {
+                    const sc = statusColors[p.status] || 'rgba(255,255,255,0.2)';
+                    const sl = statusLabels[p.status] || p.status;
+                    const tl = typeLabels[p.type] || p.type || '';
+                    return `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04)">
+                        <div style="width:8px;height:8px;border-radius:50%;background:${sc};flex-shrink:0"></div>
+                        <div style="flex:1;min-width:0">
+                            <div style="font-weight:600;color:white;font-size:14px">${p.name || p.project_code}</div>
+                            <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">
+                                <span style="font-size:11px;color:rgba(255,255,255,0.4)">${p.customer_name || ''}</span>
+                                ${tl ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(42,127,142,0.1);color:#2A7F8E;border:1px solid rgba(42,127,142,0.2)">${tl}</span>` : ''}
+                                <span style="font-size:10px;padding:2px 8px;border-radius:8px;background:${sc}15;color:${sc};border:1px solid ${sc}30">${sl}</span>
+                            </div>
+                        </div>
+                        <div style="text-align:right;flex-shrink:0">
+                            ${p.fa_owner ? `<span style="font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3)">${p.fa_owner}</span>` : ''}
+                            ${p.start_date ? `<div style="font-size:10px;color:rgba(255,255,255,0.2);margin-top:2px">${p.start_date}</div>` : ''}
+                        </div>
+                    </div>`;
+                }).join('');
+                document.getElementById('prjList').innerHTML = rows;
+            } catch(e) {
+                document.getElementById('prjList').innerHTML = '<div style="padding:40px;text-align:center;color:var(--error)">Fehler beim Laden</div>';
+            }
+        }
+
+        async function prjEnsureCompanies() {
+            if (prjCompaniesCache) return prjCompaniesCache;
+            try {
+                const resp = await fetch(`${API}/crm/companies/enriched`, { headers: H() });
+                prjCompaniesCache = resp.ok ? await resp.json() : [];
+            } catch(e) { prjCompaniesCache = []; }
+            return prjCompaniesCache;
+        }
+
+        async function prjStartWizard() {
+            document.getElementById('prjListView').style.display = 'none';
+            document.getElementById('prjWizardView').style.display = '';
+            const companies = await prjEnsureCompanies();
+            // Populate firma dropdowns
+            const opts = companies.map(c => `<option value="${c.code}">${c.short_name || c.name} (${c.code})</option>`).join('');
+            document.getElementById('prjFirma').innerHTML = '<option value="">Firma auswählen…</option>' + opts;
+            document.getElementById('prjSchnellFirma').innerHTML = '<option value="">Firma auswählen…</option>' + opts;
+            // Set today as default start
+            document.getElementById('prjStart').value = new Date().toISOString().slice(0,10);
+            prjSetMode(prjMode);
+        }
+
+        function prjCancelWizard() {
+            document.getElementById('prjListView').style.display = '';
+            document.getElementById('prjWizardView').style.display = 'none';
+        }
+
+        function prjSetMode(mode) {
+            prjMode = mode;
+            document.querySelectorAll('.prj-mode-card').forEach(c => {
+                c.classList.toggle('active', c.dataset.mode === mode);
+                c.style.borderColor = c.dataset.mode === mode ? 'rgba(42,127,142,0.5)' : '';
+                c.style.background = c.dataset.mode === mode ? 'rgba(42,127,142,0.08)' : 'var(--navy-card)';
+            });
+            document.getElementById('prjSchnellPanel').style.display = mode === 'schnell' ? '' : 'none';
+            document.getElementById('prjProgress').style.display = mode === 'gefuehrt' ? '' : 'none';
+            document.querySelectorAll('.prj-step').forEach(s => s.style.display = 'none');
+            if (mode === 'gefuehrt') { prjGoStep(1); }
+        }
+
+        function prjGoStep(n) {
+            prjStep = n;
+            document.querySelectorAll('.prj-step').forEach(s => s.style.display = 'none');
+            const el = document.getElementById('prjStep' + n);
+            if (el) el.style.display = '';
+            // Progress bar
+            const labels = ['Firma & Lead', 'Projekt', 'Timeline', 'Team', 'Review'];
+            let html = '';
+            for (let i = 1; i <= 5; i++) {
+                const active = i === n;
+                const done = i < n;
+                const col = done ? '#34d399' : active ? 'var(--accent)' : 'rgba(255,255,255,0.1)';
+                html += `<div style="flex:1;height:4px;border-radius:2px;background:${col};transition:background 0.3s"></div>`;
+            }
+            document.getElementById('prjProgressSteps').innerHTML = html;
+            document.getElementById('prjProgressLabel').textContent = `Schritt ${n}/5 · ${labels[n-1]}`;
+            // Build review on step 5
+            if (n === 5) prjBuildReview();
+        }
+
+        function prjOnFirmaChange() {
+            const code = document.getElementById('prjFirma').value;
+            const infoEl = document.getElementById('prjFirmaInfo');
+            const leadSel = document.getElementById('prjLead');
+            const btn = document.getElementById('prjStep1Next');
+
+            if (!code) { infoEl.style.display = 'none'; btn.disabled = true; btn.style.opacity = '0.5'; return; }
+            btn.disabled = false; btn.style.opacity = '1';
+
+            const c = prjCompaniesCache.find(x => x.code === code);
+            if (!c) return;
+            infoEl.style.display = '';
+            const indLabels = {finance:'Finanz',insurance:'Versicherung',retail:'Handel',fmcg:'FMCG',construction:'Bau',packaging:'Verpackung',public_sector:'Öffentlich',telecom:'Telekom',media:'Medien'};
+            infoEl.innerHTML = `<strong>${c.name}</strong> · ${indLabels[c.industry] || c.industry || ''} · ${c.country || ''}<br>
+                ${c.fa_owner ? 'Owner: ' + c.fa_owner + ' · ' : ''}Kontakte: ${c.contact_persons || 0}
+                ${c.has_customer_folder ? ' · 📁 Kunden-Ordner' : ''}${c.has_context ? ' · 🧠 Kontext' : ''}`;
+
+            // Auto-fill owner in step 4
+            if (c.fa_owner) {
+                const ownerSel = document.getElementById('prjOwner');
+                for (let o of ownerSel.options) { if (o.value === c.fa_owner) { ownerSel.value = c.fa_owner; break; } }
+            }
+
+            // Populate leads for this company
+            const children = c.children || [];
+            const allLeads = [c, ...children];
+            let leadOpts = '<option value="">Kein Lead / Neues Projekt</option>';
+            allLeads.forEach(l => {
+                if (l.code !== c.code || children.length === 0) {
+                    leadOpts += `<option value="${l.code}">${l.name}${l.next_action ? ' → ' + l.next_action : ''}</option>`;
+                }
+            });
+            leadSel.innerHTML = leadOpts;
+
+            // Show client contacts in step 4
+            const contacts = c.contact_persons > 0 ? `${c.contact_persons} Kontaktpersonen aus GitHub` : 'Keine Kontakte hinterlegt';
+            document.getElementById('prjClientContacts').textContent = contacts;
+        }
+
+        function prjOnLeadChange() {
+            const code = document.getElementById('prjLead').value;
+            const infoEl = document.getElementById('prjLeadInfo');
+            if (!code) { infoEl.style.display = 'none'; return; }
+            // Find lead in companies cache (could be child)
+            let lead = null;
+            for (const c of prjCompaniesCache) {
+                if (c.code === code) { lead = c; break; }
+                const ch = (c.children || []).find(x => x.code === code);
+                if (ch) { lead = ch; break; }
+            }
+            if (!lead) { infoEl.style.display = 'none'; return; }
+            infoEl.style.display = '';
+            infoEl.innerHTML = `<strong>${lead.name}</strong>${lead.status ? ' · Status: ' + lead.status : ''}${lead.fit_score ? ' · Fit: ' + lead.fit_score : ''}
+                ${lead.next_action ? '<br>→ ' + lead.next_action : ''}${lead.notes ? '<br>' + lead.notes : ''}`;
+            // Auto-fill project name from lead
+            if (!document.getElementById('prjName').value && lead.name) {
+                document.getElementById('prjName').value = lead.name;
+            }
+        }
+
+        function prjBuildReview() {
+            const firma = document.getElementById('prjFirma');
+            const firmaName = firma.options[firma.selectedIndex]?.text || '–';
+            const name = document.getElementById('prjName').value || '(kein Name)';
+            const type = document.getElementById('prjType');
+            const typeName = type.options[type.selectedIndex]?.text || '';
+            const desc = document.getElementById('prjDesc').value;
+            const start = document.getElementById('prjStart').value;
+            const end = document.getElementById('prjEnd').value;
+            const budget = document.getElementById('prjBudget').value;
+            const billing = document.querySelector('input[name="prjBilling"]:checked')?.value || 'fixed';
+            const owner = document.getElementById('prjOwner');
+            const ownerName = owner.options[owner.selectedIndex]?.text || '';
+            const team = document.getElementById('prjTeam').value;
+
+            const slug = (firma.value + '-' + name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').slice(0, 50);
+
+            document.getElementById('prjReviewContent').innerHTML = `
+                <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 16px">
+                    <div style="color:rgba(255,255,255,0.3)">Firma</div><div><strong>${firmaName}</strong></div>
+                    <div style="color:rgba(255,255,255,0.3)">Projekt</div><div><strong>${name}</strong></div>
+                    <div style="color:rgba(255,255,255,0.3)">Typ</div><div>${typeName}</div>
+                    ${desc ? `<div style="color:rgba(255,255,255,0.3)">Beschreibung</div><div>${desc}</div>` : ''}
+                    <div style="color:rgba(255,255,255,0.3)">Timeline</div><div>${start || '?'} → ${end || 'offen'}</div>
+                    ${budget ? `<div style="color:rgba(255,255,255,0.3)">Budget</div><div>${Number(budget).toLocaleString('de-CH')} CHF (${billing})</div>` : ''}
+                    <div style="color:rgba(255,255,255,0.3)">Owner</div><div>${ownerName}</div>
+                    ${team ? `<div style="color:rgba(255,255,255,0.3)">Team</div><div>${team}</div>` : ''}
+                </div>
+                <div style="margin-top:16px;padding:10px;background:rgba(42,127,142,0.05);border:1px solid rgba(42,127,142,0.1);border-radius:8px;font-size:11px;color:rgba(255,255,255,0.3)">
+                    📁 Wird erstellt: <code>data/projects/${slug}/project.yaml</code>
+                </div>`;
+        }
+
+        // Schnell mode
+        function prjSchnellAutoFill() {
+            const code = document.getElementById('prjSchnellFirma').value;
+            const nameInput = document.getElementById('prjSchnellName');
+            const preview = document.getElementById('prjSchnellPreview');
+            const btn = document.getElementById('prjSchnellBtn');
+
+            if (!code) { preview.style.display = 'none'; btn.disabled = true; btn.style.opacity = '0.5'; return; }
+
+            const c = prjCompaniesCache.find(x => x.code === code);
+            if (!c) return;
+
+            // Smart defaults
+            const today = new Date().toISOString().slice(0,10);
+            const endDate = new Date(Date.now() + 90*24*60*60*1000).toISOString().slice(0,10);
+
+            preview.style.display = '';
+            preview.innerHTML = `<strong>${c.short_name || c.name}</strong> · ${c.industry || ''} · ${c.country || ''}<br>
+                Owner: ${c.fa_owner || 'GF'} · Start: ${today} · Ende: ~${endDate}<br>
+                Typ: Beratung · Status: planning
+                ${c.has_customer_folder ? '<br>📁 Kunden-Ordner vorhanden' : ''}
+                ${c.next_action ? '<br>→ ' + c.next_action : ''}`;
+
+            // Enable button when name is filled
+            const check = () => {
+                const ok = code && nameInput.value.trim();
+                btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5';
+            };
+            nameInput.oninput = check;
+            check();
+        }
+
+        async function prjSchnellCreate() {
+            const code = document.getElementById('prjSchnellFirma').value;
+            const name = document.getElementById('prjSchnellName').value.trim();
+            if (!code || !name) return;
+
+            const c = prjCompaniesCache.find(x => x.code === code);
+            const today = new Date().toISOString().slice(0,10);
+            const btn = document.getElementById('prjSchnellBtn');
+            btn.disabled = true; btn.textContent = 'Erstelle auf GitHub…';
+
+            try {
+                const resp = await fetch(`${API}/projects`, {
+                    method: 'POST',
+                    headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_code: code,
+                        name: name,
+                        type: 'beratung',
+                        description: '',
+                        start_date: today,
+                        end_date: '',
+                        budget_chf: null,
+                        billing_type: 'fixed',
+                        fa_owner: c?.fa_owner || 'GF',
+                        fa_team: [],
+                        lead_code: ''
+                    })
+                });
+                const result = await resp.json();
+                if (resp.ok) {
+                    showToast(`✓ Projekt "${name}" eröffnet`, 'success');
+                    prjCancelWizard();
+                    prjLoad();
+                } else {
+                    showToast(result.error || 'Fehler', 'error');
+                    btn.disabled = false; btn.textContent = '✓ Jetzt eröffnen → GitHub';
+                }
+            } catch(e) {
+                showToast('Fehler: ' + e.message, 'error');
+                btn.disabled = false; btn.textContent = '✓ Jetzt eröffnen → GitHub';
+            }
+        }
+
+        async function prjCreate() {
+            const firmaCode = document.getElementById('prjFirma').value;
+            const name = document.getElementById('prjName').value.trim();
+            if (!firmaCode || !name) { showToast('Firma und Projektname erforderlich', 'error'); return; }
+
+            const btn = document.getElementById('prjCreateBtn');
+            btn.disabled = true; btn.textContent = 'Erstelle auf GitHub…';
+
+            try {
+                const resp = await fetch(`${API}/projects`, {
+                    method: 'POST',
+                    headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_code: firmaCode,
+                        name: name,
+                        type: document.getElementById('prjType').value,
+                        description: document.getElementById('prjDesc').value,
+                        start_date: document.getElementById('prjStart').value,
+                        end_date: document.getElementById('prjEnd').value,
+                        budget_chf: document.getElementById('prjBudget').value ? Number(document.getElementById('prjBudget').value) : null,
+                        billing_type: document.querySelector('input[name="prjBilling"]:checked')?.value || 'fixed',
+                        fa_owner: document.getElementById('prjOwner').value,
+                        fa_team: document.getElementById('prjTeam').value.split(',').map(s => s.trim()).filter(Boolean),
+                        lead_code: document.getElementById('prjLead').value
+                    })
+                });
+                const result = await resp.json();
+                if (resp.ok) {
+                    showToast(`✓ Projekt "${name}" eröffnet`, 'success');
+                    prjCancelWizard();
+                    prjLoad();
+                } else {
+                    showToast(result.error || 'Fehler', 'error');
+                    btn.disabled = false; btn.textContent = '✓ Projekt eröffnen → GitHub';
+                }
+            } catch(e) {
+                showToast('Fehler: ' + e.message, 'error');
+                btn.disabled = false; btn.textContent = '✓ Projekt eröffnen → GitHub';
+            }
+        }
 
         let crmCompanyFilter = null;
 
