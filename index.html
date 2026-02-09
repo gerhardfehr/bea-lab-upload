@@ -637,44 +637,52 @@
 
             <!-- ═══ STEP 0: Session Init ═══ -->
             <div class="mb-panel" id="mbStep0">
-                <div class="mb-step-title">Schritt 0: Session initialisieren</div>
-                <div class="mb-step-desc">Wähle eine Problemstellung oder definiere deine eigene. BEATRIX leitet daraus Domain, Scope und Lieferobjekte ab.</div>
+                <!-- VIEW A: Choices -->
+                <div id="mbStep0ViewA">
+                    <div class="mb-step-title">Wähle deine Problemstellung</div>
+                    <div class="mb-step-desc">BEATRIX leitet daraus Domain, Scope und Lieferobjekte ab.</div>
 
-                <div class="mb-choices" id="mbStep0Choices">
-                    <div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,255,255,0.5)">
-                        <div style="font-size:24px;margin-bottom:8px">⏳</div>
-                        Lade personalisierte Vorschläge basierend auf deinem Profil...
+                    <div id="mbStep0Choices" style="display:flex;flex-direction:column;gap:10px;margin:20px 0">
+                        <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.5)">
+                            <div style="font-size:24px;margin-bottom:8px">⏳</div>
+                            Lade personalisierte Vorschläge...
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:10px;margin-top:8px">
+                        <div class="mb-choice" style="flex:1;border:1px dashed rgba(139,170,255,0.25)" onclick="mbShowCustomInput()">
+                            <div class="mb-choice-icon" style="font-size:16px">✏️</div>
+                            <div class="mb-choice-title">Eigene Problemstellung</div>
+                        </div>
+                        <div class="mb-choice" style="flex:1;border:1px dashed rgba(139,170,255,0.25)" onclick="mbLetBeatrixDefine()">
+                            <div class="mb-choice-icon" style="font-size:16px">🤖</div>
+                            <div class="mb-choice-title">BEATRIX definiert</div>
+                        </div>
+                    </div>
+
+                    <div id="mbCustomInput" style="display:none;margin-top:16px">
+                        <textarea class="mb-input mb-textarea" id="mbQuestion" placeholder="Beschreibe das Verhalten, die Entscheidung oder das Phänomen, das du modellieren möchtest..." style="min-height:80px"></textarea>
+                        <div style="margin-top:10px">
+                            <button class="mb-btn mb-btn-primary" onclick="mbProcessStep0()">Analysieren →</button>
+                        </div>
                     </div>
                 </div>
 
-                <div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap">
-                    <div class="mb-choice" style="flex:1;min-width:250px;border:1px dashed rgba(139,170,255,0.3)" onclick="mbShowCustomInput()">
-                        <div class="mb-choice-num">4</div>
-                        <div class="mb-choice-icon">✏️</div>
-                        <div class="mb-choice-title">Eigene Problemstellung</div>
-                        <div class="mb-choice-desc">Definiere deine Frage oder deinen Gestaltungsanlass selbst.</div>
+                <!-- VIEW B: Analysis (hidden initially) -->
+                <div id="mbStep0ViewB" style="display:none">
+                    <div class="mb-step-title">Session-Analyse</div>
+                    <div id="mbStep0SelectedQ" style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:16px;padding:12px 16px;background:rgba(139,170,255,0.05);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;line-height:1.6"></div>
+
+                    <div id="mbProgress0" class="mb-inline-progress" style="display:none"></div>
+
+                    <div id="mbStep0Result" style="display:none">
+                        <div class="mb-summary" id="mbSessionSummary"></div>
                     </div>
-                    <div class="mb-choice" style="flex:1;min-width:250px;border:1px dashed rgba(139,170,255,0.3)" onclick="mbLetBeatrixDefine()">
-                        <div class="mb-choice-num">5</div>
-                        <div class="mb-choice-icon">🤖</div>
-                        <div class="mb-choice-title">BEATRIX definiert für dich</div>
-                        <div class="mb-choice-desc">BEATRIX generiert eine Problemstellung basierend auf deinem Profil und aktuellen Themen.</div>
+
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="mbStep0Back()">← Andere Frage</button>
+                        <button class="mb-btn mb-btn-primary" id="mbStep0Btn" disabled>BEATRIX analysiert...</button>
                     </div>
-                </div>
-
-                <div id="mbCustomInput" style="display:none;margin-top:20px">
-                    <label class="mb-label">Deine Frage / Gestaltungsanlass</label>
-                    <textarea class="mb-input mb-textarea" id="mbQuestion" placeholder="Beschreibe das Verhalten, die Entscheidung oder das Phänomen, das du modellieren möchtest..."></textarea>
-                </div>
-
-                <div id="mbStep0Result" style="display:none">
-                    <div class="mb-summary" id="mbSessionSummary"></div>
-                </div>
-
-                <div id="mbProgress0" class="mb-inline-progress" style="display:none"></div>
-                <div class="mb-actions">
-                    <button class="mb-btn mb-btn-back" onclick="mbGoToStart()">← Zurück</button>
-                    <button class="mb-btn mb-btn-primary" id="mbStep0Btn" onclick="mbProcessStep0()">Analysieren →</button>
                 </div>
             </div>
 
@@ -2165,35 +2173,39 @@ Antworte NUR als JSON Array:
                     ];
                 }
 
-                // 4. Render personalized choices
+                // 4. Render personalized choices as clean tap cards
                 container.innerHTML = questions.slice(0, 3).map((q, i) => `
-                    <div class="mb-choice" onclick="mbSelectProblem(this, '${q.question.replace(/'/g, "\\'")}')">
-                        <div class="mb-choice-num">${i + 1}</div>
-                        <div class="mb-choice-icon">${q.icon || '📋'}</div>
-                        <div class="mb-choice-title">${q.title}</div>
-                        <div class="mb-choice-desc">${q.question}</div>
-                        <div class="mb-choice-meta">Domain: ${q.domain} · ${q.type}</div>
+                    <div onclick="mbSelectProblem(this, '${q.question.replace(/'/g, "\\'")}')"
+                         style="padding:16px 18px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);cursor:pointer;transition:all 0.2s;background:rgba(255,255,255,0.02)"
+                         onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(139,170,255,0.06)'"
+                         onmouseout="this.style.borderColor='rgba(255,255,255,0.08)';this.style.background='rgba(255,255,255,0.02)'">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                            <span style="font-size:18px">${q.icon || '📋'}</span>
+                            <span style="font-weight:600;color:white;font-size:15px">${q.title}</span>
+                            <span style="margin-left:auto;font-size:11px;color:var(--accent);opacity:0.6">${q.domain}</span>
+                        </div>
+                        <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5">${q.question}</div>
                     </div>
                 `).join('');
 
             } catch(e) {
                 console.error('Load questions error:', e);
-                container.innerHTML = `
-                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Wie beeinflusst Behavioral Economics strategische Entscheidungen in Organisationen?')">
-                        <div class="mb-choice-num">1</div><div class="mb-choice-icon">🧠</div>
-                        <div class="mb-choice-title">Behavioral Strategy</div>
-                        <div class="mb-choice-desc">Wie beeinflusst Behavioral Economics strategische Entscheidungen in Organisationen?</div>
+                container.innerHTML = [
+                    { icon: '🧠', title: 'Behavioral Strategy', q: 'Wie beeinflusst Behavioral Economics strategische Entscheidungen in Organisationen?' },
+                    { icon: '🏗️', title: 'Change & Architecture', q: 'Wie kann Decision Architecture die Akzeptanz von Change-Prozessen erhöhen?' },
+                    { icon: '💰', title: 'Investment Biases', q: 'Warum weichen Anlageentscheidungen systematisch von rationalen Benchmarks ab?' }
+                ].map(item => `
+                    <div onclick="mbSelectProblem(this, '${item.q.replace(/'/g, "\\'")}')"
+                         style="padding:16px 18px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);cursor:pointer;transition:all 0.2s;background:rgba(255,255,255,0.02)"
+                         onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(139,170,255,0.06)'"
+                         onmouseout="this.style.borderColor='rgba(255,255,255,0.08)';this.style.background='rgba(255,255,255,0.02)'">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                            <span style="font-size:18px">${item.icon}</span>
+                            <span style="font-weight:600;color:white;font-size:15px">${item.title}</span>
+                        </div>
+                        <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5">${item.q}</div>
                     </div>
-                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Wie kann Decision Architecture die Akzeptanz von Change-Prozessen erhöhen?')">
-                        <div class="mb-choice-num">2</div><div class="mb-choice-icon">🏗️</div>
-                        <div class="mb-choice-title">Change & Architecture</div>
-                        <div class="mb-choice-desc">Wie kann Decision Architecture die Akzeptanz von Change-Prozessen erhöhen?</div>
-                    </div>
-                    <div class="mb-choice" onclick="mbSelectProblem(this, 'Warum weichen Anlageentscheidungen systematisch von rationalen Benchmarks ab?')">
-                        <div class="mb-choice-num">3</div><div class="mb-choice-icon">💰</div>
-                        <div class="mb-choice-title">Investment Biases</div>
-                        <div class="mb-choice-desc">Warum weichen Anlageentscheidungen systematisch von rationalen Benchmarks ab?</div>
-                    </div>`;
+                `).join('');
             }
         }
 
@@ -2673,18 +2685,23 @@ Antworte NUR als JSON Array:
         }
 
         function mbSelectProblem(el, question) {
-            // Deselect all choices in Step 0
-            document.querySelectorAll('#mbStep0Choices .mb-choice, #mbStep0 .mb-choice').forEach(c => c.classList.remove('selected'));
-            el.classList.add('selected');
             mbState.selectedProblem = question;
-            // Hide custom input if shown
-            document.getElementById('mbCustomInput').style.display = 'none';
+            // Switch to analysis view
+            document.getElementById('mbStep0ViewA').style.display = 'none';
+            document.getElementById('mbStep0ViewB').style.display = 'block';
+            document.getElementById('mbStep0SelectedQ').textContent = question;
             // Auto-trigger analysis
             mbProcessStep0();
         }
 
+        function mbStep0Back() {
+            document.getElementById('mbStep0ViewB').style.display = 'none';
+            document.getElementById('mbStep0ViewA').style.display = 'block';
+            document.getElementById('mbStep0Result').style.display = 'none';
+            mbState.selectedProblem = null;
+        }
+
         function mbShowCustomInput() {
-            document.querySelectorAll('#mbStep0Choices .mb-choice, #mbStep0 .mb-choice').forEach(c => c.classList.remove('selected'));
             mbState.selectedProblem = null;
             const ci = document.getElementById('mbCustomInput');
             ci.style.display = 'block';
@@ -2692,10 +2709,13 @@ Antworte NUR als JSON Array:
         }
 
         async function mbLetBeatrixDefine() {
-            document.querySelectorAll('#mbStep0Choices .mb-choice, #mbStep0 .mb-choice').forEach(c => c.classList.remove('selected'));
-            const btn = document.getElementById('mbStep0Btn');
-            btn.disabled = true;
-            btn.textContent = 'BEATRIX generiert Problemstellung...';
+            // Show custom input area with loading state
+            const ci = document.getElementById('mbCustomInput');
+            ci.style.display = 'block';
+            const ta = document.getElementById('mbQuestion');
+            ta.value = '';
+            ta.placeholder = 'BEATRIX generiert eine Problemstellung...';
+            ta.disabled = true;
             try {
                 const resp = await fetch('/api/chat', {
                     method: 'POST',
@@ -2705,17 +2725,14 @@ Antworte NUR als JSON Array:
                 const data = await resp.json();
                 const generated = (data.answer || '').replace(/```[^`]*```/g, '').replace(/["""]/g, '').trim();
                 if (generated) {
-                    mbState.selectedProblem = generated;
-                    const ci = document.getElementById('mbCustomInput');
-                    ci.style.display = 'block';
-                    document.getElementById('mbQuestion').value = generated;
-                    btn.textContent = 'Analysieren →';
-                    btn.disabled = false;
+                    ta.value = generated;
+                    ta.disabled = false;
+                    ta.placeholder = 'Beschreibe das Verhalten...';
                 }
             } catch(e) {
                 console.error('Generate error:', e);
-                btn.textContent = 'Analysieren →';
-                btn.disabled = false;
+                ta.disabled = false;
+                ta.placeholder = 'Beschreibe das Verhalten...';
             }
         }
 
@@ -2839,13 +2856,15 @@ Antworte NUR als JSON Array:
         async function mbProcessStep0() {
             const q = document.getElementById('mbQuestion') ? document.getElementById('mbQuestion').value.trim() : '';
             const selectedQ = mbState.selectedProblem || q;
-            if (!selectedQ) { 
-                // Highlight choices
-                document.getElementById('mbStep0Choices').style.animation = 'shake 0.3s';
-                setTimeout(() => document.getElementById('mbStep0Choices').style.animation = '', 300);
-                return; 
-            }
+            if (!selectedQ) return;
             mbState.question = selectedQ;
+
+            // Switch to View B if not already there (custom input case)
+            if (document.getElementById('mbStep0ViewA').style.display !== 'none') {
+                document.getElementById('mbStep0ViewA').style.display = 'none';
+                document.getElementById('mbStep0ViewB').style.display = 'block';
+                document.getElementById('mbStep0SelectedQ').textContent = selectedQ;
+            }
 
             const btn = document.getElementById('mbStep0Btn');
             btn.disabled = true;
