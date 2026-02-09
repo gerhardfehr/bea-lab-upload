@@ -1,4 +1,3 @@
-# v3.14.0
 """
 BEA Lab - Document Upload API
 Uploads are automatically pushed to GitHub: papers/evaluated/integrated/
@@ -124,6 +123,7 @@ class User(Base):
     linkedin_id = Column(String(100), nullable=True)
     profile_photo_url = Column(String(1000), nullable=True)
     expertise = Column(JSON, nullable=True)  # ["Behavioral Economics", "Strategy", ...]
+    role = Column(String(50), default="researcher")  # researcher, sales, operations
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
@@ -237,6 +237,8 @@ def get_db():
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
                     # Role field for tab visibility
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'researcher'"))
+                    # Set initial roles for sales users
+                    conn.execute(text("UPDATE users SET role = 'sales' WHERE email IN ('nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com') AND (role IS NULL OR role = 'researcher')"))
                     # Leads table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS leads (
                         id VARCHAR PRIMARY KEY, company VARCHAR(500),
@@ -629,7 +631,7 @@ async def register(request: RegisterRequest):
                 logger.info(f"Verification email sent to {email}")
                 return JSONResponse({"status": "verification_required", "message": "Registrierung erfolgreich! Bitte prüfe dein E-Mail-Postfach und bestätige deine E-Mail-Adresse."})
         # Admin or no verification required → direct login
-        token = create_jwt({"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY})
+        token = create_jwt({"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "role": user.role or "researcher", "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY})
         logger.info(f"New user: {email} (verified={user.email_verified})")
         resp = JSONResponse({"token": token, "expires_in": JWT_EXPIRY, "user": {"email": user.email, "name": user.name}})
         resp.set_cookie(key="bea_token", value=token, max_age=JWT_EXPIRY, httponly=True, samesite="lax")
@@ -650,7 +652,7 @@ async def login(request: LoginRequest):
         if REQUIRE_EMAIL_VERIFICATION and not user.email_verified:
             raise HTTPException(403, "E-Mail noch nicht bestätigt. Bitte prüfe dein Postfach.")
         user.last_login = datetime.utcnow(); db.commit()
-        token = create_jwt({"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY})
+        token = create_jwt({"sub": user.email, "name": user.name, "uid": user.id, "admin": user.is_admin, "role": user.role or "researcher", "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY})
         logger.info(f"Login: {email}")
         resp = JSONResponse({"token": token, "expires_in": JWT_EXPIRY, "user": {"email": user.email, "name": user.name}})
         resp.set_cookie(key="bea_token", value=token, max_age=JWT_EXPIRY, httponly=True, samesite="lax")
@@ -747,7 +749,7 @@ async def get_profile(user=Depends(require_auth)):
             "email": u.email, "name": u.name, "position": u.position, "company": u.company,
             "bio": u.bio, "phone": u.phone, "linkedin_url": u.linkedin_url,
             "linkedin_connected": bool(u.linkedin_id), "profile_photo_url": u.profile_photo_url,
-            "expertise": u.expertise or [], "is_admin": u.is_admin,
+            "expertise": u.expertise or [], "is_admin": u.is_admin, "role": u.role or "researcher",
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "last_login": u.last_login.isoformat() if u.last_login else None
         }
@@ -1423,7 +1425,7 @@ async def admin_users(user=Depends(require_auth)):
     db = get_db()
     try:
         users = db.query(User).order_by(User.created_at.desc()).all()
-        return [{"id": u.id, "email": u.email, "name": u.name, "is_active": u.is_active, "is_admin": u.is_admin, "email_verified": u.email_verified, "created_at": u.created_at.isoformat() if u.created_at else None, "last_login": u.last_login.isoformat() if u.last_login else None} for u in users]
+        return [{"id": u.id, "email": u.email, "name": u.name, "is_active": u.is_active, "is_admin": u.is_admin, "role": u.role or "researcher", "email_verified": u.email_verified, "created_at": u.created_at.isoformat() if u.created_at else None, "last_login": u.last_login.isoformat() if u.last_login else None} for u in users]
     finally: db.close()
 
 @app.put("/api/admin/users/{user_id}/toggle-active")
@@ -1435,6 +1437,22 @@ async def toggle_user_active(user_id: str, user=Depends(require_auth)):
         if not target: raise HTTPException(404, "Benutzer nicht gefunden")
         target.is_active = not target.is_active; db.commit()
         return {"email": target.email, "is_active": target.is_active}
+    finally: db.close()
+
+@app.put("/api/admin/users/{user_id}/role")
+async def set_user_role(user_id: str, request: Request, user=Depends(require_auth)):
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        data = await request.json()
+        role = data.get("role", "researcher")
+        if role not in ("researcher", "sales", "operations"):
+            raise HTTPException(400, "Ungültige Rolle")
+        target = db.query(User).filter(User.id == user_id).first()
+        if not target: raise HTTPException(404, "Benutzer nicht gefunden")
+        target.role = role; db.commit()
+        logger.info(f"Role changed: {target.email} → {role}")
+        return {"email": target.email, "role": role}
     finally: db.close()
 
 # ── BEATRIX Chat (RAG) ──────────────────────────────────────────────────
