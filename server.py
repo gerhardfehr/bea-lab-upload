@@ -234,6 +234,17 @@ def get_db():
                             conn.rollback()
                     # Auto-verify existing admin users
                     conn.execute(text("UPDATE users SET email_verified = TRUE WHERE is_admin = TRUE AND email_verified = FALSE"))
+                    # Role field for tab visibility
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'researcher'"))
+                    # Leads table
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS leads (
+                        id VARCHAR PRIMARY KEY, company VARCHAR(500),
+                        contact VARCHAR(200), email VARCHAR(320),
+                        stage VARCHAR(50) DEFAULT 'kontakt',
+                        value REAL DEFAULT 0, source VARCHAR(200),
+                        notes TEXT, created_by VARCHAR(320),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -2005,4 +2016,75 @@ async def admin_embed_all(user=Depends(require_auth)):
             raise HTTPException(400, "VOYAGE_API_KEY nicht konfiguriert")
         count = embed_all_documents(db)
         return {"message": f"{count} Dokumente embedded", "embedded": count}
+    finally: db.close()
+
+# ── Leads API ────────────────────────────────────
+@app.get("/api/leads")
+async def get_leads(user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        rows = db.execute(text("SELECT * FROM leads ORDER BY updated_at DESC")).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except Exception as e:
+        logger.error(f"Leads fetch error: {e}")
+        return []
+    finally: db.close()
+
+@app.post("/api/leads")
+async def create_lead(request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        import uuid
+        data = await request.json()
+        lead_id = str(uuid.uuid4())[:8]
+        db.execute(text("""INSERT INTO leads (id, company, contact, email, stage, value, source, notes, created_by)
+            VALUES (:id, :company, :contact, :email, :stage, :value, :source, :notes, :created_by)"""),
+            {"id": lead_id, "company": data.get("company",""), "contact": data.get("contact",""),
+             "email": data.get("email",""), "stage": data.get("stage","kontakt"),
+             "value": data.get("value", 0), "source": data.get("source",""),
+             "notes": data.get("notes",""), "created_by": user["sub"]})
+        db.commit()
+        return {"id": lead_id, "status": "created"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lead create error: {e}")
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.put("/api/leads/{lead_id}")
+async def update_lead(lead_id: str, request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        data = await request.json()
+        sets = []
+        params = {"id": lead_id}
+        for field in ["company", "contact", "email", "stage", "value", "source", "notes"]:
+            if field in data:
+                sets.append(f"{field} = :{field}")
+                params[field] = data[field]
+        if not sets: return {"status": "no changes"}
+        sets.append("updated_at = CURRENT_TIMESTAMP")
+        db.execute(text(f"UPDATE leads SET {', '.join(sets)} WHERE id = :id"), params)
+        db.commit()
+        return {"status": "updated"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lead update error: {e}")
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.delete("/api/leads/{lead_id}")
+async def delete_lead(lead_id: str, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        db.execute(text("DELETE FROM leads WHERE id = :id"), {"id": lead_id})
+        db.commit()
+        return {"status": "deleted"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
     finally: db.close()
