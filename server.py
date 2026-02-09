@@ -2461,8 +2461,83 @@ async def crm_get_companies_enriched(user=Depends(require_auth)):
                 "ebf_applicable_models": cust.get("ebf_applicable_models"),
             })
 
-        result.sort(key=lambda x: (-x["leads"], x["name"]))
-        return result
+        # ── Group by parent company ──
+        # Step 1: Identify parent codes (strategic/context type, or unique root codes)
+        all_codes = [r["code"] for r in result]
+        parent_candidates = set()
+        for r in result:
+            if r["type"] in ("strategic", "context"):
+                parent_candidates.add(r["code"])
+
+        # Step 2: For each company, find parent by prefix matching
+        for r in result:
+            r["parent_code"] = None
+            if r["code"] in parent_candidates:
+                r["parent_code"] = r["code"]  # is itself a parent
+                continue
+            # Check if code starts with a known parent code
+            for pc in sorted(parent_candidates, key=len, reverse=True):
+                if r["code"].upper().startswith(pc.upper()) and r["code"] != pc:
+                    r["parent_code"] = pc
+                    break
+
+        # Step 3: Detect additional groups by name prefix (e.g. "DS Studio" entries)
+        ungrouped = [r for r in result if not r["parent_code"]]
+        from collections import Counter
+        # Find names that share a common prefix (first word)
+        first_words = Counter()
+        for r in ungrouped:
+            fw = r["name"].split()[0] if r["name"] else ""
+            if len(fw) > 2:
+                first_words[fw] += 1
+        # Group if 2+ entries share same first word
+        multi_groups = {fw for fw, cnt in first_words.items() if cnt >= 2}
+        for r in result:
+            if not r["parent_code"] and r["name"]:
+                fw = r["name"].split()[0]
+                if fw in multi_groups:
+                    # Find or create parent: prefer strategic, else first entry
+                    group_members = [x for x in result if x["name"].split()[0] == fw]
+                    parent = next((x for x in group_members if x["type"] in ("strategic","context")), group_members[0])
+                    r["parent_code"] = parent["code"]
+
+        # Step 4: Entries without a group are their own parent
+        for r in result:
+            if not r["parent_code"]:
+                r["parent_code"] = r["code"]
+
+        # Build grouped output
+        groups = {}
+        for r in result:
+            pc = r["parent_code"]
+            if pc not in groups:
+                groups[pc] = {"parent": None, "children": []}
+            if r["code"] == pc:
+                groups[pc]["parent"] = r
+            else:
+                groups[pc]["children"].append(r)
+
+        # For groups without an explicit parent, promote first child
+        for pc, g in groups.items():
+            if not g["parent"] and g["children"]:
+                g["parent"] = g["children"].pop(0)
+
+        # Build final sorted list
+        grouped_result = []
+        for pc in sorted(groups.keys(), key=lambda k: groups[k]["parent"]["name"] if groups[k]["parent"] else ""):
+            g = groups[pc]
+            if not g["parent"]:
+                continue
+            parent = g["parent"]
+            children = sorted(g["children"], key=lambda x: x["name"])
+            # Aggregate stats
+            parent["child_count"] = len(children)
+            parent["total_leads"] = parent.get("leads", 0) + sum(c.get("leads", 0) for c in children)
+            parent["total_contacts"] = parent.get("contact_persons", 0) + sum(c.get("contact_persons", 0) for c in children)
+            parent["children"] = children
+            grouped_result.append(parent)
+
+        return grouped_result
     except Exception as e:
         logger.error(f"Enriched companies error: {e}")
         return []
