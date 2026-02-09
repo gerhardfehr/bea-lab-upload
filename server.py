@@ -3347,7 +3347,7 @@ async def add_memory(request: Request, user=Depends(require_auth)):
         put_data = json.dumps({"message": f"memory: {entry_type} {new_id} – {topic}", "content": base64.b64encode(yaml_content.encode()).decode(), "sha": sha, "branch": "main"}).encode()
         req3 = urllib.request.Request(url, data=put_data, method="PUT", headers={"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab"})
         urllib.request.urlopen(req3, context=ctx, timeout=15)
-        logger.info(f"Memory added: {new_id} by {user['email']}")
+        logger.info(f"Memory added: {new_id} by {user.get('sub','?')}")
         return {"ok": True, "id": new_id, "type": entry_type}
     except Exception as e:
         logger.error(f"Memory add error: {e}")
