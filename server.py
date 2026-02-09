@@ -2495,102 +2495,115 @@ async def crm_sync_github(user=Depends(require_auth)):
                 stats["skipped"] += 1
                 continue
 
-            # Company info
-            company = lead.get("company", {})
-            if isinstance(company, str):
-                company = {"name": company, "short_name": company}
-            company_name = company.get("name", "")
-            short_name = company.get("short_name", company_name)
+            try:
+                # Company info
+                company = lead.get("company") or {}
+                if isinstance(company, str):
+                    company = {"name": company, "short_name": company}
+                company_name = company.get("name", "") or ""
+                short_name = company.get("short_name", "") or company_name or lead_id
 
-            # Create or find company
-            company_id = None
-            ebf = lead.get("ebf_integration", {})
-            cus_ref = ebf.get("customer_registry_ref", "")
-            if cus_ref:
-                company_id = cus_ref
-                existing_co = db.execute(text("SELECT id FROM crm_companies WHERE id = :id"), {"id": cus_ref}).fetchone()
-                if not existing_co:
-                    db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, size, website, address, notes, created_by)
-                        VALUES (:id, :name, :domain, :ind, :size, :web, :addr, :notes, :cb)"""),
-                        {"id": cus_ref, "name": company_name, "domain": short_name,
-                         "ind": lead.get("industry",""), "size": lead.get("segment",""),
-                         "web": company.get("website",""),
-                         "addr": f"{lead.get('headquarters',{}).get('city','')}, {lead.get('headquarters',{}).get('country','')}",
-                         "notes": f"Employees: {lead.get('employee_count','?')}, Revenue: {lead.get('revenue_eur','?')} EUR",
-                         "cb": "github-sync"})
-                    stats["companies"] += 1
-            else:
-                company_id = f"CO-{lead_id}"
-                db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, notes, created_by)
-                    VALUES (:id, :name, :domain, :ind, :notes, :cb)"""),
-                    {"id": company_id, "name": company_name, "domain": short_name,
-                     "ind": lead.get("industry",""), "notes": "", "cb": "github-sync"})
-                stats["companies"] += 1
+                # Create or find company
+                company_id = None
+                ebf = lead.get("ebf_integration") or {}
+                cus_ref = ebf.get("customer_registry_ref", "") or ""
+                if cus_ref:
+                    company_id = cus_ref
+                    existing_co = db.execute(text("SELECT id FROM crm_companies WHERE id = :id"), {"id": cus_ref}).fetchone()
+                    if not existing_co:
+                        hq = lead.get("headquarters") or {}
+                        db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, size, website, address, notes, created_by)
+                            VALUES (:id, :name, :domain, :ind, :size, :web, :addr, :notes, :cb)"""),
+                            {"id": cus_ref, "name": company_name, "domain": short_name,
+                             "ind": lead.get("industry","") or "", "size": lead.get("segment","") or "",
+                             "web": company.get("website","") or "",
+                             "addr": f"{hq.get('city','')}, {hq.get('country','')}",
+                             "notes": f"Employees: {lead.get('employee_count','?')}, Revenue: {lead.get('revenue_eur','?')} EUR",
+                             "cb": "github-sync"})
+                        stats["companies"] += 1
+                else:
+                    company_id = f"CO-{lead_id}"
+                    existing_co = db.execute(text("SELECT id FROM crm_companies WHERE id = :id"), {"id": company_id}).fetchone()
+                    if not existing_co:
+                        db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, notes, created_by)
+                            VALUES (:id, :name, :domain, :ind, :notes, :cb)"""),
+                            {"id": company_id, "name": company_name, "domain": short_name,
+                             "ind": lead.get("industry","") or "", "notes": "", "cb": "github-sync"})
+                        stats["companies"] += 1
 
-            # Create contacts
-            first_contact_id = None
-            for ct in lead.get("contacts", []):
-                ct_name = ct.get("name", "")
-                if not ct_name or ct_name.startswith("["):
-                    continue
-                ct_id = f"CT-{lead_id}-{ct_name[:10].replace(' ','-')}"
-                existing_ct = db.execute(text("SELECT id FROM crm_contacts WHERE id = :id"), {"id": ct_id}).fetchone()
-                if not existing_ct:
-                    db.execute(text("""INSERT INTO crm_contacts (id, company_id, name, email, phone, position, role_type, notes, created_by)
-                        VALUES (:id, :cid, :name, :email, :phone, :pos, :role, :notes, :cb)"""),
-                        {"id": ct_id, "cid": company_id, "name": ct_name,
-                         "email": ct.get("email","") or "", "phone": ct.get("phone","") or "",
-                         "pos": ct.get("role",""), "role": "champion" if ct.get("is_champion") else "kontakt",
-                         "notes": f"Relationship: {ct.get('relationship_strength','?')}", "cb": "github-sync"})
-                    stats["contacts"] += 1
-                if not first_contact_id:
-                    first_contact_id = ct_id
+                # Create contacts
+                first_contact_id = None
+                for ct in (lead.get("contacts") or []):
+                    if not ct or not isinstance(ct, dict): continue
+                    ct_name = ct.get("name", "") or ""
+                    if not ct_name or ct_name.startswith("["):
+                        continue
+                    ct_id = f"CT-{lead_id}-{ct_name[:10].replace(' ','-')}"
+                    existing_ct = db.execute(text("SELECT id FROM crm_contacts WHERE id = :id"), {"id": ct_id}).fetchone()
+                    if not existing_ct:
+                        db.execute(text("""INSERT INTO crm_contacts (id, company_id, name, email, phone, position, role_type, notes, created_by)
+                            VALUES (:id, :cid, :name, :email, :phone, :pos, :role, :notes, :cb)"""),
+                            {"id": ct_id, "cid": company_id, "name": ct_name,
+                             "email": ct.get("email","") or "", "phone": ct.get("phone","") or "",
+                             "pos": ct.get("role","") or "", "role": "champion" if ct.get("is_champion") else "kontakt",
+                             "notes": f"Relationship: {ct.get('relationship_strength','?')}", "cb": "github-sync"})
+                        stats["contacts"] += 1
+                    if not first_contact_id:
+                        first_contact_id = ct_id
 
-            # Create deal
-            rel = lead.get("relationship", {})
-            stage_raw = lead.get("stage", "PROSPECT")
-            stage = stage_map.get(stage_raw, stage_raw.lower())
-            prob = CRM_STAGE_PROB.get(stage, 10)
-            value = lead.get("relationship", {}).get("contract_value_eur", 0) or 0
-            owner = rel.get("owner", "GF")
+                # Create deal
+                rel = lead.get("relationship") or {}
+                stage_raw = lead.get("stage", "PROSPECT") or "PROSPECT"
+                stage = stage_map.get(stage_raw, stage_raw.lower())
+                prob = CRM_STAGE_PROB.get(stage, 10)
+                value = 0
+                try: value = int(rel.get("contract_value_eur", 0) or 0)
+                except: pass
+                owner = rel.get("owner", "GF") or "GF"
 
-            # Build notes with key info
-            notes_parts = []
-            if lead.get("notes"): notes_parts.append(str(lead["notes"]).strip())
-            if lead.get("fit_score"): notes_parts.append(f"Fit Score: {lead['fit_score']}")
-            if lead.get("engagement_score"): notes_parts.append(f"Engagement: {lead['engagement_score']}")
-            if lead.get("hot_lead"): notes_parts.append(f"🔥 HOT LEAD: {lead.get('hot_lead_reason','')}")
-            if lead.get("priority"): notes_parts.append(f"Priority: {lead['priority']} - {lead.get('priority_reason','')}")
-            if lead.get("tags"): notes_parts.append(f"Tags: {', '.join(lead['tags'])}")
-            notes_text = "\n".join(notes_parts)
+                # Build notes
+                notes_parts = []
+                if lead.get("notes"): notes_parts.append(str(lead["notes"]).strip())
+                if lead.get("fit_score"): notes_parts.append(f"Fit Score: {lead['fit_score']}")
+                if lead.get("engagement_score"): notes_parts.append(f"Engagement: {lead['engagement_score']}")
+                if lead.get("hot_lead"): notes_parts.append(f"🔥 HOT LEAD: {lead.get('hot_lead_reason','')}")
+                if lead.get("priority"): notes_parts.append(f"Priority: {lead['priority']} - {lead.get('priority_reason','')}")
+                if lead.get("tags") and isinstance(lead["tags"], list): notes_parts.append(f"Tags: {', '.join(str(t) for t in lead['tags'])}")
+                notes_text = "\n".join(notes_parts)
 
-            source_info = lead.get("source", {})
-            source_str = f"{source_info.get('channel','')} {source_info.get('subchannel','')} {source_info.get('referrer','')}".strip()
+                source_info = lead.get("source") or {}
+                source_str = f"{source_info.get('channel','')} {source_info.get('subchannel','')} {source_info.get('referrer','')}".strip()
 
-            db.execute(text("""INSERT INTO crm_deals (id, company_id, contact_id, title, stage, value, probability, source,
-                next_action, next_action_date, owner, notes, created_by, created_at)
-                VALUES (:id, :cid, :ctid, :title, :stage, :val, :prob, :src, :na, :nad, :owner, :notes, :cb, :ca)"""),
-                {"id": lead_id, "cid": company_id, "ctid": first_contact_id,
-                 "title": f"{short_name} – {lead.get('industry','')}",
-                 "stage": stage, "val": value, "prob": prob, "src": source_str,
-                 "na": lead.get("next_action",""), "nad": lead.get("next_action_date"),
-                 "owner": f"OWN-{owner}", "notes": notes_text, "cb": "github-sync",
-                 "ca": lead.get("created", lead.get("created_at", datetime.utcnow()))})
-            stats["deals"] += 1
+                db.execute(text("""INSERT INTO crm_deals (id, company_id, contact_id, title, stage, value, probability, source,
+                    next_action, next_action_date, owner, notes, created_by, created_at)
+                    VALUES (:id, :cid, :ctid, :title, :stage, :val, :prob, :src, :na, :nad, :owner, :notes, :cb, :ca)"""),
+                    {"id": lead_id, "cid": company_id, "ctid": first_contact_id,
+                     "title": f"{short_name} – {lead.get('industry','') or ''}",
+                     "stage": stage, "val": value, "prob": prob, "src": source_str,
+                     "na": lead.get("next_action","") or "", "nad": lead.get("next_action_date") or None,
+                     "owner": f"OWN-{owner}", "notes": notes_text, "cb": "github-sync",
+                     "ca": lead.get("created", lead.get("created_at", datetime.utcnow().isoformat()))})
+                stats["deals"] += 1
 
-            # Import contact_log as activities
-            for log in lead.get("contact_log", []):
-                act_id = f"ACT-{lead_id}-{log.get('date','')[:10]}"
-                existing_act = db.execute(text("SELECT id FROM crm_activities WHERE id = :id"), {"id": act_id}).fetchone()
-                if existing_act: continue
-                db.execute(text("""INSERT INTO crm_activities (id, deal_id, company_id, type, subject, description, created_by, created_at)
-                    VALUES (:id, :did, :cid, :type, :subj, :desc, :cb, :ca)"""),
-                    {"id": act_id, "did": lead_id, "cid": company_id,
-                     "type": log.get("type", "note"), "subj": log.get("notes","")[:200],
-                     "desc": f"Contact: {log.get('contact_person','')}\nOutcome: {log.get('outcome','')}\n{log.get('notes','')}",
-                     "cb": log.get("logged_by", "github-sync"),
-                     "ca": log.get("date", datetime.utcnow())})
-                stats["activities"] += 1
+                # Import contact_log as activities
+                for log in (lead.get("contact_log") or []):
+                    if not log or not isinstance(log, dict): continue
+                    act_id = f"ACT-{lead_id}-{str(log.get('date',''))[:10]}"
+                    existing_act = db.execute(text("SELECT id FROM crm_activities WHERE id = :id"), {"id": act_id}).fetchone()
+                    if existing_act: continue
+                    db.execute(text("""INSERT INTO crm_activities (id, deal_id, company_id, type, subject, description, created_by, created_at)
+                        VALUES (:id, :did, :cid, :type, :subj, :desc, :cb, :ca)"""),
+                        {"id": act_id, "did": lead_id, "cid": company_id,
+                         "type": log.get("type", "note") or "note", "subj": str(log.get("notes",""))[:200],
+                         "desc": f"Contact: {log.get('contact_person','')}\nOutcome: {log.get('outcome','')}\n{log.get('notes','')}",
+                         "cb": log.get("logged_by", "github-sync") or "github-sync",
+                         "ca": str(log.get("date", datetime.utcnow().isoformat()))})
+                    stats["activities"] += 1
+
+            except Exception as lead_err:
+                logger.warning(f"CRM Sync: skipping {lead_id}: {lead_err}")
+                stats["skipped"] += 1
+                continue
 
         db.commit()
         logger.info(f"CRM Sync complete: {stats}")
