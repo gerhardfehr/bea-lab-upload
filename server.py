@@ -266,14 +266,14 @@ def get_db():
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_role VARCHAR(30) DEFAULT 'none'"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_owner_code VARCHAR(20)"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS lead_management BOOLEAN DEFAULT FALSE"))
-                    # Auto-enable CRM for FehrAdvice admins (Senior Management)
+                    # Auto-enable CRM for FehrAdvice admins (Senior Management) – runs every startup
                     conn.execute(text("""UPDATE users SET crm_access = TRUE, crm_role = 'admin' 
-                        WHERE is_admin = TRUE AND email LIKE '%%@fehradvice.com' AND (crm_access IS NULL OR crm_access = FALSE)"""))
+                        WHERE is_admin = TRUE AND email LIKE '%%@fehradvice.com'"""))
                     # Also enable for known senior management
                     conn.execute(text("""UPDATE users SET crm_access = TRUE, crm_role = 'admin', crm_owner_code = 'OWN-GF'
-                        WHERE email = 'gerhard.fehr@fehradvice.com' AND (crm_access IS NULL OR crm_access = FALSE)"""))
+                        WHERE email = 'gerhard.fehr@fehradvice.com'"""))
                     conn.execute(text("""UPDATE users SET crm_access = TRUE, crm_role = 'admin', crm_owner_code = 'OWN-AF'
-                        WHERE email = 'andrea.fehr@fehradvice.com' AND (crm_access IS NULL OR crm_access = FALSE)"""))
+                        WHERE email = 'andrea.fehr@fehradvice.com'"""))
                     # Ensure known admins have is_admin flag
                     conn.execute(text("""UPDATE users SET is_admin = TRUE WHERE email IN ('gerhard.fehr@fehradvice.com', 'andrea.fehr@fehradvice.com') AND is_admin = FALSE"""))
                     # Set initial roles for sales users
