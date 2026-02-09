@@ -4018,11 +4018,15 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
         #fbSend { padding:8px 20px; border-radius:10px; border:none; background:linear-gradient(135deg,#8b9aff,#6366f1); color:white; font-size:13px; font-weight:600; cursor:pointer; }
         #fbSend:hover { filter:brightness(1.1); }
         #fbSend:disabled { opacity:0.5; cursor:not-allowed; }
-        .fb-suggestion { padding:14px 16px; border-radius:12px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.03); cursor:pointer; transition:all 0.2s; text-align:left; margin-bottom:8px; }
-        .fb-suggestion:hover { border-color:rgba(139,170,255,0.4); background:rgba(139,170,255,0.06); transform:translateY(-1px); }
-        .fb-suggestion-icon { font-size:18px; margin-bottom:6px; }
-        .fb-suggestion-title { font-size:13px; font-weight:600; color:white; margin-bottom:3px; }
+        .fb-suggestion { padding:12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.03); cursor:pointer; transition:all 0.2s; text-align:left; margin-bottom:8px; display:flex; align-items:flex-start; gap:10px; }
+        .fb-suggestion:hover, .fb-suggestion.active { border-color:rgba(139,170,255,0.4); background:rgba(139,170,255,0.06); transform:translateY(-1px); }
+        .fb-suggestion-num { width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:white; flex-shrink:0; }
+        .fb-suggestion-title { font-size:13px; font-weight:600; color:white; margin-bottom:2px; }
         .fb-suggestion-desc { font-size:12px; color:rgba(255,255,255,0.4); line-height:1.4; }
+        .fb-annotation-badge { position:absolute; pointer-events:auto; cursor:pointer; display:flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; font-size:14px; font-weight:700; color:white; box-shadow:0 2px 12px rgba(0,0,0,0.5); animation:fbBadgePop 0.4s ease-out; border:2px solid rgba(255,255,255,0.3); }
+        .fb-annotation-area { position:absolute; pointer-events:auto; cursor:pointer; border:2px dashed; border-radius:8px; animation:fbAreaFade 0.6s ease-out; }
+        @keyframes fbBadgePop { from { transform:scale(0); opacity:0; } to { transform:scale(1); opacity:1; } }
+        @keyframes fbAreaFade { from { opacity:0; } to { opacity:1; } }
     </style>
 
     <!-- Feedback Button -->
@@ -4032,37 +4036,39 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
 
     <!-- Feedback Overlay -->
     <div id="fbOverlay">
-        <!-- Phase 1: Thank You + AI Suggestions -->
-        <div id="fbPhase1" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:24px;text-align:center">
-            <div id="fbThankYou" style="max-width:520px;width:100%">
-                <div style="font-size:48px;margin-bottom:16px">🙏</div>
-                <div style="font-size:22px;font-weight:700;color:white;margin-bottom:6px">Danke für dein Feedback!</div>
-                <div style="font-size:14px;color:rgba(255,255,255,0.4);margin-bottom:28px">Dein Input macht BEATRIX besser. Was möchtest du uns mitteilen?</div>
-                
-                <!-- AI Analysis -->
-                <div id="fbAiSection">
-                    <div id="fbAiLoading" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:16px;margin-bottom:16px">
+        <!-- Phase 1: Thank You + AI Suggestions on Screenshot -->
+        <div id="fbPhase1" style="display:none;flex-direction:column;flex:1">
+            <div id="fbPhase1Header" style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(20,20,40,0.95);border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0">
+                <div style="font-size:20px">🙏</div>
+                <div style="flex:1">
+                    <div style="font-size:14px;font-weight:600;color:white">Danke für dein Feedback!</div>
+                    <div style="font-size:11px;color:rgba(255,255,255,0.35)" id="fbAiStatus">BEATRIX analysiert die Ansicht...</div>
+                </div>
+                <button class="fb-tool" onclick="fbClose()" style="color:rgba(248,113,113,0.8)">✕</button>
+            </div>
+            <!-- Screenshot with AI annotations overlaid -->
+            <div id="fbScreenContainer" style="flex:1;position:relative;overflow:hidden;background:#0a0f1c">
+                <canvas id="fbScreenCanvas" style="width:100%;height:100%;object-fit:contain"></canvas>
+                <!-- AI annotation overlays will be injected here -->
+                <div id="fbAnnotations" style="position:absolute;inset:0;pointer-events:none"></div>
+                <!-- Loading spinner overlay -->
+                <div id="fbAiSpinner" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(6,8,20,0.4)">
+                    <div style="display:flex;align-items:center;gap:10px;padding:14px 24px;background:rgba(20,20,40,0.9);border-radius:12px;border:1px solid rgba(255,255,255,0.08)">
                         <div style="width:16px;height:16px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid var(--accent);border-radius:50%;animation:spin 0.8s linear infinite"></div>
-                        <span style="font-size:13px;color:rgba(255,255,255,0.5)">BEATRIX analysiert die aktuelle Ansicht...</span>
+                        <span style="font-size:13px;color:rgba(255,255,255,0.6)">BEATRIX denkt nach...</span>
                     </div>
-                    <div id="fbSuggestions" style="display:none"></div>
                 </div>
-
-                <!-- Divider -->
-                <div style="display:flex;align-items:center;gap:12px;margin:20px 0">
-                    <div style="flex:1;height:1px;background:rgba(255,255,255,0.08)"></div>
-                    <span style="font-size:11px;color:rgba(255,255,255,0.2);text-transform:uppercase;letter-spacing:1px">oder</span>
-                    <div style="flex:1;height:1px;background:rgba(255,255,255,0.08)"></div>
+            </div>
+            <!-- Suggestion cards at bottom -->
+            <div id="fbPhase1Bottom" style="padding:12px 16px;background:rgba(20,20,40,0.95);border-top:1px solid rgba(255,255,255,0.08);flex-shrink:0;max-height:40vh;overflow-y:auto">
+                <div id="fbSuggestionCards"></div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+                    <button onclick="fbStartOwn()" style="flex:1;padding:12px;border-radius:10px;border:1px dashed rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.5);font-size:13px;cursor:pointer;font-family:inherit;transition:all 0.2s"
+                        onmouseover="this.style.borderColor='rgba(139,170,255,0.4)';this.style.color='white'" 
+                        onmouseout="this.style.borderColor='rgba(255,255,255,0.12)';this.style.color='rgba(255,255,255,0.5)'">
+                        ✍️ Eigenes Feedback geben
+                    </button>
                 </div>
-
-                <!-- Own Feedback Button -->
-                <button onclick="fbStartOwn()" style="width:100%;padding:14px;border-radius:12px;border:1px dashed rgba(255,255,255,0.15);background:transparent;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;transition:all 0.2s;font-family:inherit" 
-                    onmouseover="this.style.borderColor='rgba(139,170,255,0.4)';this.style.color='white';this.style.background='rgba(139,170,255,0.06)'" 
-                    onmouseout="this.style.borderColor='rgba(255,255,255,0.15)';this.style.color='rgba(255,255,255,0.6)';this.style.background='transparent'">
-                    ✍️ Eigenes Feedback geben
-                </button>
-
-                <button onclick="fbClose()" style="margin-top:16px;padding:8px 20px;border:none;background:transparent;color:rgba(255,255,255,0.25);font-size:12px;cursor:pointer;font-family:inherit">Abbrechen</button>
             </div>
         </div>
 
@@ -4103,15 +4109,35 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
                 const canvas = await html2canvas(document.body, { scale: window.devicePixelRatio > 1 ? 1.5 : 1, useCORS: true, logging: false, backgroundColor: '#0a0f1c' });
                 fbState.screenshotData = canvas.toDataURL('image/jpeg', 0.85);
                 fbState.baseImage = new Image();
+                fbState.baseImage.onload = () => {
+                    // Render screenshot on Phase 1 canvas
+                    const sc = document.getElementById('fbScreenCanvas');
+                    const container = document.getElementById('fbScreenContainer');
+                    sc.width = container.clientWidth;
+                    sc.height = container.clientHeight;
+                    const ctx = sc.getContext('2d');
+                    const scale = Math.min(sc.width / fbState.baseImage.width, sc.height / fbState.baseImage.height);
+                    const w = fbState.baseImage.width * scale;
+                    const h = fbState.baseImage.height * scale;
+                    const ox = (sc.width - w) / 2;
+                    const oy = (sc.height - h) / 2;
+                    ctx.fillStyle = '#0a0f1c';
+                    ctx.fillRect(0, 0, sc.width, sc.height);
+                    ctx.drawImage(fbState.baseImage, ox, oy, w, h);
+                    // Store mapping for coordinate conversion
+                    fbState.imgMap = { ox, oy, w, h, scale, canvasW: sc.width, canvasH: sc.height };
+                };
                 fbState.baseImage.src = fbState.screenshotData;
                 fbState.history = [];
 
-                // Show Phase 1 (Thank you + AI suggestions)
+                // Show Phase 1
                 document.getElementById('fbPhase1').style.display = 'flex';
                 document.getElementById('fbPhase2').style.display = 'none';
                 document.getElementById('fbOverlay').classList.add('active');
-                document.getElementById('fbAiLoading').style.display = 'flex';
-                document.getElementById('fbSuggestions').style.display = 'none';
+                document.getElementById('fbAiSpinner').style.display = 'flex';
+                document.getElementById('fbAnnotations').innerHTML = '';
+                document.getElementById('fbSuggestionCards').innerHTML = '';
+                document.getElementById('fbAiStatus').textContent = 'BEATRIX analysiert die Ansicht...';
 
                 // Trigger AI analysis
                 fbAnalyzeScreen();
@@ -4123,6 +4149,7 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
         }
 
         async function fbAnalyzeScreen() {
+            const colors = ['#f87171', '#fbbf24', '#34d399'];
             try {
                 const section = document.querySelector('.nav-link.active')?.dataset?.section || 'unknown';
                 const r = await fetch(`${API}/feedback/analyze`, {
@@ -4138,30 +4165,57 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
                 const data = await r.json();
                 const suggestions = data.suggestions || [];
 
-                document.getElementById('fbAiLoading').style.display = 'none';
-                const container = document.getElementById('fbSuggestions');
+                document.getElementById('fbAiSpinner').style.display = 'none';
+                document.getElementById('fbAiStatus').textContent = suggestions.length > 0
+                    ? `${suggestions.length} Verbesserungen gefunden`
+                    : 'Analyse abgeschlossen';
+
+                fbState.suggestions = suggestions;
 
                 if (suggestions.length > 0) {
+                    // Draw annotations on screenshot
+                    const annotEl = document.getElementById('fbAnnotations');
+                    const container = document.getElementById('fbScreenContainer');
+                    const cW = container.clientWidth;
+                    const cH = container.clientHeight;
+
+                    annotEl.innerHTML = suggestions.map((s, i) => {
+                        const color = colors[i % colors.length];
+                        // Convert percentage coordinates to pixel positions
+                        const x = (s.x || 50) / 100 * cW;
+                        const y = (s.y || 50) / 100 * cH;
+                        const areaW = (s.w || 20) / 100 * cW;
+                        const areaH = (s.h || 10) / 100 * cH;
+                        const areaX = x - areaW / 2;
+                        const areaY = y - areaH / 2;
+                        return `
+                            <div class="fb-annotation-area" style="left:${areaX}px;top:${areaY}px;width:${areaW}px;height:${areaH}px;border-color:${color}40;background:${color}08;animation-delay:${i*0.15}s" onclick="fbPickSuggestion(${i})"></div>
+                            <div class="fb-annotation-badge" style="left:${areaX - 8}px;top:${areaY - 8}px;background:${color};animation-delay:${i*0.15}s" onclick="fbPickSuggestion(${i})">${i + 1}</div>
+                        `;
+                    }).join('');
+                    annotEl.style.pointerEvents = 'auto';
+
+                    // Render suggestion cards
                     const typeIcons = { bug: '🐛', wunsch: '💡', ux: '✨', performance: '⚡', frage: '❓' };
-                    container.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">BEATRIX schlägt vor</div>' +
-                        suggestions.map((s, i) => `
-                            <div class="fb-suggestion" onclick="fbPickSuggestion(${i})">
-                                <div class="fb-suggestion-icon">${typeIcons[s.type] || '💡'}</div>
-                                <div class="fb-suggestion-title">${s.title}</div>
+                    document.getElementById('fbSuggestionCards').innerHTML = suggestions.map((s, i) => {
+                        const color = colors[i % colors.length];
+                        return `<div class="fb-suggestion" onclick="fbPickSuggestion(${i})" id="fbSug${i}"
+                            onmouseover="this.classList.add('active')" onmouseout="this.classList.remove('active')">
+                            <div class="fb-suggestion-num" style="background:${color}">${i + 1}</div>
+                            <div>
+                                <div class="fb-suggestion-title">${typeIcons[s.type] || '💡'} ${s.title}</div>
                                 <div class="fb-suggestion-desc">${s.description}</div>
                             </div>
-                        `).join('');
-                    container.style.display = 'block';
-                    fbState.suggestions = suggestions;
+                        </div>`;
+                    }).join('');
                 } else {
-                    container.innerHTML = '<div style="font-size:13px;color:rgba(255,255,255,0.3);padding:12px">Keine Vorschläge – schreib dein eigenes Feedback!</div>';
-                    container.style.display = 'block';
+                    document.getElementById('fbSuggestionCards').innerHTML = '<div style="font-size:13px;color:rgba(255,255,255,0.3);padding:12px;text-align:center">Alles sieht gut aus! Gib eigenes Feedback wenn dir etwas auffällt.</div>';
                 }
             } catch(e) {
                 console.error('AI analyze:', e);
-                document.getElementById('fbAiLoading').style.display = 'none';
-                document.getElementById('fbSuggestions').innerHTML = '<div style="font-size:13px;color:rgba(255,255,255,0.3);padding:12px">Analyse nicht verfügbar – schreib dein eigenes Feedback!</div>';
-                document.getElementById('fbSuggestions').style.display = 'block';
+                document.getElementById('fbAiSpinner').style.display = 'none';
+                document.getElementById('fbAiStatus').textContent = 'Analyse nicht verfügbar';
+                document.getElementById('fbSuggestionCards').innerHTML = '<div style="font-size:13px;color:rgba(255,255,255,0.3);padding:12px;text-align:center">Gib dein eigenes Feedback!</div>';
             }
         }
 
