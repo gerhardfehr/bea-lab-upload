@@ -245,6 +245,15 @@ def get_db():
                         notes TEXT, created_by VARCHAR(320),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    # Contexts / Ausgangslage table
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS contexts (
+                        id VARCHAR PRIMARY KEY, client VARCHAR(500),
+                        project VARCHAR(500), domain VARCHAR(20),
+                        status VARCHAR(50) DEFAULT 'aktiv',
+                        situation TEXT, goal TEXT, constraints TEXT,
+                        created_by VARCHAR(320),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -2082,6 +2091,77 @@ async def delete_lead(lead_id: str, user=Depends(require_auth)):
     try:
         from sqlalchemy import text
         db.execute(text("DELETE FROM leads WHERE id = :id"), {"id": lead_id})
+        db.commit()
+        return {"status": "deleted"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+# ── Contexts / Ausgangslage API ────────────────────
+@app.get("/api/contexts")
+async def get_contexts(user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        rows = db.execute(text("SELECT * FROM contexts ORDER BY updated_at DESC")).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except Exception as e:
+        logger.error(f"Contexts fetch error: {e}")
+        return []
+    finally: db.close()
+
+@app.post("/api/contexts")
+async def create_context(request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        import uuid
+        data = await request.json()
+        ctx_id = str(uuid.uuid4())[:8]
+        db.execute(text("""INSERT INTO contexts (id, client, project, domain, status, situation, goal, constraints, created_by)
+            VALUES (:id, :client, :project, :domain, :status, :situation, :goal, :constraints, :created_by)"""),
+            {"id": ctx_id, "client": data.get("client",""), "project": data.get("project",""),
+             "domain": data.get("domain","OTH"), "status": data.get("status","aktiv"),
+             "situation": data.get("situation",""), "goal": data.get("goal",""),
+             "constraints": data.get("constraints",""), "created_by": user["sub"]})
+        db.commit()
+        return {"id": ctx_id, "status": "created"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Context create error: {e}")
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.put("/api/contexts/{ctx_id}")
+async def update_context(ctx_id: str, request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        data = await request.json()
+        sets = []
+        params = {"id": ctx_id}
+        for field in ["client", "project", "domain", "status", "situation", "goal", "constraints"]:
+            if field in data:
+                sets.append(f"{field} = :{field}")
+                params[field] = data[field]
+        if not sets: return {"status": "no changes"}
+        sets.append("updated_at = CURRENT_TIMESTAMP")
+        db.execute(text(f"UPDATE contexts SET {', '.join(sets)} WHERE id = :id"), params)
+        db.commit()
+        return {"status": "updated"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Context update error: {e}")
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.delete("/api/contexts/{ctx_id}")
+async def delete_context(ctx_id: str, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        db.execute(text("DELETE FROM contexts WHERE id = :id"), {"id": ctx_id})
         db.commit()
         return {"status": "deleted"}
     except Exception as e:
