@@ -1268,7 +1268,7 @@
                         try { const p = JSON.parse(atob(saved.split('.')[1])); currentUser.admin = p.admin || false; } catch(e) {}
                         document.getElementById('authOverlay').classList.add('hidden');
                         document.getElementById('navUser').textContent = currentUser.name || currentUser.email;
-                        if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
+                        if (currentUser.admin) document.getElementById('navAdmin').style.display = 'inline';
                         applyUserTabs();
                         console.log('Session restore:', currentUser.email, 'admin:', currentUser.admin);
                         loadStats();
@@ -1290,7 +1290,7 @@
             sessionStorage.setItem('bea_user', JSON.stringify(currentUser));
             document.getElementById('authOverlay').classList.add('hidden');
             document.getElementById('navUser').textContent = data.user.name || data.user.email;
-            if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
+            if (currentUser.admin) document.getElementById('navAdmin').style.display = 'inline';
             applyUserTabs();
             console.log('Auth success:', currentUser.email, 'admin:', currentUser.admin);
             loadStats();
@@ -1618,13 +1618,25 @@
         function applyUserTabs() {
             const email = (currentUser?.email || '').toLowerCase();
             const isAdmin = currentUser?.admin || false;
+            console.log('applyUserTabs called - email:', email, 'isAdmin:', isAdmin);
+
+            // Admin tab
+            const adminEl = document.getElementById('navAdmin');
+            if (adminEl) {
+                adminEl.style.display = isAdmin ? 'inline' : 'none';
+                console.log('Admin tab:', isAdmin ? 'SHOWN' : 'hidden');
+            }
 
             // Role-based tabs: visible for configured users + admins
             for (const [tab, emails] of Object.entries(TAB_ROLES)) {
-                const el = document.getElementById('nav' + tab.charAt(0).toUpperCase() + tab.slice(1));
+                const elId = 'nav' + tab.charAt(0).toUpperCase() + tab.slice(1);
+                const el = document.getElementById(elId);
                 if (el) {
                     const hasAccess = isAdmin || emails.includes(email);
-                    el.style.display = hasAccess ? '' : 'none';
+                    el.style.display = hasAccess ? 'inline' : 'none';
+                    console.log('Tab', elId, ':', hasAccess ? 'SHOWN' : 'hidden');
+                } else {
+                    console.log('Tab element NOT FOUND:', elId);
                 }
             }
         }
