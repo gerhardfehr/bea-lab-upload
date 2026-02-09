@@ -2650,15 +2650,36 @@ async def create_project(request: Request, user=Depends(require_auth)):
 
         gh = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"}
         today = datetime.utcnow().strftime("%Y-%m-%d")
-        yymm = datetime.utcnow().strftime("%y%m")  # e.g. "2602"
 
-        # ── Step 1: Build client prefix (3-5 chars) ──
-        prefix = customer_code.upper().replace("-", "")[:5]
-        if len(prefix) < 2:
-            prefix = name.upper().replace(" ", "")[:4]
+        # ── Step 1: Load sequence registry ──
+        seq_registry = {}
+        prefix_mapping = {}
+        seq_sha = None
+        try:
+            seq_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/config/project-sequences.yaml"
+            req = urllib.request.Request(seq_url, headers=gh)
+            seq_file = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+            seq_sha = seq_file["sha"]
+            req2 = urllib.request.Request(seq_url, headers={**gh, "Accept": "application/vnd.github.v3.raw"})
+            seq_data = yaml.safe_load(urllib.request.urlopen(req2, context=ctx, timeout=15).read().decode()) or {}
+            seq_registry = seq_data.get("sequences", {})
+            prefix_mapping = seq_data.get("prefix_mapping", {})
+        except Exception as seq_err:
+            logger.warning(f"Could not load sequence registry: {seq_err}")
 
-        # ── Step 2: Scan ALL existing project codes to ensure uniqueness ──
-        existing_codes = set()
+        # ── Step 2: Determine prefix from customer_code ──
+        prefix = prefix_mapping.get(customer_code.lower(), "")
+        if not prefix:
+            # Auto-generate: take first 3-5 uppercase chars
+            prefix = customer_code.upper().replace("-", "")[:5]
+            if len(prefix) < 2:
+                prefix = name.upper().replace(" ", "")[:4]
+
+        # ── Step 3: Get next sequence number ──
+        # Start from registry value (includes legacy offset)
+        next_seq = seq_registry.get(prefix, 1)
+
+        # Also scan existing project codes to find highest used number
         existing_slugs = set()
         try:
             list_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects"
@@ -2667,46 +2688,55 @@ async def create_project(request: Request, user=Depends(require_auth)):
             for item in items:
                 if item.get("type") == "dir":
                     existing_slugs.add(item["name"].lower())
-                    # Read each project.yaml for its project_code
                     try:
                         purl = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{item['name']}/project.yaml"
                         req2 = urllib.request.Request(purl, headers={**gh, "Accept": "application/vnd.github.v3.raw"})
                         pdata = yaml.safe_load(urllib.request.urlopen(req2, context=ctx, timeout=10).read().decode()) or {}
-                        meta = pdata.get("metadata", {})
-                        if meta.get("project_code"):
-                            existing_codes.add(meta["project_code"].upper())
-                        if meta.get("project_id"):
-                            existing_codes.add(meta["project_id"].upper())
+                        existing_code = (pdata.get("metadata", {}).get("project_code", "") or "").upper()
+                        # Parse: if code starts with our prefix, extract number
+                        if existing_code.startswith(prefix):
+                            num_part = existing_code[len(prefix):]
+                            try:
+                                num = int(num_part)
+                                if num >= next_seq:
+                                    next_seq = num + 1
+                            except ValueError:
+                                pass
                     except:
                         pass
         except Exception as scan_err:
             logger.warning(f"Could not scan existing projects: {scan_err}")
 
-        # ── Step 3: Generate unique Projektkürzel ──
-        # Format: {PREFIX}-{YYMM}{LETTER}  e.g. LUKB-2602A, ERS-2602A
-        # Falls A vergeben → B, C, ... bis Z
-        project_code = None
-        for letter_idx in range(26):
-            letter = chr(65 + letter_idx)  # A, B, C...
-            candidate = f"{prefix}-{yymm}{letter}"
-            if candidate.upper() not in existing_codes:
-                project_code = candidate
-                break
-        if not project_code:
-            # Fallback: add number
-            for n in range(1, 100):
-                candidate = f"{prefix}-{yymm}-{n:02d}"
-                if candidate.upper() not in existing_codes:
-                    project_code = candidate
-                    break
-        if not project_code:
-            return JSONResponse({"error": "Konnte kein eindeutiges Projektkürzel generieren"}, status_code=500)
+        # ── Step 4: Generate project code ──
+        project_code = f"{prefix}{next_seq:03d}"
 
-        # ── Step 4: Generate slug (folder name) ──
+        # ── Step 5: Update sequence registry on GitHub ──
+        try:
+            seq_registry[prefix] = next_seq + 1
+            if seq_sha and seq_data:
+                seq_data["sequences"] = seq_registry
+                seq_data["metadata"]["updated"] = today
+                # Add prefix mapping if new
+                if customer_code.lower() not in prefix_mapping:
+                    seq_data.setdefault("prefix_mapping", {})[customer_code.lower()] = prefix
+                seq_yaml = yaml.dump(seq_data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                seq_put = json.dumps({
+                    "message": f"seq: {prefix} → {next_seq + 1} (nach {project_code})",
+                    "content": base64.b64encode(seq_yaml.encode()).decode(),
+                    "sha": seq_sha, "branch": "main"
+                }).encode()
+                seq_req = urllib.request.Request(
+                    f"https://api.github.com/repos/{GH_REPO}/contents/data/config/project-sequences.yaml",
+                    data=seq_put, method="PUT", headers={**gh, "Content-Type": "application/json"})
+                urllib.request.urlopen(seq_req, context=ctx, timeout=15)
+                logger.info(f"Sequence updated: {prefix} → {next_seq + 1}")
+        except Exception as seq_update_err:
+            logger.warning(f"Could not update sequence registry: {seq_update_err}")
+
+        # ── Step 6: Generate slug (folder name) ──
         slug_base = f"{customer_code}-{name}".lower()
         slug = "".join(c if c.isalnum() or c == '-' else '-' for c in slug_base)
         slug = "-".join(part for part in slug.split("-") if part)[:60]
-        # Ensure slug is unique
         if slug in existing_slugs:
             for n in range(2, 100):
                 candidate_slug = f"{slug}-{n}"
