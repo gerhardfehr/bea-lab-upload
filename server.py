@@ -2495,6 +2495,8 @@ async def crm_sync_github(user=Depends(require_auth)):
                 stats["skipped"] += 1
                 continue
 
+            # Savepoint for each lead (so one failure doesn't kill the whole transaction)
+            db.execute(text(f"SAVEPOINT sp_{lead_id.replace('-','_')}"))
             try:
                 # Company info
                 company = lead.get("company") or {}
@@ -2601,8 +2603,12 @@ async def crm_sync_github(user=Depends(require_auth)):
                     stats["activities"] += 1
 
             except Exception as lead_err:
+                db.execute(text(f"ROLLBACK TO SAVEPOINT sp_{lead_id.replace('-','_')}"))
                 logger.warning(f"CRM Sync: skipping {lead_id}: {lead_err}")
                 stats["skipped"] += 1
+                if "errors" not in stats: stats["errors"] = []
+                if len(stats.get("errors",[])) < 10:
+                    stats["errors"].append(f"{lead_id}: {str(lead_err)[:120]}")
                 continue
 
         db.commit()
