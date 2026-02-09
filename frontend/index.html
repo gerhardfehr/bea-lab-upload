@@ -473,6 +473,7 @@
             <a href="#" class="nav-link" data-section="profile" onclick="showSection('profile',this)">Profil</a>
             <a href="#" class="nav-link" data-section="context" id="navContext" onclick="showSection('context',this)" style="display:none">Ausgangslage</a>
             <a href="#" class="nav-link" data-section="leads" id="navLeads" onclick="showSection('leads',this)" style="display:none">CRM</a>
+            <a href="#" class="nav-link" data-section="companies" id="navCompanies" onclick="showSection('companies',this)" style="display:none">Firmen</a>
             <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">Admin</a>
         </div>
         <div class="nav-right">
@@ -1103,20 +1104,20 @@
         <div id="crmDrawerContent" style="padding:16px"></div>
     </div>
 
-    <!-- Companies Overlay -->
-    <div id="crmCompaniesOverlay" style="display:none;position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)" onclick="if(event.target===this)this.style.display='none'">
-        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(800px,92vw);max-height:80vh;background:var(--navy-card);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;overflow:hidden">
-            <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+    <!-- Companies Section (full page) -->
+    <section class="section" id="companies-section">
+        <div class="container">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
                 <div style="flex:1">
-                    <div style="font-size:16px;font-weight:700;color:white">🏢 Firmen</div>
-                    <div style="font-size:12px;color:rgba(255,255,255,0.4)" id="crmCompaniesCount"></div>
+                    <h2 style="margin:0;font-size:22px;color:white">🏢 Firmen</h2>
+                    <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="crmCompaniesCount"></div>
                 </div>
-                <input id="crmCompaniesSearch" type="text" placeholder="Suchen…" oninput="crmFilterCompanies()" style="font-size:12px;padding:6px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;width:180px;outline:none">
-                <button onclick="document.getElementById('crmCompaniesOverlay').style.display='none'" style="border:none;background:none;color:rgba(255,255,255,0.4);font-size:18px;cursor:pointer;padding:4px">✕</button>
+                <input id="crmCompaniesSearch" type="text" placeholder="Suchen nach Name, Branche, Land…" oninput="crmFilterCompanies()" style="font-size:13px;padding:8px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:white;width:min(300px,50vw);outline:none">
+                <button onclick="showSection('leads',document.querySelector('[data-section=leads]'))" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer">← CRM</button>
             </div>
-            <div id="crmCompaniesList" style="overflow-y:auto;padding:0"></div>
+            <div id="crmCompaniesList" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
         </div>
-    </div>
+    </section>
 
     <section class="section" id="admin-section">
         <div class="container">
@@ -1609,6 +1610,7 @@
             if(name==='admin') loadAdminData();
             if(name==='context') ctxLoad();
             if(name==='leads') crmLoad();
+            if(name==='companies') crmLoadCompanies();
             if(name==='profile') loadProfile();
             if(name==='chat') { loadChatHistory(); document.getElementById('chatInput').focus(); }
             if(name==='model') { if (!mbUserProfile) mbLoadUserProfile().then(() => mbApplyDefault('start')); }
@@ -1686,6 +1688,9 @@
                 const showCrm = isFehrAdvice && hasCrmAccess;
                 crmEl.style.display = showCrm ? 'inline' : 'none';
                 console.log('CRM tab', showCrm ? 'SHOWN' : 'hidden', '(FA:', isFehrAdvice, 'access:', hasCrmAccess + ')');
+                // Firmen tab: same visibility as CRM
+                const compEl = document.getElementById('navCompanies');
+                if (compEl) compEl.style.display = showCrm ? 'inline' : 'none';
             }
 
             // Context/Ausgangslage tab: role-based
@@ -2006,13 +2011,15 @@
         function crmCloseDrawer() { document.getElementById('crmDrawer').style.display = 'none'; }
 
         let crmCompaniesData = [];
-        async function crmShowCompanies() {
-            document.getElementById('crmCompaniesOverlay').style.display = 'flex';
+        function crmShowCompanies() {
+            showSection('companies', document.querySelector('[data-section=companies]'));
+        }
+        async function crmLoadCompanies() {
             document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Lade Firmendaten aus GitHub…</div>';
             try {
                 const resp = await fetch(`${API}/crm/companies/enriched`, { headers: H() });
                 crmCompaniesData = resp.ok ? await resp.json() : [];
-                document.getElementById('crmCompaniesCount').textContent = `${crmCompaniesData.length} Firmen · Quelle: GitHub customer-registry.yaml`;
+                document.getElementById('crmCompaniesCount').textContent = `${crmCompaniesData.length} Firmen · Quelle: GitHub customer-registry.yaml + lead-database.yaml`;
                 crmFilterCompanies();
             } catch(e) {
                 document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:var(--error)">Fehler beim Laden</div>';
@@ -2082,8 +2089,8 @@
         function crmShowCompanyDetail(code) {
             const c = crmCompaniesData.find(x => x.code === code);
             if (!c) return;
-            document.getElementById('crmCompaniesOverlay').style.display = 'none';
-            // Filter CRM to this company's leads
+            // Navigate to CRM and filter to this company's leads
+            showSection('leads', document.querySelector('[data-section=leads]'));
             const match = crmDeals.find(d => (d.company_name||'').includes(c.short_name || c.code));
             if (match) {
                 crmCompanyFilter = match.company_id || match.company;
