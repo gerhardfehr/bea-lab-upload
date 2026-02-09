@@ -336,6 +336,19 @@
         .mb-info-box { padding:16px 20px; background:rgba(91,138,245,0.06); border:1px solid rgba(91,138,245,0.15); border-radius:var(--radius); margin-bottom:20px; }
         .mb-info-box p { font-size:13px; color:var(--text-secondary); line-height:1.6; margin:0; }
         .mb-info-box strong { color:var(--accent-light); }
+        .mb-inline-progress { margin-top:20px;padding:20px;background:rgba(139,170,255,0.04);border:1px solid rgba(139,170,255,0.1);border-radius:var(--radius); }
+        .mb-prog-header { display:flex;align-items:center;gap:12px;margin-bottom:14px; }
+        .mb-prog-spinner { width:18px;height:18px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0; }
+        .mb-prog-bar-bg { height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;margin-bottom:8px; }
+        .mb-prog-bar { height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#818cf8);border-radius:3px;transition:width 0.6s ease; }
+        .mb-prog-meta { display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.4);margin-bottom:12px; }
+        .mb-prog-stages { display:flex;flex-direction:column;gap:4px; }
+        .mb-prog-stage { display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.35);transition:all 0.3s; }
+        .mb-prog-stage.active { color:rgba(255,255,255,0.9); }
+        .mb-prog-stage.done { color:rgba(34,197,94,0.8); }
+        .mb-prog-dot { width:16px;height:16px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0; }
+        .mb-prog-stage.active .mb-prog-dot { border-color:var(--accent);background:rgba(139,170,255,0.15); }
+        .mb-prog-stage.done .mb-prog-dot { border-color:#22c55e;background:rgba(34,197,94,0.15); }
 
         .mb-registry { display:grid; gap:12px; margin-top:20px; }
         .mb-model-card { padding:16px 20px; background:var(--navy-light); border:1px solid var(--border); border-radius:var(--radius); display:flex; align-items:center; gap:16px; transition:var(--transition); cursor:pointer; }
@@ -655,6 +668,7 @@
                     <button class="mb-btn mb-btn-back" onclick="mbGoToStart()">← Zurück</button>
                     <button class="mb-btn mb-btn-primary" id="mbStep0Btn" onclick="mbProcessStep0()">Analysieren →</button>
                 </div>
+                <div id="mbProgress0" class="mb-inline-progress" style="display:none"></div>
             </div>
 
             <!-- ═══ STEP 1: Entry Point ═══ -->
@@ -778,6 +792,7 @@
                     <button class="mb-btn mb-btn-back" onclick="mbGoStep(2)">← Zurück</button>
                     <button class="mb-btn mb-btn-primary" disabled id="mbStep3Btn" onclick="mbProcessStep3()">BEATRIX analysieren lassen →</button>
                 </div>
+                <div id="mbProgress3" class="mb-inline-progress" style="display:none"></div>
             </div>
 
             <!-- ═══ STEP 4: Model ═══ -->
@@ -2079,6 +2094,123 @@ Antworte NUR als JSON Array:
             }
         }
 
+        // ── Universal Inline Progress ──────────────────────────
+        const MB_STEP_STAGES = {
+            0: [
+                { label: 'Frage parsen', pct: 15 },
+                { label: 'Domain erkennen', pct: 35 },
+                { label: 'Verhaltensziel identifizieren', pct: 55 },
+                { label: 'Scope definieren', pct: 75 },
+                { label: 'Session erstellen', pct: 92 },
+            ],
+            3: [
+                { label: 'Kontext-Variablen laden', pct: 12 },
+                { label: 'Ψ-Dimensionen berechnen', pct: 30 },
+                { label: '10C CORE Mapping', pct: 50 },
+                { label: 'Domain-Konfiguration', pct: 68 },
+                { label: 'Sensitivität prüfen', pct: 82 },
+                { label: 'Modell-Match suchen', pct: 95 },
+            ],
+        };
+
+        function mbStartProgress(stepNum) {
+            const el = document.getElementById('mbProgress' + stepNum);
+            if (!el) return null;
+            const stages = MB_STEP_STAGES[stepNum] || [];
+            el.style.display = 'block';
+            el.innerHTML = `
+                <div class="mb-prog-header">
+                    <div class="mb-prog-spinner"></div>
+                    <div>
+                        <div style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.9)" id="mbProgLabel${stepNum}">BEATRIX arbeitet...</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px" id="mbProgDetail${stepNum}"></div>
+                    </div>
+                </div>
+                <div class="mb-prog-bar-bg"><div class="mb-prog-bar" id="mbProgBar${stepNum}"></div></div>
+                <div class="mb-prog-meta">
+                    <span id="mbProgPct${stepNum}">0%</span>
+                    <span id="mbProgTime${stepNum}">Geschätzt: ~${Math.round(stages.length * 2)}s</span>
+                </div>
+                <div class="mb-prog-stages">
+                    ${stages.map((s, i) => `
+                        <div class="mb-prog-stage" id="mbProgS${stepNum}_${i}">
+                            <div class="mb-prog-dot" id="mbProgD${stepNum}_${i}">○</div>
+                            <span>${s.label}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            const startTime = Date.now();
+            let idx = 0;
+            const interval = setInterval(() => {
+                if (idx >= stages.length) { clearInterval(interval); return; }
+                const s = stages[idx];
+
+                // Update bar
+                const bar = document.getElementById('mbProgBar' + stepNum);
+                const pct = document.getElementById('mbProgPct' + stepNum);
+                const label = document.getElementById('mbProgLabel' + stepNum);
+                const time = document.getElementById('mbProgTime' + stepNum);
+                if (bar) bar.style.width = s.pct + '%';
+                if (pct) pct.textContent = s.pct + '%';
+                if (label) label.textContent = s.label + '...';
+
+                // Elapsed
+                const elapsed = Math.round((Date.now() - startTime) / 1000);
+                const remaining = Math.max(1, Math.round((stages.length - idx) * 2));
+                if (time) time.textContent = `${elapsed}s · ~${remaining}s verbleibend`;
+
+                // Mark active
+                const row = document.getElementById('mbProgS' + stepNum + '_' + idx);
+                const dot = document.getElementById('mbProgD' + stepNum + '_' + idx);
+                if (row) row.className = 'mb-prog-stage active';
+                if (dot) dot.innerHTML = '●';
+
+                // Mark previous done
+                if (idx > 0) {
+                    const prevRow = document.getElementById('mbProgS' + stepNum + '_' + (idx - 1));
+                    const prevDot = document.getElementById('mbProgD' + stepNum + '_' + (idx - 1));
+                    if (prevRow) prevRow.className = 'mb-prog-stage done';
+                    if (prevDot) prevDot.innerHTML = '✓';
+                }
+
+                idx++;
+            }, 2000);
+
+            return { interval, startTime, stepNum };
+        }
+
+        function mbStopProgress(handle) {
+            if (!handle) return;
+            clearInterval(handle.interval);
+            const stepNum = handle.stepNum;
+            const el = document.getElementById('mbProgress' + stepNum);
+            const stages = MB_STEP_STAGES[stepNum] || [];
+            const totalTime = ((Date.now() - handle.startTime) / 1000).toFixed(1);
+
+            // Mark all done
+            stages.forEach((s, i) => {
+                const row = document.getElementById('mbProgS' + stepNum + '_' + i);
+                const dot = document.getElementById('mbProgD' + stepNum + '_' + i);
+                if (row) row.className = 'mb-prog-stage done';
+                if (dot) dot.innerHTML = '✓';
+            });
+
+            // Complete bar
+            const bar = document.getElementById('mbProgBar' + stepNum);
+            const pct = document.getElementById('mbProgPct' + stepNum);
+            const label = document.getElementById('mbProgLabel' + stepNum);
+            const time = document.getElementById('mbProgTime' + stepNum);
+            if (bar) bar.style.width = '100%';
+            if (pct) pct.textContent = '100%';
+            if (label) label.textContent = '✓ Abgeschlossen';
+            if (time) time.textContent = `Fertig in ${totalTime}s`;
+
+            // Hide after delay
+            setTimeout(() => { if (el) el.style.display = 'none'; }, 1200);
+        }
+
         async function mbProcessStep0() {
             const q = document.getElementById('mbQuestion') ? document.getElementById('mbQuestion').value.trim() : '';
             const selectedQ = mbState.selectedProblem || q;
@@ -2093,6 +2225,7 @@ Antworte NUR als JSON Array:
             const btn = document.getElementById('mbStep0Btn');
             btn.disabled = true;
             btn.textContent = 'BEATRIX analysiert...';
+            const progHandle = mbStartProgress(0);
 
             try {
                 const resp = await fetch('/api/chat', {
@@ -2135,11 +2268,13 @@ Antworte NUR als JSON Array:
                 `;
                 document.getElementById('mbStep0Result').style.display = 'block';
 
+                mbStopProgress(progHandle);
                 btn.textContent = 'Weiter zu Schritt 1 →';
                 btn.disabled = false;
                 btn.onclick = () => mbNextStep(1);
 
             } catch(e) {
+                mbStopProgress(progHandle);
                 btn.textContent = 'Analysieren →';
                 btn.disabled = false;
                 console.error('Step 0 error:', e);
@@ -2150,6 +2285,7 @@ Antworte NUR als JSON Array:
             const btn = document.getElementById('mbStep3Btn');
             btn.disabled = true;
             btn.textContent = 'BEATRIX analysiert Kontext...';
+            const progHandle = mbStartProgress(3);
 
             const psiChoice = mbState.selections.mbStep3 || 'ggg-default';
 
@@ -2188,9 +2324,11 @@ Antworte NUR als JSON Array:
                     modelResult.innerHTML = '<div class="mb-info-box"><p>Kontext-Analyse abgeschlossen. Weiter zum Modell.</p></div>';
                 }
 
+                mbStopProgress(progHandle);
                 mbNextStep(4);
 
             } catch(e) {
+                mbStopProgress(progHandle);
                 console.error('Step 3 error:', e);
             } finally {
                 btn.textContent = 'BEATRIX analysieren lassen →';
