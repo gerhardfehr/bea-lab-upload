@@ -470,6 +470,7 @@
             <a href="#" class="nav-link" data-section="upload" onclick="showSection('upload',this)">Upload</a>
             <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
             <a href="#" class="nav-link" data-section="profile" onclick="showSection('profile',this)">Profil</a>
+            <a href="#" class="nav-link" data-section="leads" id="navLeads" onclick="showSection('leads',this)" style="display:none">Leads</a>
             <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">Admin</a>
         </div>
         <div class="nav-right">
@@ -919,6 +920,88 @@
         </div>
     </section>
 
+    <!-- ═══════ LEADS SECTION ═══════ -->
+    <section class="section" id="leads-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Lead-Management</h2>
+                <p>Pipeline, Aktivitäten und Conversion Tracking.</p>
+            </div>
+
+            <!-- KPI Cards -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
+                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Aktive Leads</div>
+                    <div id="leadsKpiActive" style="font-size:28px;font-weight:700;color:white;margin:6px 0">–</div>
+                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">in Pipeline</div>
+                </div>
+                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Diesen Monat</div>
+                    <div id="leadsKpiMonth" style="font-size:28px;font-weight:700;color:#34d399;margin:6px 0">–</div>
+                    <div style="font-size:11px;color:rgba(52,211,153,0.7)">neue Leads</div>
+                </div>
+                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Conversion</div>
+                    <div id="leadsKpiConv" style="font-size:28px;font-weight:700;color:#fbbf24;margin:6px 0">–</div>
+                    <div style="font-size:11px;color:rgba(251,191,36,0.7)">Rate</div>
+                </div>
+                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Pipeline-Wert</div>
+                    <div id="leadsKpiValue" style="font-size:28px;font-weight:700;color:var(--accent-light);margin:6px 0">–</div>
+                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">CHF gesamt</div>
+                </div>
+            </div>
+
+            <!-- Pipeline Stages -->
+            <div style="margin-bottom:24px">
+                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px">Pipeline</div>
+                <div id="leadsPipeline" style="display:flex;gap:2px;height:36px;border-radius:8px;overflow:hidden">
+                    <div style="flex:3;background:rgba(139,170,255,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600">Kontakt</div>
+                    <div style="flex:2;background:rgba(139,170,255,0.5);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600">Qualifiziert</div>
+                    <div style="flex:1.5;background:rgba(251,191,36,0.5);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600">Proposal</div>
+                    <div style="flex:1;background:rgba(52,211,153,0.5);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600">Won</div>
+                </div>
+            </div>
+
+            <!-- Lead Table -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:600;color:white">Leads <span id="leadsCount" style="font-size:12px;color:rgba(255,255,255,0.4)"></span></div>
+                <div style="display:flex;gap:8px">
+                    <button class="mb-btn mb-btn-primary" onclick="leadsShowAdd()" style="font-size:12px;padding:6px 14px">+ Neuer Lead</button>
+                    <button class="mb-btn mb-btn-back" onclick="leadsExport()" style="font-size:12px;padding:6px 14px">↓ Export</button>
+                </div>
+            </div>
+
+            <!-- Add Lead Form (hidden) -->
+            <div id="leadsAddForm" style="display:none;padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
+                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px">Neuer Lead</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                    <input class="mb-input" id="leadName" placeholder="Firma / Name" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="leadContact" placeholder="Kontaktperson" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="leadEmail" placeholder="E-Mail" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="leadValue" placeholder="Wert (CHF)" type="number" style="font-size:13px;padding:8px 12px">
+                    <select class="mb-input" id="leadStage" style="font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                        <option value="kontakt">Kontakt</option>
+                        <option value="qualifiziert">Qualifiziert</option>
+                        <option value="proposal">Proposal</option>
+                        <option value="won">Won</option>
+                        <option value="lost">Lost</option>
+                    </select>
+                    <input class="mb-input" id="leadSource" placeholder="Quelle (z.B. Empfehlung, Event)" style="font-size:13px;padding:8px 12px">
+                </div>
+                <textarea class="mb-input" id="leadNotes" placeholder="Notizen..." style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:60px;width:100%;box-sizing:border-box"></textarea>
+                <div style="display:flex;gap:8px;margin-top:12px">
+                    <button class="mb-btn mb-btn-primary" onclick="leadsSave()" style="font-size:12px;padding:6px 14px">Speichern</button>
+                    <button class="mb-btn mb-btn-back" onclick="document.getElementById('leadsAddForm').style.display='none'" style="font-size:12px;padding:6px 14px">Abbrechen</button>
+                </div>
+            </div>
+
+            <div id="leadsTable" style="overflow-x:auto">
+                <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Leads werden geladen...</div>
+            </div>
+        </div>
+    </section>
+
     <section class="section" id="admin-section">
         <div class="container">
             <div class="section-header"><h2>⚙ Administration</h2><p>Benutzer verwalten und Systemeinstellungen konfigurieren.</p></div>
@@ -1112,6 +1195,7 @@
                         document.getElementById('authOverlay').classList.add('hidden');
                         document.getElementById('navUser').textContent = currentUser.name || currentUser.email;
                         if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
+                        applyUserTabs();
                         loadStats();
                         return;
                     }
@@ -1132,6 +1216,7 @@
             document.getElementById('authOverlay').classList.add('hidden');
             document.getElementById('navUser').textContent = data.user.name || data.user.email;
             if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
+            applyUserTabs();
             loadStats();
             showToast(`Willkommen, ${data.user.name || data.user.email}!`, 'success');
             // Trigger insight question after login
@@ -1398,6 +1483,7 @@
             document.getElementById('hero-section').style.display = (name==='upload') ? '' : 'none';
             if(name==='documents') loadDocuments();
             if(name==='admin') loadAdminData();
+            if(name==='leads') leadsLoad();
             if(name==='profile') loadProfile();
             if(name==='chat') { loadChatHistory(); document.getElementById('chatInput').focus(); }
             if(name==='model') { if (!mbUserProfile) mbLoadUserProfile().then(() => mbApplyDefault('start')); }
@@ -1444,6 +1530,163 @@
                 const db={knowledge_base:'Knowledge Base',bcm_axioms:'BCM Axiome',research:'Research'};
                 w.innerHTML=`<table class="doc-table"><thead><tr><th>Dokument</th><th>Typ</th><th>Datenbank</th><th>Datum</th><th>Status</th></tr></thead><tbody>${docs.map(d=>{const date=new Date(d.created_at).toLocaleDateString('de-CH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});return`<tr><td class="doc-name">${d.title}</td><td><span class="format-badge">${(d.file_type||d.source_type).toUpperCase()}</span></td><td>${db[d.database_target]||d.database_target}</td><td>${date}</td><td><span class="status-badge">${d.status}</span></td></tr>`;}).join('')}</tbody></table>`;
             }catch(e){w.innerHTML='<p style="color:var(--error)">Fehler beim Laden</p>';}
+        }
+
+        // ── Role-Based Tab Visibility ──────────────────
+        const TAB_ROLES = {
+            leads: ['nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com']
+        };
+
+        function applyUserTabs() {
+            const email = (currentUser?.email || '').toLowerCase();
+            const isAdmin = currentUser?.admin || false;
+
+            // Leads tab: visible for configured users + admins
+            const leadsTab = document.getElementById('navLeads');
+            if (leadsTab) {
+                const hasAccess = isAdmin || TAB_ROLES.leads.includes(email);
+                leadsTab.style.display = hasAccess ? '' : 'none';
+            }
+        }
+
+        // ── Lead-Management ──────────────────────────
+        let leadsData = [];
+
+        function leadsShowAdd() {
+            const f = document.getElementById('leadsAddForm');
+            f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function leadsLoad() {
+            try {
+                const r = await fetch(`${API}/leads`, { headers: H() });
+                if (!r.ok) throw new Error('Load failed');
+                leadsData = await r.json();
+                leadsRender();
+            } catch(e) {
+                console.error('Leads load:', e);
+                document.getElementById('leadsTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Leads vorhanden.</div>';
+                leadsData = [];
+                leadsRenderKpis();
+            }
+        }
+
+        function leadsRender() {
+            const stageColors = { kontakt: 'rgba(139,170,255,0.8)', qualifiziert: 'rgba(56,189,248,0.8)', proposal: 'rgba(251,191,36,0.8)', won: 'rgba(52,211,153,0.8)', lost: 'rgba(248,113,113,0.6)' };
+            const stageLabels = { kontakt: 'Kontakt', qualifiziert: 'Qualifiziert', proposal: 'Proposal', won: 'Won', lost: 'Lost' };
+
+            document.getElementById('leadsCount').textContent = `(${leadsData.length})`;
+
+            if (!leadsData.length) {
+                document.getElementById('leadsTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Leads vorhanden. Klicke «+ Neuer Lead» um zu starten.</div>';
+                leadsRenderKpis();
+                return;
+            }
+
+            const rows = leadsData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at)).map(l => {
+                const date = new Date(l.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                const sc = stageColors[l.stage] || '#94a3b8';
+                const valStr = l.value ? new Intl.NumberFormat('de-CH').format(l.value) + ' CHF' : '–';
+                return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
+                    <td style="padding:10px 12px;font-weight:500;color:white">${l.company || '–'}</td>
+                    <td style="padding:10px 12px;color:rgba(255,255,255,0.6);font-size:13px">${l.contact || '–'}</td>
+                    <td style="padding:10px 12px"><span style="font-size:11px;padding:3px 10px;border-radius:12px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${stageLabels[l.stage] || l.stage}</span></td>
+                    <td style="padding:10px 12px;color:rgba(255,255,255,0.6);font-size:13px">${valStr}</td>
+                    <td style="padding:10px 12px;color:rgba(255,255,255,0.35);font-size:12px">${date}</td>
+                    <td style="padding:10px 8px">
+                        <select onchange="leadsUpdateStage('${l.id}',this.value)" style="font-size:11px;padding:3px 6px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer">
+                            ${Object.keys(stageLabels).map(s => `<option value="${s}" ${s===l.stage?'selected':''}>${stageLabels[s]}</option>`).join('')}
+                        </select>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('leadsTable').innerHTML = `<table style="width:100%;border-collapse:collapse">
+                <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08)">
+                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Firma</th>
+                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Kontakt</th>
+                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Stage</th>
+                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Wert</th>
+                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Datum</th>
+                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Aktion</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+
+            leadsRenderKpis();
+        }
+
+        function leadsRenderKpis() {
+            const active = leadsData.filter(l => l.stage !== 'lost' && l.stage !== 'won');
+            const won = leadsData.filter(l => l.stage === 'won');
+            const thisMonth = leadsData.filter(l => {
+                const d = new Date(l.created_at);
+                const now = new Date();
+                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+            });
+            const totalValue = active.reduce((s, l) => s + (l.value || 0), 0);
+            const convRate = leadsData.length > 0 ? Math.round(won.length / leadsData.length * 100) : 0;
+
+            document.getElementById('leadsKpiActive').textContent = active.length;
+            document.getElementById('leadsKpiMonth').textContent = thisMonth.length;
+            document.getElementById('leadsKpiConv').textContent = convRate + '%';
+            document.getElementById('leadsKpiValue').textContent = totalValue > 0 ? new Intl.NumberFormat('de-CH', { notation: 'compact' }).format(totalValue) : '–';
+
+            // Pipeline bar
+            const stages = ['kontakt', 'qualifiziert', 'proposal', 'won'];
+            const counts = stages.map(s => leadsData.filter(l => l.stage === s).length);
+            const total = Math.max(1, counts.reduce((a,b) => a+b, 0));
+            const colors = ['rgba(139,170,255,0.3)', 'rgba(139,170,255,0.5)', 'rgba(251,191,36,0.5)', 'rgba(52,211,153,0.5)'];
+            const labels = ['Kontakt', 'Qualifiziert', 'Proposal', 'Won'];
+            document.getElementById('leadsPipeline').innerHTML = stages.map((s, i) =>
+                counts[i] > 0 ? `<div style="flex:${counts[i]};background:${colors[i]};display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600;min-width:40px">${labels[i]} (${counts[i]})</div>` : ''
+            ).join('');
+        }
+
+        async function leadsSave() {
+            const lead = {
+                company: document.getElementById('leadName').value.trim(),
+                contact: document.getElementById('leadContact').value.trim(),
+                email: document.getElementById('leadEmail').value.trim(),
+                value: parseFloat(document.getElementById('leadValue').value) || 0,
+                stage: document.getElementById('leadStage').value,
+                source: document.getElementById('leadSource').value.trim(),
+                notes: document.getElementById('leadNotes').value.trim()
+            };
+            if (!lead.company) { showToast('Bitte Firma angeben', 'error'); return; }
+            try {
+                const r = await fetch(`${API}/leads`, {
+                    method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(lead)
+                });
+                if (!r.ok) throw new Error('Save failed');
+                showToast('Lead gespeichert', 'success');
+                document.getElementById('leadsAddForm').style.display = 'none';
+                ['leadName','leadContact','leadEmail','leadValue','leadSource','leadNotes'].forEach(id => document.getElementById(id).value = '');
+                leadsLoad();
+            } catch(e) { showToast('Fehler beim Speichern', 'error'); }
+        }
+
+        async function leadsUpdateStage(id, stage) {
+            try {
+                await fetch(`${API}/leads/${id}`, {
+                    method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stage })
+                });
+                leadsLoad();
+            } catch(e) { showToast('Fehler', 'error'); }
+        }
+
+        function leadsExport() {
+            if (!leadsData.length) { showToast('Keine Leads zum Exportieren', 'info'); return; }
+            const headers = ['Firma', 'Kontakt', 'E-Mail', 'Stage', 'Wert', 'Quelle', 'Notizen', 'Erstellt'];
+            const rows = leadsData.map(l => [l.company, l.contact, l.email, l.stage, l.value || '', l.source || '', (l.notes||'').replace(/\n/g,' '), l.created_at]);
+            const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `leads-export-${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
         }
 
         async function loadStats() {
