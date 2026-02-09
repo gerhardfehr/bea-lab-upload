@@ -170,6 +170,7 @@
         @keyframes spin { to{transform:rotate(360deg)} }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
         @keyframes fadeSlideIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        .mb-default-badge { display:inline-block;font-size:10px;font-weight:600;color:var(--accent);background:rgba(139,170,255,0.1);border:1px solid rgba(139,170,255,0.2);padding:2px 8px;border-radius:10px;margin-top:6px;letter-spacing:0.3px;text-transform:uppercase; }
         .footer { position:relative; z-index:1; text-align:center; padding:32px 24px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); }
         .footer a { color:var(--accent); text-decoration:none; }
 
@@ -1344,6 +1345,7 @@
             if(name==='admin') loadAdminData();
             if(name==='profile') loadProfile();
             if(name==='chat') { loadChatHistory(); document.getElementById('chatInput').focus(); }
+            if(name==='model') { if (!mbUserProfile) mbLoadUserProfile().then(() => mbApplyDefault('start')); }
         }
         function switchTab(tab,el) { currentTab=tab; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); document.getElementById('file-section').classList.toggle('active',tab==='file'); document.getElementById('text-section').classList.toggle('active',tab==='text'); updateCount(); }
         function selectDB(el) { document.querySelectorAll('.db-option').forEach(o=>o.classList.remove('selected')); el.classList.add('selected'); selectedDB=el.dataset.db; }
@@ -1911,6 +1913,167 @@
             document.getElementById('mbStartBtn').disabled = false;
         }
 
+        // ── Smart Defaults Engine ──────────────────────
+        let mbUserProfile = null;  // loaded on workflow start
+        let mbDefaults = {};       // computed defaults per step
+
+        async function mbLoadUserProfile() {
+            try {
+                const [profResp, psiResp] = await Promise.all([
+                    fetch('/api/profile', { headers: { 'Authorization': 'Bearer ' + authToken } }),
+                    fetch('/api/insight/profile', { headers: { 'Authorization': 'Bearer ' + authToken } }).catch(() => null)
+                ]);
+                const profile = await profResp.json();
+                let psi = null;
+                if (psiResp && psiResp.ok) psi = await psiResp.json();
+
+                mbUserProfile = {
+                    name: profile.name || '',
+                    expertise: profile.expertise || [],
+                    position: profile.position || '',
+                    company: profile.company || '',
+                    psiInsights: psi?.total_insights || 0,
+                    psiDomain: psi?.primary_domain || null,
+                    psiStyle: psi?.primary_thinking_style || null,
+                    psiEngagement: psi?.engagement_score || 0,
+                    psiSpeed: psi?.avg_decision_speed || null,
+                };
+                console.log('📊 User profile loaded:', mbUserProfile);
+                mbComputeDefaults();
+                return profile;
+            } catch(e) {
+                console.warn('Profile load failed, using BEATRIX defaults');
+                mbUserProfile = null;
+                mbComputeDefaults();
+                return null;
+            }
+        }
+
+        function mbComputeDefaults() {
+            const u = mbUserProfile;
+            const isNew = !u || (u.psiInsights === 0 && u.expertise.length === 0);
+            const isExperienced = u && (u.psiInsights >= 3 || u.expertise.length >= 2);
+            const domain = mbState.selections?.domain || u?.psiDomain || null;
+            const style = u?.psiStyle || null;
+
+            // Mode
+            if (isNew) {
+                mbDefaults.mode = 'gefuehrt';
+            } else if (isExperienced) {
+                mbDefaults.mode = 'schnell';
+            } else {
+                mbDefaults.mode = 'gefuehrt';
+            }
+
+            // Step 1: Entry Point
+            if (style?.includes('analytical') || style?.includes('systemic')) {
+                mbDefaults.step1 = 'theory';
+            } else if (style?.includes('intuitive') || style?.includes('empathic')) {
+                mbDefaults.step1 = 'practice';
+            } else if (isExperienced) {
+                mbDefaults.step1 = 'hybrid';
+            } else {
+                mbDefaults.step1 = 'practice';
+            }
+
+            // Step 2: Scope (Behavior Type)
+            if (['FIN', 'POL'].includes(domain)) {
+                mbDefaults.step2 = 'decision';
+            } else if (['HLT', 'ENV', 'EDU'].includes(domain)) {
+                mbDefaults.step2 = 'continuous';
+            } else if (['ORG'].includes(domain)) {
+                mbDefaults.step2 = 'process';
+            } else {
+                mbDefaults.step2 = 'decision';
+            }
+
+            // Step 3: Context Ψ
+            if (isNew) {
+                mbDefaults.step3 = 'ggg-default';
+            } else if (isExperienced) {
+                mbDefaults.step3 = 'full-8psi';
+            } else {
+                mbDefaults.step3 = 'ggg-default';
+            }
+
+            // Step 6: Report Depth
+            if (isNew) {
+                mbDefaults.depth = 'standard';
+            } else {
+                mbDefaults.depth = 'deep';
+            }
+
+            console.log('🎯 Defaults computed:', mbDefaults, '(isNew:', isNew, 'isExperienced:', isExperienced, ')');
+        }
+
+        function mbApplyDefault(step) {
+            // Recompute with latest domain info from Step 0
+            mbComputeDefaults();
+
+            if (step === 'start') {
+                // Auto-select mode
+                const cards = document.querySelectorAll('.mb-mode-card');
+                const modeMap = ['schnell', 'gefuehrt', 'template', 'custom'];
+                cards.forEach((card, i) => {
+                    card.querySelector('.mb-default-badge')?.remove();
+                    if (modeMap[i] === mbDefaults.mode) {
+                        card.insertAdjacentHTML('beforeend', '<div class="mb-default-badge">empfohlen</div>');
+                        // Auto-select
+                        if (!mbState.mode) {
+                            mbSelectMode(card, mbDefaults.mode);
+                        }
+                    }
+                });
+            }
+
+            if (step === 1) {
+                mbApplyChoiceDefault('mbStep1', mbDefaults.step1);
+            }
+            if (step === 2) {
+                mbApplyChoiceDefault('mbStep2', mbDefaults.step2);
+            }
+            if (step === 3) {
+                mbApplyChoiceDefault('mbStep3', mbDefaults.step3);
+            }
+            if (step === 6) {
+                // Depth default
+                const def = mbDefaults.depth || 'standard';
+                setTimeout(() => {
+                    const el = def === 'deep' ? document.getElementById('mbDepthDeep') : document.getElementById('mbDepthStd');
+                    if (el) {
+                        el.insertAdjacentHTML('beforeend', '<div class="mb-default-badge" style="position:absolute;top:8px;right:10px">empfohlen</div>');
+                        el.style.position = 'relative';
+                        mbSelectDepth(def, el);
+                    }
+                }, 100);
+            }
+        }
+
+        function mbApplyChoiceDefault(panelId, defaultValue) {
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            const choices = panel.querySelectorAll('.mb-choice');
+            let applied = false;
+
+            choices.forEach(choice => {
+                // Remove old badges
+                choice.querySelector('.mb-default-badge')?.remove();
+
+                // Find value from onclick
+                const onclick = choice.getAttribute('onclick') || '';
+                const match = onclick.match(/mbSelect\(this,'([^']+)'\)/);
+                if (match && match[1] === defaultValue) {
+                    choice.insertAdjacentHTML('beforeend', '<div class="mb-default-badge">empfohlen</div>');
+                    // Auto-select if nothing selected yet
+                    const alreadySelected = panel.querySelector('.mb-choice.selected');
+                    if (!alreadySelected) {
+                        mbSelect(choice, defaultValue);
+                        applied = true;
+                    }
+                }
+            });
+        }
+
         function mbStartWorkflow() {
             if (!mbState.mode) return;
             mbState.step = 0;
@@ -1919,20 +2082,18 @@
             document.getElementById('mbProgress').style.display = 'flex';
             mbUpdateProgress(0);
             mbLoadPersonalizedQuestions();
+            mbApplyDefault(0);
         }
 
         async function mbLoadPersonalizedQuestions() {
             const container = document.getElementById('mbStep0Choices');
             try {
-                // 1. Load user profile
-                const profResp = await fetch('/api/profile', {
-                    headers: { 'Authorization': 'Bearer ' + authToken }
-                });
-                const profile = await profResp.json();
-                const expertise = (profile.expertise || []).join(', ') || 'Behavioral Economics';
-                const userName = profile.name || 'User';
-                const position = profile.position || '';
-                const company = profile.company || '';
+                // Use already-loaded profile or load fresh
+                const profile = mbUserProfile || await mbLoadUserProfile();
+                const expertise = (profile?.expertise || []).join(', ') || 'Behavioral Economics';
+                const userName = profile?.name || 'User';
+                const position = profile?.position || '';
+                const company = profile?.company || '';
 
                 // 2. Ask BEATRIX to generate 3 personalized questions
                 const resp = await fetch('/api/chat', {
@@ -2297,13 +2458,15 @@ Antworte NUR als JSON Array:
             mbState.step = step;
             mbUpdateProgress(step);
             mbShowPanel('mbStep' + step);
+            mbApplyDefault(step);
         }
 
         function mbNextStep(step) {
             mbState.step = step;
             mbUpdateProgress(step);
             mbShowPanel('mbStep' + step);
-            // Step 6: reset depth choice, let user pick
+            mbApplyDefault(step);
+            // Step 6: reset depth choice, let user pick (default applied above)
             if (step === 6) {
                 mbState.reportDepth = null;
                 const btn = document.getElementById('mbComputeBtn');
