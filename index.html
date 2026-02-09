@@ -470,6 +470,7 @@
             <a href="#" class="nav-link" data-section="upload" onclick="showSection('upload',this)">Upload</a>
             <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
             <a href="#" class="nav-link" data-section="profile" onclick="showSection('profile',this)">Profil</a>
+            <a href="#" class="nav-link" data-section="context" id="navContext" onclick="showSection('context',this)" style="display:none">Ausgangslage</a>
             <a href="#" class="nav-link" data-section="leads" id="navLeads" onclick="showSection('leads',this)" style="display:none">Leads</a>
             <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">Admin</a>
         </div>
@@ -917,6 +918,79 @@
                 </div>
             </div>
 
+        </div>
+    </section>
+
+    <!-- ═══════ AUSGANGSLAGE / KONTEXT SECTION ═══════ -->
+    <section class="section" id="context-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Ausgangslage</h2>
+                <p>Kontext und Rahmenbedingungen für Projekte und Mandate erfassen.</p>
+            </div>
+
+            <!-- Context Cards Grid -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
+                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Aktive Kontexte</div>
+                    <div id="ctxKpiActive" style="font-size:28px;font-weight:700;color:white;margin:6px 0">–</div>
+                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">erfasst</div>
+                </div>
+                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Laufende Mandate</div>
+                    <div id="ctxKpiActive2" style="font-size:28px;font-weight:700;color:#34d399;margin:6px 0">–</div>
+                    <div style="font-size:11px;color:rgba(52,211,153,0.7)">aktiv</div>
+                </div>
+                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Zuletzt aktualisiert</div>
+                    <div id="ctxKpiLast" style="font-size:16px;font-weight:700;color:var(--accent-light);margin:6px 0">–</div>
+                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">letztes Update</div>
+                </div>
+            </div>
+
+            <!-- New Context Button -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:600;color:white">Kontexte <span id="ctxCount" style="font-size:12px;color:rgba(255,255,255,0.4)"></span></div>
+                <button class="mb-btn mb-btn-primary" onclick="ctxShowAdd()" style="font-size:12px;padding:6px 14px">+ Neuer Kontext</button>
+            </div>
+
+            <!-- Add Context Form (hidden) -->
+            <div id="ctxAddForm" style="display:none;padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
+                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px">Neuer Kontext / Ausgangslage</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                    <input class="mb-input" id="ctxClient" placeholder="Kunde / Mandant" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="ctxProject" placeholder="Projekt / Mandat" style="font-size:13px;padding:8px 12px">
+                    <select class="mb-input" id="ctxDomain" style="font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                        <option value="">Domain wählen...</option>
+                        <option value="FIN">Finanzen</option>
+                        <option value="HLT">Gesundheit</option>
+                        <option value="POL">Politik</option>
+                        <option value="ORG">Organisation</option>
+                        <option value="EDU">Bildung</option>
+                        <option value="ENV">Umwelt / Energie</option>
+                        <option value="REL">Beziehungen</option>
+                        <option value="OTH">Andere</option>
+                    </select>
+                    <select class="mb-input" id="ctxStatus" style="font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                        <option value="aktiv">Aktiv</option>
+                        <option value="planung">In Planung</option>
+                        <option value="abgeschlossen">Abgeschlossen</option>
+                        <option value="pausiert">Pausiert</option>
+                    </select>
+                </div>
+                <textarea class="mb-input" id="ctxSituation" placeholder="Ausgangslage: Was ist die aktuelle Situation des Kunden? Welches Problem soll gelöst werden?" style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:80px;width:100%;box-sizing:border-box"></textarea>
+                <textarea class="mb-input" id="ctxGoal" placeholder="Ziel: Was soll erreicht werden? Welches Verhalten soll verändert werden?" style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:60px;width:100%;box-sizing:border-box"></textarea>
+                <textarea class="mb-input" id="ctxConstraints" placeholder="Rahmenbedingungen: Budget, Zeitrahmen, Stakeholder, Einschränkungen..." style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:60px;width:100%;box-sizing:border-box"></textarea>
+                <div style="display:flex;gap:8px;margin-top:12px">
+                    <button class="mb-btn mb-btn-primary" onclick="ctxSave()" style="font-size:12px;padding:6px 14px">Speichern</button>
+                    <button class="mb-btn mb-btn-back" onclick="document.getElementById('ctxAddForm').style.display='none'" style="font-size:12px;padding:6px 14px">Abbrechen</button>
+                </div>
+            </div>
+
+            <!-- Context List -->
+            <div id="ctxTable" style="display:flex;flex-direction:column;gap:10px">
+                <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Kontexte werden geladen...</div>
+            </div>
         </div>
     </section>
 
@@ -1483,6 +1557,7 @@
             document.getElementById('hero-section').style.display = (name==='upload') ? '' : 'none';
             if(name==='documents') loadDocuments();
             if(name==='admin') loadAdminData();
+            if(name==='context') ctxLoad();
             if(name==='leads') leadsLoad();
             if(name==='profile') loadProfile();
             if(name==='chat') { loadChatHistory(); document.getElementById('chatInput').focus(); }
@@ -1534,19 +1609,141 @@
 
         // ── Role-Based Tab Visibility ──────────────────
         const TAB_ROLES = {
-            leads: ['nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com']
+            leads: ['nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com'],
+            context: ['nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com']
         };
 
         function applyUserTabs() {
             const email = (currentUser?.email || '').toLowerCase();
             const isAdmin = currentUser?.admin || false;
 
-            // Leads tab: visible for configured users + admins
-            const leadsTab = document.getElementById('navLeads');
-            if (leadsTab) {
-                const hasAccess = isAdmin || TAB_ROLES.leads.includes(email);
-                leadsTab.style.display = hasAccess ? '' : 'none';
+            // Role-based tabs: visible for configured users + admins
+            for (const [tab, emails] of Object.entries(TAB_ROLES)) {
+                const el = document.getElementById('nav' + tab.charAt(0).toUpperCase() + tab.slice(1));
+                if (el) {
+                    const hasAccess = isAdmin || emails.includes(email);
+                    el.style.display = hasAccess ? '' : 'none';
+                }
             }
+        }
+
+        // ── Kontext / Ausgangslage ──────────────────────
+        let ctxData = [];
+
+        function ctxShowAdd() {
+            const f = document.getElementById('ctxAddForm');
+            f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function ctxLoad() {
+            try {
+                const r = await fetch(`${API}/contexts`, { headers: H() });
+                if (!r.ok) throw new Error('Load failed');
+                ctxData = await r.json();
+                ctxRender();
+            } catch(e) {
+                console.error('Context load:', e);
+                ctxData = [];
+                document.getElementById('ctxTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Kontexte erfasst.</div>';
+                ctxRenderKpis();
+            }
+        }
+
+        function ctxRender() {
+            const domainColors = { FIN:'#fbbf24', HLT:'#34d399', POL:'#f87171', ORG:'#8b9aff', EDU:'#a78bfa', ENV:'#4ade80', REL:'#fb923c', OTH:'#94a3b8' };
+            const domainLabels = { FIN:'Finanzen', HLT:'Gesundheit', POL:'Politik', ORG:'Organisation', EDU:'Bildung', ENV:'Umwelt', REL:'Beziehungen', OTH:'Andere' };
+            const statusColors = { aktiv:'rgba(52,211,153,0.8)', planung:'rgba(139,170,255,0.8)', abgeschlossen:'rgba(255,255,255,0.3)', pausiert:'rgba(251,191,36,0.8)' };
+
+            document.getElementById('ctxCount').textContent = `(${ctxData.length})`;
+
+            if (!ctxData.length) {
+                document.getElementById('ctxTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Kontexte erfasst. Klicke «+ Neuer Kontext» um zu starten.</div>';
+                ctxRenderKpis();
+                return;
+            }
+
+            document.getElementById('ctxTable').innerHTML = ctxData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at)).map(c => {
+                const dc = domainColors[c.domain] || '#94a3b8';
+                const dl = domainLabels[c.domain] || c.domain;
+                const sc = statusColors[c.status] || '#94a3b8';
+                const date = new Date(c.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                return `
+                <div style="padding:16px 18px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+                        <span style="font-weight:600;color:white;font-size:15px">${c.client || '–'}</span>
+                        <span style="font-size:13px;color:rgba(255,255,255,0.5)">→ ${c.project || '–'}</span>
+                        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+                            <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:${dc}18;color:${dc};border:1px solid ${dc}44">${dl}</span>
+                            <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:${sc}18;color:${sc};border:1px solid ${sc}44">${c.status}</span>
+                            <span style="font-size:11px;color:rgba(255,255,255,0.25)">${date}</span>
+                        </span>
+                    </div>
+                    ${c.situation ? `<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Ausgangslage</div><div style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.5">${c.situation}</div></div>` : ''}
+                    ${c.goal ? `<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:600;color:rgba(52,211,153,0.6);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Ziel</div><div style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.5">${c.goal}</div></div>` : ''}
+                    ${c.constraints ? `<div><div style="font-size:10px;font-weight:600;color:rgba(251,191,36,0.6);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Rahmenbedingungen</div><div style="font-size:13px;color:rgba(255,255,255,0.5);line-height:1.5">${c.constraints}</div></div>` : ''}
+                    <div style="display:flex;gap:8px;margin-top:10px;border-top:1px solid rgba(255,255,255,0.04);padding-top:10px">
+                        <select onchange="ctxUpdateStatus('${c.id}',this.value)" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer">
+                            ${['aktiv','planung','abgeschlossen','pausiert'].map(s => `<option value="${s}" ${s===c.status?'selected':''}>${s}</option>`).join('')}
+                        </select>
+                        <button onclick="ctxDelete('${c.id}')" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(248,113,113,0.5);border:1px solid rgba(248,113,113,0.15);border-radius:6px;cursor:pointer">Löschen</button>
+                    </div>
+                </div>`;
+            }).join('');
+
+            ctxRenderKpis();
+        }
+
+        function ctxRenderKpis() {
+            const active = ctxData.filter(c => c.status === 'aktiv');
+            document.getElementById('ctxKpiActive').textContent = ctxData.length;
+            document.getElementById('ctxKpiActive2').textContent = active.length;
+            if (ctxData.length > 0) {
+                const last = new Date(ctxData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at))[0].updated_at || ctxData[0].created_at);
+                document.getElementById('ctxKpiLast').textContent = last.toLocaleDateString('de-CH', { day: '2-digit', month: 'short' });
+            }
+        }
+
+        async function ctxSave() {
+            const ctx = {
+                client: document.getElementById('ctxClient').value.trim(),
+                project: document.getElementById('ctxProject').value.trim(),
+                domain: document.getElementById('ctxDomain').value,
+                status: document.getElementById('ctxStatus').value,
+                situation: document.getElementById('ctxSituation').value.trim(),
+                goal: document.getElementById('ctxGoal').value.trim(),
+                constraints: document.getElementById('ctxConstraints').value.trim()
+            };
+            if (!ctx.client) { showToast('Bitte Kunde angeben', 'error'); return; }
+            try {
+                const r = await fetch(`${API}/contexts`, {
+                    method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(ctx)
+                });
+                if (!r.ok) throw new Error('Save failed');
+                showToast('Kontext gespeichert', 'success');
+                document.getElementById('ctxAddForm').style.display = 'none';
+                ['ctxClient','ctxProject','ctxSituation','ctxGoal','ctxConstraints'].forEach(id => document.getElementById(id).value = '');
+                ctxLoad();
+            } catch(e) { showToast('Fehler beim Speichern', 'error'); }
+        }
+
+        async function ctxUpdateStatus(id, status) {
+            try {
+                await fetch(`${API}/contexts/${id}`, {
+                    method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+                ctxLoad();
+            } catch(e) { showToast('Fehler', 'error'); }
+        }
+
+        async function ctxDelete(id) {
+            if (!confirm('Kontext wirklich löschen?')) return;
+            try {
+                await fetch(`${API}/contexts/${id}`, { method: 'DELETE', headers: H() });
+                showToast('Gelöscht', 'success');
+                ctxLoad();
+            } catch(e) { showToast('Fehler', 'error'); }
         }
 
         // ── Lead-Management ──────────────────────────
