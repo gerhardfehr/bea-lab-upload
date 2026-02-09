@@ -495,7 +495,21 @@
         <a href="#" class="nav-brand" onclick="showSection('hero')"><img src="/logo.jpeg" alt="BEATRIX" class="nav-logo-img"><span class="nav-title">BEATRIX</span></a>
         <div class="nav-links">
             <a href="#" class="nav-link active" data-section="chat" onclick="showSection('chat',this)">💬 Fragen</a>
-            <a href="#" class="nav-link" data-section="model" onclick="showSection('model',this)">🧠 Modell</a>
+            <div class="nav-dropdown" id="navDropBehavioral">
+                <button class="nav-dropdown-trigger" onclick="toggleDropdown('navDropBehavioral')">
+                    🧠 Behavioral Design <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-dropdown-menu">
+                    <a class="nav-dropdown-item" data-section="model" onclick="navDropClick('model',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                        Modell-Building
+                    </a>
+                    <a class="nav-dropdown-item" id="navDropContext" data-section="context" onclick="navDropClick('context',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        Kontext-Analyse
+                    </a>
+                </div>
+            </div>
             <div class="nav-dropdown" id="navDropWissen">
                 <button class="nav-dropdown-trigger" onclick="toggleDropdown('navDropWissen')">
                     📚 Wissen <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
@@ -516,10 +530,6 @@
                     📊 Business <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
                 <div class="nav-dropdown-menu">
-                    <a class="nav-dropdown-item" id="navDropContext" data-section="context" onclick="navDropClick('context',this)" style="display:none">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                        Ausgangslage
-                    </a>
                     <a class="nav-dropdown-item" id="navDropLeads" data-section="leads" onclick="navDropClick('leads',this)" style="display:none">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                         CRM
@@ -2221,13 +2231,14 @@
             const adminEl = document.getElementById('navAdmin');
             if (adminEl) adminEl.style.display = isAdmin ? 'inline' : 'none';
 
-            // Business dropdown items
-            const showCrm = isFehrAdvice && hasCrmAccess;
+            // Kontext-Analyse in Behavioral Design dropdown: role-based
             const visibleTabs = isAdmin ? ['context'] : (ROLE_TABS[role] || []);
             const showContext = visibleTabs.includes('context');
-
             const ctxEl = document.getElementById('navDropContext');
             if (ctxEl) ctxEl.style.display = showContext ? 'flex' : 'none';
+
+            // Business dropdown items (CRM, Firmen, Projekte)
+            const showCrm = isFehrAdvice && hasCrmAccess;
             const leadsEl = document.getElementById('navDropLeads');
             if (leadsEl) leadsEl.style.display = showCrm ? 'flex' : 'none';
             const compEl = document.getElementById('navDropCompanies');
@@ -2235,14 +2246,13 @@
             const projEl = document.getElementById('navDropProjects');
             if (projEl) projEl.style.display = showCrm ? 'flex' : 'none';
 
-            // Show/hide entire Business dropdown based on whether any item is visible
+            // Show/hide entire Business dropdown based on whether any CRM item is visible
             const businessDrop = document.getElementById('navDropBusiness');
             if (businessDrop) {
-                const anyBusinessVisible = showContext || showCrm;
-                businessDrop.style.display = anyBusinessVisible ? 'flex' : 'none';
+                businessDrop.style.display = showCrm ? 'flex' : 'none';
             }
 
-            console.log('Nav: Business=' + (showContext || showCrm), 'CRM=' + showCrm, 'Context=' + showContext, 'Admin=' + isAdmin);
+            console.log('Nav: Context=' + showContext, 'CRM=' + showCrm, 'Admin=' + isAdmin);
         }
 
         // ── Kontext / Ausgangslage ──────────────────────
