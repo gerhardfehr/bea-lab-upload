@@ -1107,15 +1107,27 @@
     <!-- Companies Section (full page) -->
     <section class="section" id="companies-section">
         <div class="container">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
-                <div style="flex:1">
-                    <h2 style="margin:0;font-size:22px;color:white">🏢 Firmen</h2>
-                    <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="crmCompaniesCount"></div>
+            <!-- List View -->
+            <div id="companiesListView">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+                    <div style="flex:1">
+                        <h2 style="margin:0;font-size:22px;color:white">🏢 Firmen</h2>
+                        <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="crmCompaniesCount"></div>
+                    </div>
+                    <input id="crmCompaniesSearch" type="text" placeholder="Suchen nach Name, Branche, Land…" oninput="crmFilterCompanies()" style="font-size:13px;padding:8px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:white;width:min(300px,50vw);outline:none">
                 </div>
-                <input id="crmCompaniesSearch" type="text" placeholder="Suchen nach Name, Branche, Land…" oninput="crmFilterCompanies()" style="font-size:13px;padding:8px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:white;width:min(300px,50vw);outline:none">
-                <button onclick="showSection('leads',document.querySelector('[data-section=leads]'))" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer">← CRM</button>
+                <div id="crmCompaniesList" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
             </div>
-            <div id="crmCompaniesList" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
+
+            <!-- Profile View (hidden by default) -->
+            <div id="companiesProfileView" style="display:none">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+                    <button onclick="companyBackToList()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer">← Alle Firmen</button>
+                    <h2 style="margin:0;font-size:22px;color:white" id="companyProfileName"></h2>
+                    <span style="font-size:12px;color:rgba(255,255,255,0.3)" id="companyProfileCode"></span>
+                </div>
+                <div id="companyProfileContent"></div>
+            </div>
         </div>
     </section>
 
@@ -2011,20 +2023,29 @@
         function crmCloseDrawer() { document.getElementById('crmDrawer').style.display = 'none'; }
 
         let crmCompaniesData = [];
+        let companiesExpanded = {};
+
         function crmShowCompanies() {
             showSection('companies', document.querySelector('[data-section=companies]'));
         }
+
         async function crmLoadCompanies() {
+            document.getElementById('companiesListView').style.display = '';
+            document.getElementById('companiesProfileView').style.display = 'none';
             document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Lade Firmendaten aus GitHub…</div>';
             try {
                 const resp = await fetch(`${API}/crm/companies/enriched`, { headers: H() });
                 crmCompaniesData = resp.ok ? await resp.json() : [];
-                document.getElementById('crmCompaniesCount').textContent = `${crmCompaniesData.length} Firmen · Quelle: GitHub customer-registry.yaml + lead-database.yaml`;
+                const totalChildren = crmCompaniesData.reduce((s, c) => s + (c.children?.length || 0), 0);
+                document.getElementById('crmCompaniesCount').textContent = `${crmCompaniesData.length} Unternehmen · ${totalChildren + crmCompaniesData.length} Einträge total · Quelle: GitHub`;
                 crmFilterCompanies();
             } catch(e) {
                 document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:var(--error)">Fehler beim Laden</div>';
             }
         }
+
+        const COUNTRY_FLAGS = {AT:'\u{1F1E6}\u{1F1F9}',CH:'\u{1F1E8}\u{1F1ED}',DE:'\u{1F1E9}\u{1F1EA}',SE:'\u{1F1F8}\u{1F1EA}',UK:'\u{1F1EC}\u{1F1E7}',US:'\u{1F1FA}\u{1F1F8}'};
+        const INDUSTRY_LABELS = {finance:'Finanz',insurance:'Versicherung',retail:'Handel',fmcg:'FMCG',construction:'Bau',packaging:'Verpackung',public_sector:'Öffentlich',telecom:'Telekom',media:'Medien',precious_metals:'Edelmetalle',automotive:'Automobil',health:'Gesundheit',transport:'Transport',professional_services:'Services',technology:'Tech',energy:'Energie',ngo:'NGO',pharma_health:'Pharma/Health',manufacturing:'Industrie',creative:'Kreativ',consulting:'Consulting'};
 
         function crmFilterCompanies() {
             const q = (document.getElementById('crmCompaniesSearch')?.value || '').toLowerCase();
@@ -2033,7 +2054,7 @@
                 (c.industry || '').toLowerCase().includes(q) ||
                 (c.code || '').toLowerCase().includes(q) ||
                 (c.country || '').toLowerCase().includes(q) ||
-                (c.notes || '').toLowerCase().includes(q)
+                (c.children || []).some(ch => (ch.name||'').toLowerCase().includes(q))
             ) : crmCompaniesData;
 
             if (!filtered.length) {
@@ -2041,66 +2062,147 @@
                 return;
             }
 
-            const countryFlags = {AT:'🇦🇹',CH:'🇨🇭',DE:'🇩🇪',SE:'🇸🇪',UK:'🇬🇧',US:'🇺🇸',LI:'🇱🇮',NL:'🇳🇱',FR:'🇫🇷',IT:'🇮🇹'};
-            const industryLabels = {finance:'Finanz',insurance:'Versicherung',retail:'Handel',fmcg:'FMCG',construction:'Bau',packaging:'Verpackung',public_sector:'Öffentlich',telecom:'Telekom',media:'Medien',precious_metals:'Edelmetalle',automotive:'Automobil',health:'Gesundheit',transport:'Transport',professional_services:'Services',technology:'Tech',energy:'Energie',ngo:'NGO'};
-
             const rows = filtered.map(c => {
-                const flag = countryFlags[c.country] || '';
-                const indLabel = industryLabels[c.industry] || c.industry || '';
+                const flag = COUNTRY_FLAGS[c.country] || '';
+                const indLabel = INDUSTRY_LABELS[c.industry] || c.industry || '';
                 const ind = indLabel ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(42,127,142,0.1);color:#2A7F8E;border:1px solid rgba(42,127,142,0.2)">${indLabel}</span>` : '';
                 const type = c.type === 'strategic' ? '<span style="font-size:9px;padding:1px 6px;border-radius:6px;background:rgba(232,163,61,0.1);color:#E8A33D;border:1px solid rgba(232,163,61,0.2)">Strategic</span>' : '';
-                const status = c.relationship_status ? `<span style="font-size:9px;padding:1px 6px;border-radius:6px;background:${c.relationship_status==='ACTIVE'?'rgba(52,211,153,0.1)':'rgba(255,255,255,0.04)'};color:${c.relationship_status==='ACTIVE'?'#34d399':'rgba(255,255,255,0.3)'}">${c.relationship_status}</span>` : '';
-                
-                // Data completeness indicators
-                const hasFolder = c.has_customer_folder ? '📁' : '';
-                const hasContext = c.has_context ? '🧠' : '';
-                const hasVectors = c.ebf_context_vectors ? '🔬' : '';
-                const hot = c.hot_lead ? '🔥' : '';
-                const contactCount = c.contact_persons > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">👤${c.contact_persons}</span>` : '';
+                const hasFolder = c.has_customer_folder ? '\u{1F4C1}' : '';
+                const hasContext = c.has_context ? '\u{1F9E0}' : '';
                 const owner = c.fa_owner ? `<span style="font-size:9px;padding:1px 5px;border-radius:6px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3)">${c.fa_owner}</span>` : '';
+                const totalContacts = c.total_contacts || c.contact_persons || 0;
+                const contactBadge = totalContacts > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">\u{1F464}${totalContacts}</span>` : '';
 
-                // Scores
-                const fitScore = c.fit_score > 0 ? `<span style="font-size:9px;padding:1px 5px;border-radius:6px;background:rgba(139,170,255,0.08);color:rgba(139,170,255,0.6)" title="Fit Score">Fit:${c.fit_score}</span>` : '';
-                const segment = c.segment ? `<span style="font-size:9px;color:rgba(255,255,255,0.2)">${c.segment}</span>` : '';
-                
-                // CRM stats
-                const leadsBadge = c.leads > 0
-                    ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(251,191,36,0.1);color:#fbbf24">${c.leads} Lead${c.leads>1?'s':''}</span>`
+                const childCount = (c.children?.length || 0) + 1;
+                const isExpanded = companiesExpanded[c.code];
+                const expandable = c.children?.length > 0;
+                const leadBadge = expandable
+                    ? `<span onclick="event.stopPropagation();companyToggle('${c.code}')" style="font-size:11px;padding:3px 10px;border-radius:8px;background:rgba(251,191,36,0.08);color:#fbbf24;border:1px solid rgba(251,191,36,0.15);cursor:pointer;white-space:nowrap">${childCount} Leads ${isExpanded ? '\u25BE' : '\u25B8'}</span>`
                     : '';
-                const wonBadge = c.won > 0 ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(52,211,153,0.1);color:#34d399">${c.won} Won</span>` : '';
-                const pipeline = c.pipeline > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">${new Intl.NumberFormat('de-CH',{notation:'compact'}).format(c.pipeline)} CHF</span>` : '';
 
-                return `<div style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="crmShowCompanyDetail('${c.code}')">
-                    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,rgba(42,127,142,0.15),rgba(27,54,93,0.3));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#2A7F8E;flex-shrink:0">${flag || (c.name||'?')[0].toUpperCase()}</div>
+                let html = `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="companyOpenProfile('${c.code}')">
+                    <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,rgba(42,127,142,0.15),rgba(27,54,93,0.3));display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#2A7F8E;flex-shrink:0">${flag || (c.name||'?')[0].toUpperCase()}</div>
                     <div style="flex:1;min-width:0">
                         <div style="display:flex;align-items:center;gap:6px">
-                            <span style="font-weight:600;color:white;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name || '–'}</span>
-                            <span style="font-size:10px;color:rgba(255,255,255,0.2)">${c.code}</span>
-                            ${hot}${hasFolder}${hasContext}${hasVectors}
+                            <span style="font-weight:600;color:white;font-size:14px">${c.short_name || c.name || '\u2013'}</span>
+                            ${hasFolder}${hasContext}
                         </div>
-                        <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">${ind}${type}${status}${segment}${fitScore}${contactCount}${owner}</div>
+                        <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">${ind}${type}${contactBadge}${owner}</div>
                     </div>
-                    <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">${pipeline}${leadsBadge}${wonBadge}</div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">${leadBadge}</div>
                 </div>`;
+
+                if (expandable && isExpanded) {
+                    html += '<div style="border-bottom:1px solid rgba(255,255,255,0.06)">';
+                    c.children.forEach(ch => {
+                        const chOwner = ch.fa_owner ? `<span style="font-size:9px;padding:1px 5px;border-radius:6px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3)">${ch.fa_owner}</span>` : '';
+                        const chContacts = ch.contact_persons > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.25)">\u{1F464}${ch.contact_persons}</span>` : '';
+                        const chNext = ch.next_action ? `<span style="font-size:10px;color:rgba(251,191,36,0.6)">\u2192 ${ch.next_action}</span>` : '';
+                        const chStatus = ch.status ? `<span style="font-size:9px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.3)">${ch.status}</span>` : '';
+                        html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 20px 10px 72px;border-bottom:1px solid rgba(255,255,255,0.02);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.015)'" onmouseout="this.style.background='transparent'" onclick="event.stopPropagation();companyOpenProfile('${ch.code}')">
+                            <div style="width:6px;height:6px;border-radius:50%;background:rgba(42,127,142,0.4);flex-shrink:0"></div>
+                            <div style="flex:1;min-width:0">
+                                <div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.7)">${ch.name || ch.code}</div>
+                                <div style="display:flex;gap:6px;align-items:center;margin-top:2px;flex-wrap:wrap">${chStatus}${chContacts}${chOwner}${chNext}</div>
+                            </div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+                return html;
             }).join('');
             document.getElementById('crmCompaniesList').innerHTML = rows;
         }
 
-        function crmShowCompanyDetail(code) {
-            const c = crmCompaniesData.find(x => x.code === code);
-            if (!c) return;
-            // Navigate to CRM and filter to this company's leads
-            showSection('leads', document.querySelector('[data-section=leads]'));
-            const match = crmDeals.find(d => (d.company_name||'').includes(c.short_name || c.code));
-            if (match) {
-                crmCompanyFilter = match.company_id || match.company;
-                if (crmView !== 'table') crmSetView('table');
-                crmRenderView();
-                showToast(`Leads von ${c.short_name || c.name}`, 'info');
-            } else {
-                showToast(`${c.short_name || c.name} – keine CRM-Leads`, 'info');
-            }
+        function companyToggle(code) { companiesExpanded[code] = !companiesExpanded[code]; crmFilterCompanies(); }
+
+        function companyBackToList() {
+            document.getElementById('companiesListView').style.display = '';
+            document.getElementById('companiesProfileView').style.display = 'none';
         }
+
+        function companyOpenProfile(code) {
+            let company = crmCompaniesData.find(x => x.code === code);
+            if (!company) {
+                for (const p of crmCompaniesData) {
+                    const ch = (p.children || []).find(x => x.code === code);
+                    if (ch) { company = ch; company._parent = p; break; }
+                }
+            }
+            if (!company) return;
+
+            document.getElementById('companiesListView').style.display = 'none';
+            document.getElementById('companiesProfileView').style.display = '';
+            document.getElementById('companyProfileName').textContent = company.name || company.code;
+            document.getElementById('companyProfileCode').textContent = company.code;
+
+            const flag = COUNTRY_FLAGS[company.country] || '';
+            const indLabel = INDUSTRY_LABELS[company.industry] || company.industry || '';
+
+            let ph = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:24px">';
+            // Overview Card
+            ph += `<div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:20px">
+                <div style="font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">\u00DCbersicht</div>
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                    <div style="width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,rgba(42,127,142,0.2),rgba(27,54,93,0.4));display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#2A7F8E">${flag || (company.name||'?')[0]}</div>
+                    <div>
+                        <div style="font-size:18px;font-weight:700;color:white">${company.short_name || company.name}</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,0.4)">${company.name}</div>
+                    </div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px">
+                    ${indLabel ? `<span style="font-size:11px;padding:3px 10px;border-radius:8px;background:rgba(42,127,142,0.1);color:#2A7F8E;border:1px solid rgba(42,127,142,0.2)">${indLabel}</span>` : ''}
+                    ${company.type==='strategic'?'<span style="font-size:11px;padding:3px 10px;border-radius:8px;background:rgba(232,163,61,0.1);color:#E8A33D;border:1px solid rgba(232,163,61,0.2)">Strategic</span>':''}
+                    ${company.country?`<span style="font-size:11px;padding:3px 10px;border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.4)">${flag} ${company.country}</span>`:''}
+                    ${company.segment?`<span style="font-size:11px;padding:3px 10px;border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.4)">${company.segment}</span>`:''}
+                </div>
+                ${company.website?`<div style="margin-top:12px"><a href="${company.website}" target="_blank" style="font-size:11px;color:var(--accent)">${company.website}</a></div>`:''}
+                ${company.notes?`<div style="margin-top:12px;font-size:12px;color:rgba(255,255,255,0.5);line-height:1.5">${company.notes}</div>`:''}
+            </div>`;
+
+            // Data Card
+            ph += `<div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:20px">
+                <div style="font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">Daten & Status</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    <div style="padding:10px;background:rgba(255,255,255,0.02);border-radius:8px"><div style="font-size:10px;color:rgba(255,255,255,0.3)">Owner</div><div style="font-size:14px;font-weight:600;color:white;margin-top:2px">${company.fa_owner||'\u2013'}</div></div>
+                    <div style="padding:10px;background:rgba(255,255,255,0.02);border-radius:8px"><div style="font-size:10px;color:rgba(255,255,255,0.3)">Status</div><div style="font-size:14px;font-weight:600;color:${company.relationship_status==='ACTIVE'?'#34d399':'white'};margin-top:2px">${company.relationship_status||company.status||'\u2013'}</div></div>
+                    <div style="padding:10px;background:rgba(255,255,255,0.02);border-radius:8px"><div style="font-size:10px;color:rgba(255,255,255,0.3)">Kontakte</div><div style="font-size:14px;font-weight:600;color:white;margin-top:2px">${company.contact_persons||0}</div></div>
+                    <div style="padding:10px;background:rgba(255,255,255,0.02);border-radius:8px"><div style="font-size:10px;color:rgba(255,255,255,0.3)">Fit Score</div><div style="font-size:14px;font-weight:600;color:${company.fit_score>70?'#34d399':company.fit_score>40?'#fbbf24':'white'};margin-top:2px">${company.fit_score||'\u2013'}</div></div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:14px">
+                    ${company.has_customer_folder?'<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(52,211,153,0.08);color:#34d399;border:1px solid rgba(52,211,153,0.15)">\u{1F4C1} Kunden-Ordner</span>':''}
+                    ${company.has_context?'<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(139,170,255,0.08);color:rgba(139,170,255,0.6);border:1px solid rgba(139,170,255,0.15)">\u{1F9E0} Kontextvektoren</span>':''}
+                    ${company.ebf_context_vectors?'<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(139,170,255,0.08);color:rgba(139,170,255,0.6);border:1px solid rgba(139,170,255,0.15)">\u{1F52C} EBF Vectors</span>':''}
+                </div>
+                ${company.next_action?`<div style="margin-top:14px;padding:10px;background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.1);border-radius:8px"><div style="font-size:10px;color:rgba(251,191,36,0.6)">N\u00E4chste Aktion</div><div style="font-size:12px;color:#fbbf24;margin-top:2px">\u2192 ${company.next_action}</div></div>`:''}
+            </div>`;
+            ph += '</div>';
+
+            // Children
+            if (company.children?.length > 0) {
+                ph += `<div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px">
+                    <div style="padding:14px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;font-weight:600;color:white">Abteilungen / Leads (${company.children.length})</span></div>`;
+                company.children.forEach(ch => {
+                    ph += `<div style="display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer" onclick="companyOpenProfile('${ch.code}')">
+                        <div style="width:6px;height:6px;border-radius:50%;background:rgba(42,127,142,0.4);flex-shrink:0"></div>
+                        <div style="flex:1"><div style="font-size:13px;color:rgba(255,255,255,0.7)">${ch.name}</div>
+                        ${ch.next_action?`<div style="font-size:11px;color:rgba(251,191,36,0.6);margin-top:2px">\u2192 ${ch.next_action}</div>`:''}</div>
+                        ${ch.contact_persons>0?`<span style="font-size:10px;color:rgba(255,255,255,0.25)">\u{1F464}${ch.contact_persons}</span>`:''}
+                        ${ch.status?`<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.3)">${ch.status}</span>`:''}
+                    </div>`;
+                });
+                ph += '</div>';
+            }
+
+            // Placeholder
+            ph += `<div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px;text-align:center">
+                <div style="font-size:14px;color:rgba(255,255,255,0.25);margin-bottom:8px">\u{1F4CA} Detailliertes Unternehmensprofil</div>
+                <div style="font-size:12px;color:rgba(255,255,255,0.15)">Finanzdaten, Projekte, EBF-Modelle und Interventionshistorie.<br>Quelle: data/customers/${(company.code||'').toLowerCase()}/</div>
+            </div>`;
+
+            document.getElementById('companyProfileContent').innerHTML = ph;
+        }
+
 
         let crmCompanyFilter = null;
 
