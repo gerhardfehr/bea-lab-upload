@@ -2929,8 +2929,7 @@
             const slug = (firma.value + '-' + name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').slice(0, 50);
             // Preview code format
             const prefix = firma.value.toUpperCase().replace(/-/g,'').slice(0,5);
-            const yymm = new Date().toISOString().slice(2,4) + new Date().toISOString().slice(5,7);
-            const previewCode = `${prefix || '???'}-${yymm}A`;
+            const previewCode = `${prefix || '???'}0XX`;
 
             document.getElementById('prjReviewContent').innerHTML = `
                 <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 16px">
