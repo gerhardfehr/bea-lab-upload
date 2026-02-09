@@ -1033,7 +1033,7 @@
 
     <script>
         const API = '/api';
-        console.log('🟢 BEATRIX v3.12.2 loaded — mbRenderMd active');
+        console.log('🟢 BEATRIX v3.12.3 loaded — mbRenderMd active');
         let files=[], tags=[], selectedDB='knowledge_base', currentTab='file', authToken=null, currentUser=null;
 
         function H() { return authToken ? {'Authorization':`Bearer ${authToken}`} : {}; }
@@ -2039,13 +2039,15 @@
                 // Depth default
                 const def = mbDefaults.depth || 'standard';
                 setTimeout(() => {
+                    // Remove old badges first
+                    document.querySelectorAll('#mbDepthChoice .mb-default-badge').forEach(b => b.remove());
                     const el = def === 'deep' ? document.getElementById('mbDepthDeep') : document.getElementById('mbDepthStd');
                     if (el) {
-                        el.insertAdjacentHTML('beforeend', '<div class="mb-default-badge" style="position:absolute;top:8px;right:10px">empfohlen</div>');
                         el.style.position = 'relative';
+                        el.insertAdjacentHTML('afterbegin', '<div class="mb-default-badge" style="position:absolute;top:10px;right:12px">empfohlen</div>');
                         mbSelectDepth(def, el);
                     }
-                }, 100);
+                }, 150);
             }
         }
 
@@ -2465,8 +2467,7 @@ Antworte NUR als JSON Array:
             mbState.step = step;
             mbUpdateProgress(step);
             mbShowPanel('mbStep' + step);
-            mbApplyDefault(step);
-            // Step 6: reset depth choice, let user pick (default applied above)
+            // Step 6: reset depth choice first, THEN apply defaults
             if (step === 6) {
                 mbState.reportDepth = null;
                 const btn = document.getElementById('mbComputeBtn');
@@ -2482,6 +2483,9 @@ Antworte NUR als JSON Array:
                     d.style.background = 'transparent';
                 });
             }
+            // Apply defaults AFTER any resets
+            mbApplyDefault(step);
+        }
         }
 
         function mbSelectDepth(depth, el) {
