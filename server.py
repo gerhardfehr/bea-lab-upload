@@ -2574,7 +2574,26 @@ async def crm_sync_github(user=Depends(require_auth)):
                 notes_text = "\n".join(notes_parts)
 
                 source_info = lead.get("source") or {}
-                source_str = f"{source_info.get('channel','')} {source_info.get('subchannel','')} {source_info.get('referrer','')}".strip()
+                if isinstance(source_info, dict):
+                    source_str = f"{source_info.get('channel','')} {source_info.get('subchannel','')} {source_info.get('referrer','')}".strip()
+                else:
+                    source_str = str(source_info)
+
+                # Handle next_action (can be string or dict)
+                na_raw = lead.get("next_action") or ""
+                if isinstance(na_raw, dict):
+                    na_str = na_raw.get("description", "") or na_raw.get("type", "")
+                    na_date = na_raw.get("date") or lead.get("next_action_date")
+                else:
+                    na_str = str(na_raw)
+                    na_date = lead.get("next_action_date")
+                if isinstance(na_date, dict): na_date = None
+                if na_date: na_date = str(na_date)[:10]  # ensure string date
+
+                # Ensure created_at is a string
+                ca_raw = lead.get("created") or lead.get("created_at") or datetime.utcnow().isoformat()
+                if isinstance(ca_raw, dict): ca_raw = datetime.utcnow().isoformat()
+                ca_str = str(ca_raw)
 
                 db.execute(text("""INSERT INTO crm_deals (id, company_id, contact_id, title, stage, value, probability, source,
                     next_action, next_action_date, owner, notes, created_by, created_at)
@@ -2582,9 +2601,9 @@ async def crm_sync_github(user=Depends(require_auth)):
                     {"id": lead_id, "cid": company_id, "ctid": first_contact_id,
                      "title": f"{short_name} – {lead.get('industry','') or ''}",
                      "stage": stage, "val": value, "prob": prob, "src": source_str,
-                     "na": lead.get("next_action","") or "", "nad": lead.get("next_action_date") or None,
+                     "na": na_str, "nad": na_date,
                      "owner": f"OWN-{owner}", "notes": notes_text, "cb": "github-sync",
-                     "ca": lead.get("created", lead.get("created_at", datetime.utcnow().isoformat()))})
+                     "ca": ca_str})
                 stats["deals"] += 1
 
                 # Import contact_log as activities
