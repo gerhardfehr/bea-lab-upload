@@ -1282,6 +1282,27 @@
                             </div>
                         </div>
                         <div style="margin-top:16px">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:8px">Projektkategorie *</label>
+                            <div style="display:flex;gap:8px" id="prjCategoryCards">
+                                <div onclick="prjSelectCategory(this,'mandat')" data-cat="mandat" style="flex:1;padding:14px;background:rgba(52,211,153,0.06);border:2px solid rgba(52,211,153,0.3);border-radius:10px;cursor:pointer;text-align:center;transition:all 0.15s" class="prj-cat-card active">
+                                    <div style="font-size:22px">💼</div>
+                                    <div style="font-size:12px;font-weight:600;color:#34d399;margin-top:4px">Mandat</div>
+                                    <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px">Bezahltes Projekt</div>
+                                </div>
+                                <div onclick="prjSelectCategory(this,'lead')" data-cat="lead" style="flex:1;padding:14px;background:rgba(255,255,255,0.02);border:2px solid var(--border);border-radius:10px;cursor:pointer;text-align:center;transition:all 0.15s" class="prj-cat-card">
+                                    <div style="font-size:22px">🎯</div>
+                                    <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.5);margin-top:4px">Lead</div>
+                                    <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px">Akquise / Offerte</div>
+                                </div>
+                                <div onclick="prjSelectCategory(this,'probono')" data-cat="probono" style="flex:1;padding:14px;background:rgba(255,255,255,0.02);border:2px solid var(--border);border-radius:10px;cursor:pointer;text-align:center;transition:all 0.15s" class="prj-cat-card">
+                                    <div style="font-size:22px">🤝</div>
+                                    <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.5);margin-top:4px">Pro Bono</div>
+                                    <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px">Unentgeltlich</div>
+                                </div>
+                            </div>
+                            <input type="hidden" id="prjCategory" value="mandat">
+                        </div>
+                        <div style="margin-top:16px">
                             <label style="font-size:12px;color:rgba(255,255,255,0.4);display:block;margin-bottom:6px">Beschreibung / Ziele</label>
                             <textarea id="prjDesc" rows="3" placeholder="Was soll erreicht werden?" style="width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>
                         </div>
@@ -2772,6 +2793,32 @@
             if (mode === 'gefuehrt') { prjGoStep(1); }
         }
 
+        function prjSelectCategory(el, cat) {
+            document.getElementById('prjCategory').value = cat;
+            const colors = {mandat:'52,211,153', lead:'251,191,36', probono:'139,170,255'};
+            const textColors = {mandat:'#34d399', lead:'#fbbf24', probono:'rgba(139,170,255,0.8)'};
+            document.querySelectorAll('#prjCategoryCards .prj-cat-card').forEach(c => {
+                const isCat = c.dataset.cat === cat;
+                const rgb = colors[c.dataset.cat] || '255,255,255';
+                c.style.borderColor = isCat ? `rgba(${rgb},0.3)` : 'var(--border)';
+                c.style.background = isCat ? `rgba(${rgb},0.06)` : 'rgba(255,255,255,0.02)';
+                c.querySelector('div:nth-child(2)').style.color = isCat ? textColors[c.dataset.cat] : 'rgba(255,255,255,0.5)';
+            });
+        }
+
+        function prjSchnellCat(el, cat) {
+            document.getElementById('prjSchnellCategory').value = cat;
+            const colors = {mandat:'52,211,153', lead:'251,191,36', probono:'139,170,255'};
+            const textColors = {mandat:'#34d399', lead:'#fbbf24', probono:'rgba(139,170,255,0.8)'};
+            document.querySelectorAll('.prj-schnell-cat').forEach(b => {
+                const isCat = b.dataset.cat === cat;
+                const rgb = colors[b.dataset.cat] || '255,255,255';
+                b.style.borderColor = isCat ? `rgba(${rgb},0.3)` : 'var(--border)';
+                b.style.background = isCat ? `rgba(${rgb},0.08)` : 'rgba(255,255,255,0.02)';
+                b.style.color = isCat ? textColors[b.dataset.cat] : 'rgba(255,255,255,0.4)';
+            });
+        }
+
         function prjGoStep(n) {
             prjStep = n;
             document.querySelectorAll('.prj-step').forEach(s => s.style.display = 'none');
@@ -2920,6 +2967,7 @@
         async function prjSchnellCreate() {
             const code = document.getElementById('prjSchnellFirma').value;
             const name = document.getElementById('prjSchnellName').value.trim();
+            const category = document.getElementById('prjSchnellCategory').value || 'mandat';
             if (!code || !name) return;
 
             const c = prjCompaniesCache.find(x => x.code === code);
@@ -2935,6 +2983,7 @@
                         customer_code: code,
                         name: name,
                         type: 'beratung',
+                        project_category: category,
                         description: '',
                         start_date: today,
                         end_date: '',
@@ -2947,7 +2996,8 @@
                 });
                 const result = await resp.json();
                 if (resp.ok) {
-                    showToast(`✓ Projekt "${name}" eröffnet`, 'success');
+                    const catIcons = {mandat:'💼', lead:'🎯', probono:'🤝'};
+                    showToast(`✓ ${catIcons[category]||''} Projekt "${name}" eröffnet · Kürzel: ${result.project_code}`, 'success');
                     prjCancelWizard();
                     prjLoad();
                 } else {
@@ -2976,6 +3026,7 @@
                         customer_code: firmaCode,
                         name: name,
                         type: document.getElementById('prjType').value,
+                        project_category: document.getElementById('prjCategory').value || 'mandat',
                         description: document.getElementById('prjDesc').value,
                         start_date: document.getElementById('prjStart').value,
                         end_date: document.getElementById('prjEnd').value,
@@ -3090,6 +3141,7 @@
                         <div style="height:100%;width:${Math.round(filledCount/totalTabs*100)}%;background:linear-gradient(90deg,#34d399,#2A7F8E);border-radius:2px;transition:width 0.3s"></div>
                     </div>
                     <div style="font-size:11px;color:rgba(255,255,255,0.4);font-weight:600">${filledCount}/${totalTabs}</div>
+                    ${d.has_local_edits ? `<button onclick="prjSyncGitHub()" style="padding:4px 10px;background:rgba(232,163,61,0.1);border:1px solid rgba(232,163,61,0.3);border-radius:6px;color:#E8A33D;font-size:10px;cursor:pointer;margin-left:8px" title="Lokale Änderungen noch nicht in GitHub">⟳ Sync</button>` : ''}
                 </div>`;
 
             // ── Tab Status Dots ──
@@ -3781,6 +3833,21 @@
         function prjCancelEdit(tab) {
             prjEditMode = false;
             prjRenderTab(tab);
+        }
+
+        async function prjSyncGitHub() {
+            try {
+                const resp = await fetch(`${API}/projects/${prjCurrentSlug}/sync`, { method:'POST', headers:H() });
+                const r = await resp.json();
+                if (r.synced?.length) showToast(`${r.synced.length} Sektionen nach GitHub synchronisiert`, 'success');
+                else if (r.failed?.length) showToast(`GitHub-Sync fehlgeschlagen: ${r.failed.map(f=>f.section).join(', ')}`, 'error');
+                else showToast('Alles bereits synchronisiert', 'success');
+                // Reload
+                const resp2 = await fetch(`${API}/projects/${prjCurrentSlug}/landing`, { headers: H() });
+                prjLandingData = await resp2.json();
+                prjRenderLanding();
+                prjSwitchTab(prjActiveTab);
+            } catch(e) { showToast('Sync-Fehler: '+e.message,'error'); }
         }
 
         async function prjSaveEdit(tab) {
