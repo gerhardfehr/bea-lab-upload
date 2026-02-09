@@ -9,7 +9,7 @@ from typing import Optional, List
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, JSON, Boolean, text
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -1621,6 +1621,143 @@ Frage: {question}"""
 
 # Relevance threshold: minimum score to use fast path
 FAST_PATH_THRESHOLD = 15
+
+@app.post("/api/chat/stream")
+async def chat_stream(request: ChatRequest, user=Depends(require_auth)):
+    """SSE streaming endpoint – streams Claude tokens to frontend in real-time."""
+    import urllib.request, ssl, http.client
+
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(400, "Bitte stelle eine Frage")
+
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(501, "Claude API nicht konfiguriert")
+
+    db = get_db()
+    try:
+        # Search KB for context
+        results = search_knowledge_base(db, question)
+        context = build_context(results) if results else ""
+    finally:
+        db.close()
+
+    system_prompt = """Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
+Du bist spezialisiert auf das Evidence-Based Framework (EBF), Behavioral Economics, das Behavioral Competence Model (BCM) und Decision Architecture.
+
+Dir steht vorhandenes Wissen aus der BEATRIX Knowledge Base zur Verfügung.
+
+Deine Aufgabe:
+- Beantworte Fragen basierend auf dem bereitgestellten Kontext
+- Antworte präzise, wissenschaftlich fundiert und praxisorientiert
+- Antworte auf Deutsch, es sei denn die Frage ist auf Englisch
+- Strukturiere deine Antwort klar mit Markdown-Überschriften und Absätzen
+
+Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
+
+    user_message = f"""Kontext aus der BEATRIX Knowledge Base:
+
+{context}
+
+---
+
+{question}"""
+
+    async def event_generator():
+        """Generator that streams Claude API response as SSE events."""
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4000,
+            "stream": True,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_message}]
+        }).encode()
+
+        full_text = []
+        try:
+            # Use http.client for streaming (urllib doesn't support chunked reading well)
+            conn = http.client.HTTPSConnection("api.anthropic.com", context=ctx)
+            conn.request("POST", "/v1/messages", body=payload, headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+                "User-Agent": "BEATRIXLab/3.11"
+            })
+            resp = conn.getresponse()
+
+            if resp.status != 200:
+                error_body = resp.read().decode()
+                logger.error(f"Claude stream error: {resp.status} {error_body[:200]}")
+                yield f"data: {json.dumps({'type': 'error', 'text': 'Claude API Fehler'})}\n\n"
+                return
+
+            buffer = ""
+            while True:
+                chunk = resp.read(1024)
+                if not chunk:
+                    break
+                buffer += chunk.decode("utf-8", errors="replace")
+
+                # Process complete SSE events from buffer
+                while "\n\n" in buffer:
+                    event_str, buffer = buffer.split("\n\n", 1)
+                    for line in event_str.split("\n"):
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str.strip() == "[DONE]":
+                                continue
+                            try:
+                                event = json.loads(data_str)
+                                event_type = event.get("type", "")
+
+                                if event_type == "content_block_delta":
+                                    delta = event.get("delta", {})
+                                    if delta.get("type") == "text_delta":
+                                        text_chunk = delta.get("text", "")
+                                        full_text.append(text_chunk)
+                                        yield f"data: {json.dumps({'type': 'token', 'text': text_chunk})}\n\n"
+
+                                elif event_type == "message_stop":
+                                    yield f"data: {json.dumps({'type': 'done', 'text': ''})}\n\n"
+
+                            except json.JSONDecodeError:
+                                pass
+
+            conn.close()
+
+            # Store complete answer in DB
+            complete_text = "".join(full_text)
+            if complete_text:
+                db2 = get_db()
+                try:
+                    assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=complete_text, sources=[])
+                    db2.add(assistant_msg)
+                    db2.commit()
+                except Exception:
+                    pass
+                finally:
+                    db2.close()
+
+            # Final done event
+            yield f"data: {json.dumps({'type': 'done', 'text': ''})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest, user=Depends(require_auth)):
