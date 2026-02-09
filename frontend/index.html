@@ -530,12 +530,20 @@
                         <button class="chat-suggestion" onclick="askSuggestion(this)">Erkläre Complementarity</button>
                         <button class="chat-suggestion" onclick="askSuggestion(this)">Welche Dokumente sind in der Knowledge Base?</button>
                         <button class="chat-suggestion" onclick="askSuggestion(this)">Was ist Decision Architecture?</button>
+                        <button class="chat-suggestion" onclick="togglePrjChat();askSuggestion(this)" style="border-color:rgba(52,211,153,0.2);color:rgba(52,211,153,0.6)">💼 Neues Projekt eröffnen</button>
                     </div>
                 </div>
             </div>
             <div class="chat-input-area">
-                <div class="chat-input-wrap">
-                    <textarea class="chat-input" id="chatInput" placeholder="Stelle eine Frage an BEATRIX..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="autoResize(this)"></textarea>
+                <div id="prjChatIndicator" style="display:none;padding:6px 14px;margin-bottom:6px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.15);border-radius:8px;font-size:11px;color:rgba(52,211,153,0.7);display:none">
+                    💼 <strong>Projekt-Modus</strong> – Beschreibe dein Projekt in natürlicher Sprache. BEATRIX extrahiert die Daten.
+                    <span onclick="togglePrjChat()" style="cursor:pointer;margin-left:8px;color:rgba(255,255,255,0.3)">✕</span>
+                </div>
+                <div class="chat-input-wrap" style="display:flex;align-items:flex-end;gap:6px">
+                    <button id="prjChatToggle" onclick="togglePrjChat()" style="padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:14px;cursor:pointer;flex-shrink:0;transition:all 0.15s;line-height:1" title="Projekt per Chat eröffnen">💼</button>
+                    <div style="flex:1;position:relative">
+                        <textarea class="chat-input" id="chatInput" placeholder="Stelle eine Frage an BEATRIX..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="autoResize(this)"></textarea>
+                    </div>
                     <button class="chat-send-btn" id="chatSendBtn" onclick="sendChat()" title="Senden">
                         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                     </button>
@@ -4595,6 +4603,25 @@
             const btn = document.getElementById('chatSendBtn');
             const question = input.value.trim();
             if (!question) return;
+
+            // ── Auto-detect project intent OR use project mode ──
+            const prjKeywords = /\b(neues projekt|projekt eröffnen|projekt anlegen|eröffne.*projekt|erstell.*projekt|leg.*projekt an|mandat.*für|lead.*für|probono.*für|workshop.*für|beratung.*für)\b/i;
+            if (prjChatMode || prjKeywords.test(question)) {
+                if (!prjChatMode) {
+                    // Auto-activate project mode
+                    prjChatMode = true;
+                    const tbtn = document.getElementById('prjChatToggle');
+                    tbtn.style.background = 'rgba(52,211,153,0.15)';
+                    tbtn.style.borderColor = 'rgba(52,211,153,0.3)';
+                    tbtn.style.color = '#34d399';
+                    document.getElementById('prjChatIndicator').style.display = '';
+                    prjChatDraft = {};
+                    prjChatHistory = [];
+                }
+                sendProjectChat(question);
+                return;
+            }
+
             input.value = ''; autoResize(input);
             btn.disabled = true;
             appendMessage('user', question);
@@ -4634,6 +4661,217 @@
         function askSuggestion(el) {
             document.getElementById('chatInput').value = el.textContent;
             sendChat();
+        }
+
+        // ── PROJECT CHAT MODE ──
+        let prjChatMode = false;
+        let prjChatDraft = {};
+        let prjChatHistory = [];
+
+        function togglePrjChat() {
+            prjChatMode = !prjChatMode;
+            const btn = document.getElementById('prjChatToggle');
+            const indicator = document.getElementById('prjChatIndicator');
+            const input = document.getElementById('chatInput');
+            if (prjChatMode) {
+                btn.style.background = 'rgba(52,211,153,0.15)';
+                btn.style.borderColor = 'rgba(52,211,153,0.3)';
+                btn.style.color = '#34d399';
+                btn.title = 'Projekt-Modus aktiv (klicken zum Beenden)';
+                indicator.style.display = '';
+                input.placeholder = '💼 Beschreibe dein Projekt... z.B. "Neues Mandat für UBS, Workshop KI-Strategie, Budget 50k"';
+                prjChatDraft = {};
+                prjChatHistory = [];
+            } else {
+                btn.style.background = 'rgba(255,255,255,0.04)';
+                btn.style.borderColor = 'var(--border)';
+                btn.style.color = 'rgba(255,255,255,0.4)';
+                btn.title = 'Projekt per Chat eröffnen';
+                indicator.style.display = 'none';
+                input.placeholder = 'Stelle eine Frage an BEATRIX...';
+                prjChatDraft = {};
+                prjChatHistory = [];
+            }
+        }
+
+        function renderProjectCard(project, status, missing, confidence, message) {
+            const catIcons = {mandat:'💼', lead:'🎯', probono:'🤝'};
+            const catLabels = {mandat:'Bezahltes Mandat', lead:'Lead-Projekt', probono:'Pro Bono'};
+            const catColors = {mandat:'52,211,153', lead:'251,191,36', probono:'139,170,255'};
+            const typeLabels = {beratung:'Beratung',workshop:'Workshop',studie:'Studie',intervention:'Intervention',keynote:'Keynote',training:'Training',retainer:'Retainer'};
+            const p = project;
+            const cat = p.project_category || '';
+            const rgb = catColors[cat] || '42,127,142';
+            const isComplete = status === 'complete' && confidence >= 0.7;
+
+            let fieldsHtml = '';
+            const field = (label, val) => val ? `<div style="display:flex;gap:8px;padding:4px 0"><span style="color:rgba(255,255,255,0.3);min-width:100px;font-size:11px">${label}</span><span style="color:white;font-size:12px">${val}</span></div>` : '';
+
+            fieldsHtml += field('Kunde', (p.customer_code||'').toUpperCase());
+            fieldsHtml += field('Projekt', p.name);
+            fieldsHtml += field('Kategorie', `${catIcons[cat]||''} ${catLabels[cat]||cat}`);
+            fieldsHtml += field('Typ', typeLabels[p.type] || p.type);
+            fieldsHtml += field('Beschreibung', p.description);
+            fieldsHtml += field('Start', p.start_date);
+            fieldsHtml += field('Ende', p.end_date);
+            if (p.budget_chf) fieldsHtml += field('Budget', `${Number(p.budget_chf).toLocaleString('de-CH')} CHF`);
+            fieldsHtml += field('Abrechnung', p.billing_type === 'time_material' ? 'Time & Material' : p.billing_type === 'retainer' ? 'Retainer' : 'Fixpreis');
+            fieldsHtml += field('Owner', p.fa_owner);
+            if (p.fa_team?.length) fieldsHtml += field('Team', p.fa_team.join(', '));
+
+            let missingHtml = '';
+            if (missing?.length && !isComplete) {
+                missingHtml = `<div style="margin-top:10px;padding:8px 12px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);border-radius:8px;font-size:11px;color:rgba(251,191,36,0.7)">
+                    ⚠ Noch offen: ${missing.join(', ')}
+                </div>`;
+            }
+
+            const messageHtml = message ? `<div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.5);line-height:1.5">${message}</div>` : '';
+
+            const buttonsHtml = isComplete ? `
+                <div style="display:flex;gap:8px;margin-top:14px">
+                    <button onclick="prjChatConfirm()" style="flex:1;padding:10px;background:linear-gradient(135deg,#34d399,#2A7F8E);border:none;border-radius:8px;color:white;font-size:13px;font-weight:700;cursor:pointer">✓ Projekt eröffnen → GitHub</button>
+                    <button onclick="prjChatRefine()" style="padding:10px 16px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer">✏ Anpassen</button>
+                </div>` : '';
+
+            return `<div style="background:rgba(${rgb},0.04);border:1px solid rgba(${rgb},0.15);border-radius:12px;padding:16px;margin:8px 0;max-width:480px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                    <span style="font-size:16px">${isComplete ? '✅' : '📋'}</span>
+                    <span style="font-size:13px;font-weight:700;color:white">${isComplete ? 'Projekt bereit' : 'Projekt-Entwurf'}</span>
+                    ${confidence ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(${rgb},0.1);color:rgba(${rgb},0.7)">${Math.round(confidence*100)}%</span>` : ''}
+                </div>
+                ${fieldsHtml}
+                ${missingHtml}
+                ${messageHtml}
+                ${buttonsHtml}
+            </div>`;
+        }
+
+        async function sendProjectChat(message) {
+            const input = document.getElementById('chatInput');
+            const btn = document.getElementById('chatSendBtn');
+            if (!message) { message = input.value.trim(); }
+            if (!message) return;
+            input.value = ''; autoResize(input);
+            btn.disabled = true;
+
+            appendMessage('user', message);
+            prjChatHistory.push({role: 'user', content: message});
+            showTyping('BEATRIX analysiert dein Projekt...');
+
+            try {
+                const r = await fetch(`${API}/chat/project-intent`, {
+                    method: 'POST',
+                    headers: {...H(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        message: message,
+                        history: prjChatHistory,
+                        current_draft: prjChatDraft
+                    })
+                });
+                const d = await r.json();
+                removeTyping();
+
+                if (!r.ok || !d.ok) {
+                    appendMessage('assistant', d.error || 'Fehler bei der Projekt-Analyse.');
+                    btn.disabled = false; input.focus();
+                    return;
+                }
+
+                // Update draft
+                if (d.project && Object.keys(d.project).length > 0) {
+                    prjChatDraft = {...prjChatDraft, ...d.project};
+                }
+
+                // Render card + message
+                const container = document.getElementById('chatMessages');
+                const cardHtml = (d.project && Object.keys(d.project).length > 0)
+                    ? renderProjectCard(prjChatDraft, d.status, d.missing, d.confidence, d.message)
+                    : '';
+                const textHtml = (!cardHtml && d.message) ? formatMessage(d.message) : '';
+
+                container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
+                    <div class="chat-msg-avatar" style="background:linear-gradient(135deg,#34d399,#2A7F8E)">P</div>
+                    <div class="chat-msg-body">${cardHtml}${textHtml}</div>
+                </div>`);
+                container.scrollTop = container.scrollHeight;
+
+                // Track assistant response in history
+                prjChatHistory.push({role: 'assistant', content: d.message || JSON.stringify(d.project)});
+
+            } catch(e) {
+                removeTyping();
+                appendMessage('assistant', 'Verbindungsfehler: ' + e.message);
+            }
+            btn.disabled = false;
+            input.focus();
+        }
+
+        async function prjChatConfirm() {
+            if (!prjChatDraft.customer_code || !prjChatDraft.name) {
+                showToast('Kunde und Projektname fehlen noch', 'error');
+                return;
+            }
+            // Disable button
+            const btns = document.querySelectorAll('.chat-msg button');
+            btns.forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
+
+            showTyping('Projekt wird auf GitHub eröffnet...');
+            try {
+                const r = await fetch(`${API}/projects`, {
+                    method: 'POST',
+                    headers: {...H(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        customer_code: prjChatDraft.customer_code,
+                        name: prjChatDraft.name,
+                        type: prjChatDraft.type || 'beratung',
+                        project_category: prjChatDraft.project_category || 'mandat',
+                        description: prjChatDraft.description || '',
+                        start_date: prjChatDraft.start_date || new Date().toISOString().slice(0,10),
+                        end_date: prjChatDraft.end_date || '',
+                        budget_chf: prjChatDraft.budget_chf || null,
+                        billing_type: prjChatDraft.billing_type || 'fixed',
+                        fa_owner: prjChatDraft.fa_owner || 'GF',
+                        fa_team: prjChatDraft.fa_team || []
+                    })
+                });
+                const d = await r.json();
+                removeTyping();
+
+                if (r.ok && d.ok) {
+                    const container = document.getElementById('chatMessages');
+                    const catIcons = {mandat:'💼', lead:'🎯', probono:'🤝'};
+                    container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
+                        <div class="chat-msg-avatar" style="background:linear-gradient(135deg,#34d399,#2A7F8E)">✓</div>
+                        <div class="chat-msg-body">
+                            <div style="background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:12px;padding:16px">
+                                <div style="font-size:14px;font-weight:700;color:#34d399;margin-bottom:8px">✅ Projekt eröffnet!</div>
+                                <div style="font-size:20px;font-weight:800;color:white;font-family:monospace;letter-spacing:1px;margin-bottom:4px">${d.project_code}</div>
+                                <div style="font-size:12px;color:rgba(255,255,255,0.4)">${prjChatDraft.name} · ${catIcons[prjChatDraft.project_category]||''} ${prjChatDraft.project_category || ''}</div>
+                                <div style="margin-top:12px">
+                                    <button onclick="prjOpenLanding('${d.slug}');switchTab('projects')" style="padding:8px 16px;background:rgba(42,127,142,0.15);border:1px solid rgba(42,127,142,0.3);border-radius:8px;color:var(--accent-light);font-size:12px;font-weight:600;cursor:pointer">→ Projekt öffnen</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`);
+                    container.scrollTop = container.scrollHeight;
+                    // Reset
+                    prjChatDraft = {};
+                    prjChatHistory = [];
+                    showToast(`✓ ${d.project_code} eröffnet!`, 'success');
+                } else {
+                    appendMessage('assistant', '❌ ' + (d.error || 'Fehler beim Eröffnen'));
+                }
+            } catch(e) {
+                removeTyping();
+                appendMessage('assistant', '❌ Fehler: ' + e.message);
+            }
+        }
+
+        function prjChatRefine() {
+            const input = document.getElementById('chatInput');
+            input.focus();
+            input.placeholder = '✏ Was möchtest du ändern? z.B. "Budget auf 60k" oder "Andrea ins Team"';
         }
 
         async function loadChatHistory() {
