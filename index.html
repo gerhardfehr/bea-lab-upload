@@ -2008,34 +2008,11 @@
         let crmCompaniesData = [];
         async function crmShowCompanies() {
             document.getElementById('crmCompaniesOverlay').style.display = 'flex';
-            document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Laden…</div>';
+            document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Lade Firmendaten aus GitHub…</div>';
             try {
-                const [compR, dealsR] = await Promise.all([
-                    fetch(`${API}/crm/companies`, { headers: H() }),
-                    fetch(`${API}/crm/deals`, { headers: H() })
-                ]);
-                crmCompaniesData = compR.ok ? await compR.json() : [];
-                const deals = dealsR.ok ? await dealsR.json() : [];
-                // Enrich with deal counts
-                const dealsByCompany = {};
-                deals.forEach(d => {
-                    const cid = d.company_id || d.company;
-                    if (!cid) return;
-                    if (!dealsByCompany[cid]) dealsByCompany[cid] = { count: 0, active: 0, won: 0, pipeline: 0 };
-                    dealsByCompany[cid].count++;
-                    if (['Prospect','Qualified','Proposal','Negotiation','Active'].includes(d.stage)) dealsByCompany[cid].active++;
-                    if (d.stage === 'Won') dealsByCompany[cid].won++;
-                    dealsByCompany[cid].pipeline += parseFloat(d.value || 0);
-                });
-                crmCompaniesData.forEach(c => {
-                    const stats = dealsByCompany[c.id] || dealsByCompany[c.name] || { count: 0, active: 0, won: 0, pipeline: 0 };
-                    c._deals = stats.count;
-                    c._active = stats.active;
-                    c._won = stats.won;
-                    c._pipeline = stats.pipeline;
-                });
-                crmCompaniesData.sort((a, b) => (b._deals - a._deals) || a.name.localeCompare(b.name));
-                document.getElementById('crmCompaniesCount').textContent = `${crmCompaniesData.length} Firmen`;
+                const resp = await fetch(`${API}/crm/companies/enriched`, { headers: H() });
+                crmCompaniesData = resp.ok ? await resp.json() : [];
+                document.getElementById('crmCompaniesCount').textContent = `${crmCompaniesData.length} Firmen · Quelle: GitHub customer-registry.yaml`;
                 crmFilterCompanies();
             } catch(e) {
                 document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:var(--error)">Fehler beim Laden</div>';
@@ -2047,7 +2024,9 @@
             const filtered = q ? crmCompaniesData.filter(c =>
                 (c.name || '').toLowerCase().includes(q) ||
                 (c.industry || '').toLowerCase().includes(q) ||
-                (c.domain || '').toLowerCase().includes(q)
+                (c.code || '').toLowerCase().includes(q) ||
+                (c.country || '').toLowerCase().includes(q) ||
+                (c.notes || '').toLowerCase().includes(q)
             ) : crmCompaniesData;
 
             if (!filtered.length) {
@@ -2055,38 +2034,59 @@
                 return;
             }
 
+            const countryFlags = {AT:'🇦🇹',CH:'🇨🇭',DE:'🇩🇪',SE:'🇸🇪',UK:'🇬🇧',US:'🇺🇸',LI:'🇱🇮',NL:'🇳🇱',FR:'🇫🇷',IT:'🇮🇹'};
+            const industryLabels = {finance:'Finanz',insurance:'Versicherung',retail:'Handel',fmcg:'FMCG',construction:'Bau',packaging:'Verpackung',public_sector:'Öffentlich',telecom:'Telekom',media:'Medien',precious_metals:'Edelmetalle',automotive:'Automobil',health:'Gesundheit',transport:'Transport',professional_services:'Services',technology:'Tech',energy:'Energie',ngo:'NGO'};
+
             const rows = filtered.map(c => {
-                const ind = c.industry ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(42,127,142,0.1);color:#2A7F8E;border:1px solid rgba(42,127,142,0.2)">${c.industry}</span>` : '';
-                const size = c.size ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">${c.size}</span>` : '';
-                const dealsBadge = c._deals > 0
-                    ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(251,191,36,0.1);color:#fbbf24">${c._deals} Lead${c._deals>1?'s':''}</span>`
-                    : '<span style="font-size:10px;color:rgba(255,255,255,0.15)">–</span>';
-                const wonBadge = c._won > 0 ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(52,211,153,0.1);color:#34d399">${c._won} Won</span>` : '';
-                const pipeline = c._pipeline > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">${new Intl.NumberFormat('de-CH',{notation:'compact'}).format(c._pipeline)} CHF</span>` : '';
-                const domain = c.domain ? `<span style="font-size:10px;color:rgba(255,255,255,0.25)">${c.domain}</span>` : '';
-                return `<div style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="crmShowCompanyDeals('${c.id}','${(c.name||'').replace(/'/g,'')}')">
-                    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,rgba(42,127,142,0.15),rgba(27,54,93,0.3));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#2A7F8E;flex-shrink:0">${(c.name||'?')[0].toUpperCase()}</div>
+                const flag = countryFlags[c.country] || '';
+                const indLabel = industryLabels[c.industry] || c.industry || '';
+                const ind = indLabel ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(42,127,142,0.1);color:#2A7F8E;border:1px solid rgba(42,127,142,0.2)">${indLabel}</span>` : '';
+                const type = c.type === 'strategic' ? '<span style="font-size:9px;padding:1px 6px;border-radius:6px;background:rgba(232,163,61,0.1);color:#E8A33D;border:1px solid rgba(232,163,61,0.2)">Strategic</span>' : '';
+                const status = c.relationship_status ? `<span style="font-size:9px;padding:1px 6px;border-radius:6px;background:${c.relationship_status==='ACTIVE'?'rgba(52,211,153,0.1)':'rgba(255,255,255,0.04)'};color:${c.relationship_status==='ACTIVE'?'#34d399':'rgba(255,255,255,0.3)'}">${c.relationship_status}</span>` : '';
+                
+                // Data completeness indicators
+                const hasFolder = c.has_customer_folder ? '📁' : '';
+                const hasContext = c.has_context ? '🧠' : '';
+                const contactCount = c.contact_persons > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">👤${c.contact_persons}</span>` : '';
+                const owner = c.fa_owner ? `<span style="font-size:9px;padding:1px 5px;border-radius:6px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3)">${c.fa_owner}</span>` : '';
+
+                // CRM stats
+                const leadsBadge = c.leads > 0
+                    ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(251,191,36,0.1);color:#fbbf24">${c.leads} Lead${c.leads>1?'s':''}</span>`
+                    : '';
+                const wonBadge = c.won > 0 ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(52,211,153,0.1);color:#34d399">${c.won} Won</span>` : '';
+                const pipeline = c.pipeline > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">${new Intl.NumberFormat('de-CH',{notation:'compact'}).format(c.pipeline)} CHF</span>` : '';
+
+                return `<div style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="crmShowCompanyDetail('${c.code}')">
+                    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,rgba(42,127,142,0.15),rgba(27,54,93,0.3));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#2A7F8E;flex-shrink:0">${flag || (c.name||'?')[0].toUpperCase()}</div>
                     <div style="flex:1;min-width:0">
-                        <div style="font-weight:600;color:white;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name || '–'}</div>
-                        <div style="display:flex;gap:6px;align-items:center;margin-top:2px;flex-wrap:wrap">${ind}${size}${domain}</div>
+                        <div style="display:flex;align-items:center;gap:6px">
+                            <span style="font-weight:600;color:white;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name || '–'}</span>
+                            <span style="font-size:10px;color:rgba(255,255,255,0.2)">${c.code}</span>
+                            ${hasFolder}${hasContext}
+                        </div>
+                        <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">${ind}${type}${status}${contactCount}${owner}</div>
                     </div>
-                    <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">${pipeline}${dealsBadge}${wonBadge}</div>
+                    <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">${pipeline}${leadsBadge}${wonBadge}</div>
                 </div>`;
             }).join('');
             document.getElementById('crmCompaniesList').innerHTML = rows;
         }
 
-        function crmShowCompanyDeals(companyId, companyName) {
+        function crmShowCompanyDetail(code) {
+            const c = crmCompaniesData.find(x => x.code === code);
+            if (!c) return;
             document.getElementById('crmCompaniesOverlay').style.display = 'none';
-            // Filter deals view to this company
-            const searchInput = document.getElementById('crmCompaniesSearch');
-            if (searchInput) searchInput.value = '';
-            // Switch to table view and filter
-            if (crmView !== 'table') crmSetView('table');
-            // Set a filter (temporary)
-            crmCompanyFilter = companyId;
-            crmRenderView();
-            showToast(`Leads von ${companyName}`, 'info');
+            // Filter CRM to this company's leads
+            const match = crmDeals.find(d => (d.company_name||'').includes(c.short_name || c.code));
+            if (match) {
+                crmCompanyFilter = match.company_id || match.company;
+                if (crmView !== 'table') crmSetView('table');
+                crmRenderView();
+                showToast(`Leads von ${c.short_name || c.name}`, 'info');
+            } else {
+                showToast(`${c.short_name || c.name} – keine CRM-Leads`, 'info');
+            }
         }
 
         let crmCompanyFilter = null;
