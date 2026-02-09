@@ -2259,7 +2259,10 @@ _github_companies_cache = {"data": None, "ts": 0}
 @app.get("/api/crm/companies/enriched")
 async def crm_get_companies_enriched(user=Depends(require_auth)):
     """Fetch companies from GitHub customer-registry.yaml + customer profiles, merge with CRM DB."""
-    import yaml, time as _time
+    import yaml, time as _time, urllib.request, ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     db = get_db()
     try:
         # Cache GitHub data for 5 minutes
@@ -2268,26 +2271,27 @@ async def crm_get_companies_enriched(user=Depends(require_auth)):
             github_customers = _github_companies_cache["data"]
         else:
             github_customers = []
+            contacts_by_customer = {}
             try:
                 # Fetch customer-registry.yaml
-                headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3.raw"}
-                url = f"https://api.github.com/repos/{TARGET_REPO}/contents/data/customer-registry.yaml"
-                req = urllib.request.Request(url, headers=headers)
-                content = urllib.request.urlopen(req, timeout=10).read().decode()
+                gh_headers = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3.raw"}
+                url = f"https://api.github.com/repos/{GH_REPO}/contents/data/customer-registry.yaml"
+                req = urllib.request.Request(url, headers=gh_headers)
+                content = urllib.request.urlopen(req, context=ctx, timeout=10).read().decode()
                 registry = yaml.safe_load(content)
                 github_customers = registry.get("customers", [])
 
                 # Fetch customer-contacts.yaml for contact data
-                contacts_by_customer = {}
                 try:
-                    url2 = f"https://api.github.com/repos/{TARGET_REPO}/contents/data/customer-contacts.yaml"
-                    req2 = urllib.request.Request(url2, headers=headers)
-                    contacts_content = urllib.request.urlopen(req2, timeout=10).read().decode()
+                    url2 = f"https://api.github.com/repos/{GH_REPO}/contents/data/customer-contacts.yaml"
+                    req2 = urllib.request.Request(url2, headers=gh_headers)
+                    contacts_content = urllib.request.urlopen(req2, context=ctx, timeout=10).read().decode()
                     contacts_data = yaml.safe_load(contacts_content)
                     for c in contacts_data.get("customers", []):
                         cid = c.get("customer_id", "")
                         contacts_by_customer[cid] = c
-                except: pass
+                except Exception as ce:
+                    logger.warning(f"Contacts fetch: {ce}")
 
                 # Enrich each customer with contacts
                 for cust in github_customers:
@@ -2337,6 +2341,9 @@ async def crm_get_companies_enriched(user=Depends(require_auth)):
                 contact_counts[c.company_id] = c.cnt
         except: pass
 
+        # Get customer folders from GitHub
+        customer_folders = _get_customer_folders()
+
         # Merge: GitHub as primary, enriched with CRM stats
         result = []
         for cust in github_customers:
@@ -2345,7 +2352,7 @@ async def crm_get_companies_enriched(user=Depends(require_auth)):
             short = cust.get("short_name", code)
             db_match = db_companies.get(name) or db_companies.get(code) or {}
             ds = deal_stats.get(name) or deal_stats.get(short) or deal_stats.get(code) or {}
-            cc = contacts_by_customer.get(code, {}) if 'contacts_by_customer' in dir() else cust.get("_contacts", {})
+            cc = cust.get("_contacts", {})
 
             result.append({
                 "id": cust.get("id", ""),
@@ -2361,7 +2368,7 @@ async def crm_get_companies_enriched(user=Depends(require_auth)):
                 "notes": cust.get("notes", ""),
                 "has_profile": bool(cust.get("profile_path")),
                 "has_context": bool(cust.get("context_path")),
-                "has_customer_folder": code.lower() in [d.lower() for d in _get_customer_folders()],
+                "has_customer_folder": code.lower() in [d.lower() for d in customer_folders],
                 # CRM stats
                 "leads": ds.get("leads", 0),
                 "active_leads": ds.get("active", 0),
@@ -2384,15 +2391,18 @@ async def crm_get_companies_enriched(user=Depends(require_auth)):
 # Cache customer folders list
 _customer_folders_cache = {"data": [], "ts": 0}
 def _get_customer_folders():
-    import time as _time
+    import time as _time, urllib.request, ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     now = _time.time()
     if _customer_folders_cache["data"] and now - _customer_folders_cache["ts"] < 300:
         return _customer_folders_cache["data"]
     try:
-        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-        url = f"https://api.github.com/repos/{TARGET_REPO}/contents/data/customers"
-        req = urllib.request.Request(url, headers=headers)
-        items = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        gh_headers = {"Authorization": f"token {GH_TOKEN}"}
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/data/customers"
+        req = urllib.request.Request(url, headers=gh_headers)
+        items = json.loads(urllib.request.urlopen(req, context=ctx, timeout=10).read())
         folders = [i["name"] for i in items if i["type"] == "dir"]
         _customer_folders_cache["data"] = folders
         _customer_folders_cache["ts"] = now
