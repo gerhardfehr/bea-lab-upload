@@ -2098,15 +2098,6 @@
                         `<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.35);border:1px solid rgba(255,255,255,0.06)">${t}</span>`
                     ).join(' ');
 
-                    // CRM access toggle (only for @fehradvice.com)
-                    const isFa = u.email.toLowerCase().endsWith('@fehradvice.com');
-                    const crmCell = isFa
-                        ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                            <input type="checkbox" ${u.crm_access ? 'checked' : ''} onchange="adminToggleCrm('${u.id}',{crm_access:this.checked})" style="accent-color:#2A7F8E;cursor:pointer">
-                            <span style="font-size:10px;color:${u.crm_access ? '#2A7F8E' : 'rgba(255,255,255,0.25)'}">${u.crm_access ? 'Aktiv' : 'Aus'}</span>
-                           </label>`
-                        : '<span style="font-size:10px;color:rgba(255,255,255,0.15)">–</span>';
-
                     const toggleBtn = u.is_active
                         ? `<button class="btn-toggle deactivate" onclick="toggleUserActive('${u.id}','${u.email}')">Deaktivieren</button>`
                         : `<button class="btn-toggle activate" onclick="toggleUserActive('${u.id}','${u.email}')">Aktivieren</button>`;
