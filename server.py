@@ -2431,7 +2431,7 @@ async def crm_sync_github(user=Depends(require_auth)):
     import yaml, urllib.request as ureq
     db = get_db()
     try:
-        gh_token = os.getenv("GITHUB_TOKEN", "")
+        gh_token = os.getenv("GH_TOKEN", os.getenv("GITHUB_TOKEN", ""))
         repo = "FehrAdvice-Partners-AG/complementarity-context-framework"
         headers_gh = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3.raw", "User-Agent": "BEATRIXLab/3.18"}
         ssl_ctx = __import__('ssl').create_default_context()
