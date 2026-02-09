@@ -3066,11 +3066,74 @@
                         ${contacts.length ? `<div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.3)">Kundenkontakte: ${contacts.join(', ')}</div>` : ''}
                         ${teamMembers.length ? `<div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,0.3)">FA Team: ${teamMembers.join(', ')}</div>` : ''}
                     </div>
+                </div>
+                <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px">
+                    <div style="font-size:11px;color:rgba(255,255,255,0.3)">Projektdaten</div>
+                    <div style="flex:1;height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden">
+                        <div style="height:100%;width:${Math.round(filledCount/totalTabs*100)}%;background:linear-gradient(90deg,#34d399,#2A7F8E);border-radius:2px;transition:width 0.3s"></div>
+                    </div>
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4);font-weight:600">${filledCount}/${totalTabs}</div>
                 </div>`;
 
+            // ── Tab Status Dots ──
+            const cv = res.context_vector || {};
+            const mo = res.models || {};
+            const pr = res.profile || {};
+            const sc2 = res.scenarios || {};
+            const pe = res.personas || {};
+            const docs = res.documents || {};
+            const df = res.data_files || {};
+            const kpisRes = res.kpis || {};
+
+            const objSummaryCheck = objective.summary || project.description || '';
+            const inScopeCheck = scope.in_scope || fehradvice_scope.deliverables || [];
+            const behObjCheck = fehradvice_scope.behavioral_objectives || [];
+            let tlCheck = Array.isArray(p.timeline) ? p.timeline : [];
+            const phasesCheck = p.phases || [];
+            const sessionsCheck = p.sessions || [];
+            const deliverablesCheck = p.deliverables || p.final_deliverables || fehradvice_scope.deliverables || [];
+            const risksCheck = p.risks || [];
+            const kpisCheck = p.kpis || [];
+            const ebfCheck = (p.ebf_integration||{}).primary_10c_dimensions || fehradvice_scope.ten_c_focus || [];
+            let budgetCheck = false;
+            if (typeof p.timeline === 'object' && !Array.isArray(p.timeline)) {
+                budgetCheck = !!(p.timeline.budget_chf || p.timeline.budget_eur);
+            }
+            const teamCheck = teamMembers.length > 0 || contacts.length > 0 || !!owner;
+
+            const tabStatus = {
+                overview: true,
+                auftrag: !!(objSummaryCheck || inScopeCheck.length || behObjCheck.length),
+                planung: !!(tlCheck.length || phasesCheck.length),
+                meetings: sessionsCheck.length > 0,
+                deliverables: deliverablesCheck.length > 0,
+                dokumente: !!(docs.available),
+                modelle: !!(mo.available || cv.available || ebfCheck.length),
+                risiken: risksCheck.length > 0,
+                kommunikation: false,
+                budget: budgetCheck,
+                learnings: kpisCheck.length > 0
+            };
+
+            // Count filled tabs
+            const filledCount = Object.values(tabStatus).filter(v => v).length - 1; // minus overview
+            const totalTabs = 10;
+
+            document.querySelectorAll('.prj-tab').forEach(tab => {
+                const key = tab.dataset.tab;
+                if (key === 'overview') return;
+                const has = tabStatus[key];
+                const dot = has ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#34d399;margin-left:5px;vertical-align:middle"></span>'
+                               : '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:rgba(248,113,113,0.6);margin-left:5px;vertical-align:middle"></span>';
+                // Preserve original text, add dot
+                const icon = tab.textContent.trim().split(' ')[0];
+                const label = tab.textContent.trim().substring(icon.length).trim();
+                tab.innerHTML = `${icon} ${label} ${dot}`;
+            });
+
             // ── Left: Verfügbare Ressourcen ──
-            const tile = (icon, label, available, detail, sub) => `
-                <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all 0.15s" onmouseover="this.style.borderColor='rgba(42,127,142,0.3)'" onmouseout="this.style.borderColor='var(--border)'">
+            const tile = (icon, label, available, detail, sub, tabTarget) => `
+                <div onclick="${tabTarget ? `prjSwitchTab('${tabTarget}')` : ''}" style="background:var(--navy-card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all 0.15s" onmouseover="this.style.borderColor='rgba(42,127,142,0.3)'" onmouseout="this.style.borderColor='var(--border)'">
                     <div style="font-size:18px;width:32px;text-align:center">${icon}</div>
                     <div style="flex:1;min-width:0">
                         <div style="font-size:13px;font-weight:600;color:white">${label}</div>
@@ -3080,44 +3143,35 @@
                     <div style="font-size:14px;flex-shrink:0">${available ? '✅' : '❌'}</div>
                 </div>`;
 
-            const cv = res.context_vector || {};
-            const mo = res.models || {};
-            const pr = res.profile || {};
-            const sc2 = res.scenarios || {};
-            const pe = res.personas || {};
-            const docs = res.documents || {};
-            const df = res.data_files || {};
-            const kpis = res.kpis || {};
-
             let resourceHtml = '';
             resourceHtml += tile('🧭', 'Kontextvektor',
                 cv.available,
                 cv.available ? `${cv.count} Dimensionen erfasst` : 'Noch nicht erstellt',
-                cv.available ? cv.files?.slice(0,3).map(f => f.replace(/.*_context_/,'').replace('.yaml','')).join(', ') : '');
+                cv.available ? cv.files?.slice(0,3).map(f => f.replace(/.*_context_/,'').replace('.yaml','')).join(', ') : '', 'modelle');
             resourceHtml += tile('🧠', 'Modelle',
                 mo.available,
                 mo.available ? `${mo.count} Modell${mo.count>1?'e':''}` : 'Noch kein Modell',
-                mo.available ? mo.files?.join(', ') : '');
+                mo.available ? mo.files?.join(', ') : '', 'modelle');
             resourceHtml += tile('📁', 'Kundenprofil',
                 pr.available,
                 pr.available ? 'Profil vorhanden' : 'Noch nicht angelegt',
-                '');
+                '', '');
             resourceHtml += tile('📊', 'KPIs & Daten',
-                kpis.available || df.available,
-                `${kpis.available ? 'KPIs definiert' : ''}${kpis.available && df.available ? ' · ' : ''}${df.available ? df.count + ' Datensätze' : ''}` || 'Keine Daten',
-                '');
+                kpisRes.available || df.available,
+                `${kpisRes.available ? 'KPIs definiert' : ''}${kpisRes.available && df.available ? ' · ' : ''}${df.available ? df.count + ' Datensätze' : ''}` || 'Keine Daten',
+                '', 'learnings');
             resourceHtml += tile('🔮', 'Szenarien',
                 sc2.available,
                 sc2.available ? `${sc2.count} Szenario${sc2.count>1?'s':''}` : 'Keine Szenarien',
-                '');
+                '', '');
             resourceHtml += tile('👤', 'Personas',
                 pe.available,
                 pe.available ? 'Personas vorhanden' : 'Keine Personas',
-                '');
+                '', '');
             resourceHtml += tile('📄', 'Dokumente',
                 docs.available,
                 `${docs.pdfs||0} PDFs · ${docs.mds||0} Markdown`,
-                docs.available ? docs.pdf_files?.slice(0,2).map(f => f.length > 35 ? f.substring(0,32)+'…' : f).join(', ') : '');
+                docs.available ? docs.pdf_files?.slice(0,2).map(f => f.length > 35 ? f.substring(0,32)+'…' : f).join(', ') : '', 'dokumente');
 
             if (res.total_files) {
                 resourceHtml += `<div style="text-align:center;font-size:10px;color:rgba(255,255,255,0.2);padding:8px">📁 ${res.total_files} Dateien in data/customers/${res.customer_code}/</div>`;
@@ -3139,7 +3193,7 @@
             projHtml += tile('📋', 'Beratungsauftrag',
                 !!(objSummary || scopeCount),
                 objSummary ? (objSummary.length > 60 ? objSummary.substring(0,57)+'…' : objSummary) : (scopeCount ? `${inScope.length} Scope-Punkte definiert` : 'Noch nicht definiert'),
-                outScope.length ? `${outScope.length} Out-of-Scope` : '');
+                outScope.length ? `${outScope.length} Out-of-Scope` : '', 'auftrag');
 
             // Team
             const teamCount = teamMembers.length + (owner ? 1 : 0);
@@ -3147,7 +3201,7 @@
             projHtml += tile('👥', 'Team & Kontakte',
                 teamCount > 0 || contactCount > 0,
                 `${teamCount ? teamCount + ' FA' : ''}${teamCount && contactCount ? ' · ' : ''}${contactCount ? contactCount + ' Kunde' : ''}` || 'Noch nicht zugewiesen',
-                '');
+                '', 'auftrag');
 
             // Timeline
             let tlItems = [];
@@ -3161,14 +3215,14 @@
             projHtml += tile('📅', 'Timeline',
                 tlItems.length > 0 || phases.length > 0,
                 tlItems.length ? `${tlItems.length} Milestones` : (phases.length ? `${phases.length} Phasen` : 'Keine Timeline'),
-                phases.length ? phases.map(ph => ph.name || ph.phase || '').filter(Boolean).slice(0,3).join(' → ') : '');
+                phases.length ? phases.map(ph => ph.name || ph.phase || '').filter(Boolean).slice(0,3).join(' → ') : '', 'planung');
 
             // Deliverables
             const deliverables = p.deliverables || p.final_deliverables || fehradvice_scope.deliverables || [];
             projHtml += tile('📦', 'Deliverables',
                 deliverables.length > 0,
                 deliverables.length ? `${deliverables.length} Deliverable${deliverables.length>1?'s':''}` : 'Keine definiert',
-                deliverables.length ? deliverables.slice(0,3).map(d => typeof d === 'string' ? d : d.name || d.id || '').filter(Boolean).join(', ') : '');
+                deliverables.length ? deliverables.slice(0,3).map(d => typeof d === 'string' ? d : d.name || d.id || '').filter(Boolean).join(', ') : '', 'deliverables');
 
             // EBF Integration
             const ebf = p.ebf_integration || {};
@@ -3178,14 +3232,14 @@
             projHtml += tile('🧬', 'EBF Integration',
                 tenC.length > 0 || bcm.length > 0,
                 tenC.length ? `10C: ${tenC.join(', ')}` : (bcm.length ? `${bcm.length} BCM Modell${bcm.length>1?'e':''}` : 'Keine EBF-Verknüpfung'),
-                barriers.length ? `Barriers: ${barriers.slice(0,2).join(', ')}` : '');
+                barriers.length ? `Barriers: ${barriers.slice(0,2).join(', ')}` : '', 'modelle');
 
             // KPIs
             const projKpis = p.kpis || [];
             projHtml += tile('📊', 'KPIs & Wirkung',
                 projKpis.length > 0,
                 projKpis.length ? `${projKpis.length} KPI${projKpis.length>1?'s':''}` : 'Keine KPIs definiert',
-                projKpis.length ? projKpis.slice(0,2).map(k => k.name || k.kpi_id || '').filter(Boolean).join(', ') : '');
+                projKpis.length ? projKpis.slice(0,2).map(k => k.name || k.kpi_id || '').filter(Boolean).join(', ') : '', 'learnings');
 
             // Budget
             let budget = '';
@@ -3197,7 +3251,7 @@
                 projHtml += tile('💰', 'Budget',
                     true,
                     `${curr} ${parseInt(budget).toLocaleString('de-CH')}`,
-                    p.timeline.billing_type || '');
+                    p.timeline.billing_type || '', 'budget');
             }
 
             // Risks
@@ -3206,7 +3260,7 @@
                 projHtml += tile('⚠', 'Risiken',
                     true,
                     `${risks.length} identifiziert`,
-                    risks.slice(0,2).map(r => typeof r === 'string' ? r : r.description || '').filter(Boolean).map(s => s.length > 40 ? s.substring(0,37)+'…' : s).join(', '));
+                    risks.slice(0,2).map(r => typeof r === 'string' ? r : r.description || '').filter(Boolean).map(s => s.length > 40 ? s.substring(0,37)+'…' : s).join(', '), 'risiken');
             }
 
             document.getElementById('prjLandingData').innerHTML = projHtml;
