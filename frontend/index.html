@@ -210,6 +210,11 @@
         .comp-card.active { border-color:rgba(42,127,142,0.5) !important;background:rgba(42,127,142,0.08) !important;box-shadow:0 0 20px rgba(42,127,142,0.1); }
         .prj-mode-card:hover { transform:translateY(-2px);border-color:rgba(42,127,142,0.3) !important; }
         .prj-mode-card.active { border-color:rgba(42,127,142,0.5) !important;background:rgba(42,127,142,0.08) !important;box-shadow:0 0 20px rgba(42,127,142,0.1); }
+        .prj-tab { padding:8px 14px;font-size:12px;color:rgba(255,255,255,0.4);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;transition:all 0.15s;flex-shrink:0; }
+        .prj-tab:hover { color:rgba(255,255,255,0.7);background:rgba(255,255,255,0.02);border-radius:6px 6px 0 0; }
+        .prj-tab.active { color:var(--accent-light);border-bottom-color:var(--accent);font-weight:600; }
+        .prj-tab-content { display:none; }
+        .prj-tab-content.active { display:block; }
         .nav-link.admin-link:hover,.nav-link.admin-link.active { color:var(--warning); background:rgba(251,191,36,0.08); }
 
         /* ── Password Modal ──────────────────────────────── */
@@ -1384,33 +1389,131 @@
                 </div>
             </div>
 
-            <!-- Project Landing Page -->
+            <!-- Project Landing Page (Hybrid Tab Layout) -->
             <div id="prjLandingView" style="display:none">
-                <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+                <!-- Sticky Header -->
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
                     <button onclick="prjBackToList()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer">← Alle Projekte</button>
                 </div>
 
                 <!-- Project Header Card -->
-                <div id="prjLandingHeader" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px"></div>
+                <div id="prjLandingHeader" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:0"></div>
 
-                <!-- Two columns -->
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-                    <!-- Left: Verfügbare Ressourcen -->
-                    <div>
-                        <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Verfügbare Ressourcen</div>
-                        <div id="prjLandingResources" style="display:flex;flex-direction:column;gap:8px"></div>
+                <!-- Tab Bar -->
+                <div id="prjTabBar" style="display:flex;gap:2px;overflow-x:auto;padding:12px 0 0 0;margin-bottom:20px;border-bottom:1px solid var(--border);scrollbar-width:thin">
+                    <div class="prj-tab active" data-tab="overview" onclick="prjSwitchTab('overview')">🏠 Übersicht</div>
+                    <div class="prj-tab" data-tab="auftrag" onclick="prjSwitchTab('auftrag')">📋 Auftrag</div>
+                    <div class="prj-tab" data-tab="planung" onclick="prjSwitchTab('planung')">📅 Planung</div>
+                    <div class="prj-tab" data-tab="meetings" onclick="prjSwitchTab('meetings')">📝 Meetings</div>
+                    <div class="prj-tab" data-tab="deliverables" onclick="prjSwitchTab('deliverables')">📦 Deliverables</div>
+                    <div class="prj-tab" data-tab="dokumente" onclick="prjSwitchTab('dokumente')">📄 Dokumente</div>
+                    <div class="prj-tab" data-tab="modelle" onclick="prjSwitchTab('modelle')">🧬 Modelle</div>
+                    <div class="prj-tab" data-tab="risiken" onclick="prjSwitchTab('risiken')">⚠ Risiken</div>
+                    <div class="prj-tab" data-tab="kommunikation" onclick="prjSwitchTab('kommunikation')">💬 Kommunikation</div>
+                    <div class="prj-tab" data-tab="budget" onclick="prjSwitchTab('budget')">💰 Budget</div>
+                    <div class="prj-tab" data-tab="learnings" onclick="prjSwitchTab('learnings')">📊 Learnings</div>
+                </div>
+
+                <!-- Tab Content Area -->
+                <!-- Tab: Übersicht -->
+                <div class="prj-tab-content active" id="prjTabOverview">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+                        <div>
+                            <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Verfügbare Ressourcen</div>
+                            <div id="prjLandingResources" style="display:flex;flex-direction:column;gap:8px"></div>
+                        </div>
+                        <div>
+                            <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Projektdaten</div>
+                            <div id="prjLandingData" style="display:flex;flex-direction:column;gap:8px"></div>
+                        </div>
                     </div>
-                    <!-- Right: Projektdaten -->
-                    <div>
-                        <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Projektdaten</div>
-                        <div id="prjLandingData" style="display:flex;flex-direction:column;gap:8px"></div>
+                    <div id="prjLandingOtherSection" style="margin-top:20px;display:none">
+                        <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Weitere Projekte mit diesem Kunden</div>
+                        <div id="prjLandingOther" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
                     </div>
                 </div>
 
-                <!-- Andere Projekte -->
-                <div id="prjLandingOtherSection" style="margin-top:20px;display:none">
-                    <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Weitere Projekte mit diesem Kunden</div>
-                    <div id="prjLandingOther" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
+                <!-- Tab: Beratungsauftrag -->
+                <div class="prj-tab-content" id="prjTabAuftrag">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📋 Beratungsauftrag</div>
+                        <div id="prjAuftragContent" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.8"></div>
+                    </div>
+                </div>
+
+                <!-- Tab: Projektplanung -->
+                <div class="prj-tab-content" id="prjTabPlanung">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📅 Projektplanung</div>
+                        <div id="prjPlanungContent" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.8"></div>
+                    </div>
+                </div>
+
+                <!-- Tab: Meetings -->
+                <div class="prj-tab-content" id="prjTabMeetings">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                            <div style="font-size:16px;font-weight:700;color:white">📝 Meetings & Protokolle</div>
+                            <button onclick="prjAddMeeting()" style="padding:6px 14px;background:var(--accent);border:none;border-radius:8px;color:white;font-size:12px;font-weight:600;cursor:pointer">+ Neues Meeting</button>
+                        </div>
+                        <div id="prjMeetingsContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                    </div>
+                </div>
+
+                <!-- Tab: Deliverables -->
+                <div class="prj-tab-content" id="prjTabDeliverables">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📦 Deliverables & Ergebnisse</div>
+                        <div id="prjDeliverablesContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                    </div>
+                </div>
+
+                <!-- Tab: Dokumente -->
+                <div class="prj-tab-content" id="prjTabDokumente">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📄 Dokumente</div>
+                        <div id="prjDokumenteContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                    </div>
+                </div>
+
+                <!-- Tab: Modelle -->
+                <div class="prj-tab-content" id="prjTabModelle">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">🧬 Modelle & Analysen</div>
+                        <div id="prjModelleContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                    </div>
+                </div>
+
+                <!-- Tab: Risiken -->
+                <div class="prj-tab-content" id="prjTabRisiken">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">⚠ Risiken & Entscheidungen</div>
+                        <div id="prjRisikenContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                    </div>
+                </div>
+
+                <!-- Tab: Kommunikation -->
+                <div class="prj-tab-content" id="prjTabKommunikation">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">💬 Kommunikation</div>
+                        <div id="prjKommunikationContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                    </div>
+                </div>
+
+                <!-- Tab: Budget -->
+                <div class="prj-tab-content" id="prjTabBudget">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">💰 Budget & Abrechnung</div>
+                        <div id="prjBudgetContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                    </div>
+                </div>
+
+                <!-- Tab: Learnings -->
+                <div class="prj-tab-content" id="prjTabLearnings">
+                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📊 Learnings & Evaluation</div>
+                        <div id="prjLearningsContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3128,6 +3231,321 @@
                 otherSection.style.display = 'none';
             }
         }
+
+        let prjActiveTab = 'overview';
+
+        function prjSwitchTab(tab) {
+            prjActiveTab = tab;
+            document.querySelectorAll('.prj-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+            document.querySelectorAll('.prj-tab-content').forEach(c => c.classList.remove('active'));
+            const tabMap = {overview:'prjTabOverview',auftrag:'prjTabAuftrag',planung:'prjTabPlanung',meetings:'prjTabMeetings',deliverables:'prjTabDeliverables',dokumente:'prjTabDokumente',modelle:'prjTabModelle',risiken:'prjTabRisiken',kommunikation:'prjTabKommunikation',budget:'prjTabBudget',learnings:'prjTabLearnings'};
+            const el = document.getElementById(tabMap[tab]);
+            if (el) el.classList.add('active');
+            // Render tab content on first open
+            if (prjLandingData) prjRenderTab(tab);
+        }
+
+        function prjRenderTab(tab) {
+            const d = prjLandingData;
+            const p = d.project || {};
+            const res = d.resources || {};
+            const scope = p.scope || {};
+            const objective = p.objective || {};
+            const fehradvice_scope = p.fehradvice_scope || {};
+            const project = p.project || {};
+            const client = p.client || {};
+            const team = p.team || {};
+            const meta = p.metadata || {};
+
+            if (tab === 'auftrag') {
+                const objSummary = objective.summary || project.description || '';
+                const coreInsight = objective.core_insight || '';
+                const inScope = scope.in_scope || fehradvice_scope.deliverables || [];
+                const outScope = scope.out_of_scope || [];
+                const behObj = fehradvice_scope.behavioral_objectives || [];
+                const tenC = fehradvice_scope.ten_c_focus || (p.ebf_integration||{}).primary_10c_dimensions || [];
+                const stratCtx = project.strategic_context || '';
+                // Contacts
+                let auftraggeber = '', projektleiter = '';
+                const contacts = client.contacts || team.customer_contacts || [];
+                contacts.forEach(c => {
+                    if (typeof c === 'object') {
+                        if ((c.role||'').toLowerCase().includes('auftrag') || (c.role||'').toLowerCase().includes('sponsor')) auftraggeber = c.name || '';
+                        if ((c.role||'').toLowerCase().includes('projektl') || (c.role||'').toLowerCase().includes('lead')) projektleiter = c.name || '';
+                    }
+                });
+
+                let html = '<div style="display:flex;flex-direction:column;gap:20px">';
+                // Beratungsziel
+                html += `<div>
+                    <div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:8px">Beratungsziel</div>
+                    <div style="padding:14px;background:rgba(42,127,142,0.05);border:1px solid rgba(42,127,142,0.15);border-radius:8px">${objSummary || '<span style="color:rgba(255,255,255,0.3)">Noch nicht definiert</span>'}</div>
+                    ${coreInsight ? `<div style="margin-top:8px;padding:10px 14px;background:rgba(251,191,36,0.05);border-left:3px solid rgba(251,191,36,0.4);border-radius:0 8px 8px 0;font-size:12px;color:rgba(255,255,255,0.5)">💡 ${coreInsight}</div>` : ''}
+                </div>`;
+                // Scope
+                if (inScope.length) {
+                    html += `<div>
+                        <div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:8px">Beratungs-Scope</div>
+                        <div style="display:flex;flex-direction:column;gap:6px">${inScope.map(s => {
+                            const txt = typeof s === 'string' ? s : s.name || s.id || JSON.stringify(s);
+                            return `<div style="padding:8px 12px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.1);border-radius:6px;font-size:12px">✅ ${txt}</div>`;
+                        }).join('')}</div>
+                    </div>`;
+                }
+                if (outScope.length) {
+                    html += `<div>
+                        <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.4);margin-bottom:8px">Out-of-Scope</div>
+                        <div style="display:flex;flex-direction:column;gap:6px">${outScope.map(s => `<div style="padding:8px 12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:6px;font-size:12px;color:rgba(255,255,255,0.4)">⛔ ${s}</div>`).join('')}</div>
+                    </div>`;
+                }
+                // Behavioral Objectives & 10C
+                if (behObj.length || tenC.length) {
+                    html += `<div>
+                        <div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:8px">Behavioral Framework</div>
+                        ${behObj.length ? `<div style="margin-bottom:8px">${behObj.map(b => `<div style="padding:6px 12px;font-size:12px;color:rgba(255,255,255,0.5)">🎯 ${b}</div>`).join('')}</div>` : ''}
+                        ${tenC.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${tenC.map(c => `<span style="padding:4px 10px;font-size:11px;border-radius:6px;background:rgba(42,127,142,0.1);color:#2A7F8E;border:1px solid rgba(42,127,142,0.2)">${c}</span>`).join('')}</div>` : ''}
+                    </div>`;
+                }
+                // Auftraggeber / Projektleiter
+                if (auftraggeber || projektleiter || contacts.length) {
+                    html += `<div>
+                        <div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:8px">Kundenseitige Verantwortung</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                            <div style="padding:12px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px">
+                                <div style="font-size:10px;color:rgba(255,255,255,0.3)">Auftraggeber</div>
+                                <div style="font-size:13px;color:white;margin-top:4px">${auftraggeber || '–'}</div>
+                            </div>
+                            <div style="padding:12px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px">
+                                <div style="font-size:10px;color:rgba(255,255,255,0.3)">Projektleiter (Kunde)</div>
+                                <div style="font-size:13px;color:white;margin-top:4px">${projektleiter || '–'}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                }
+                if (!objSummary && !inScope.length && !outScope.length) {
+                    html += '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Beratungsauftrag noch nicht definiert.<br>Wird beim Import aus Proposal/Offerte automatisch befüllt.</div>';
+                }
+                html += '</div>';
+                document.getElementById('prjAuftragContent').innerHTML = html;
+            }
+
+            else if (tab === 'planung') {
+                let tl = p.timeline || [];
+                const phases = p.phases || [];
+                let html = '';
+                if (Array.isArray(tl) && tl.length) {
+                    html += '<div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:12px">Milestones</div>';
+                    html += '<div style="display:flex;flex-direction:column;gap:6px">';
+                    tl.forEach(m => {
+                        const statusIcon = (m.status||'').toLowerCase().includes('done') || (m.status||'').toLowerCase().includes('erledigt') ? '✅' : (m.status||'').toUpperCase() === 'HEUTE' ? '📍' : '⏳';
+                        html += `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px">
+                            <div style="font-size:14px">${statusIcon}</div>
+                            <div style="width:90px;font-size:11px;color:rgba(255,255,255,0.3);flex-shrink:0">${m.date||''}</div>
+                            <div style="flex:1;font-size:13px;color:rgba(255,255,255,0.7)">${m.milestone||m.name||''}</div>
+                            <div style="font-size:10px;color:rgba(255,255,255,0.2)">${m.status||''}</div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+                if (phases.length) {
+                    html += '<div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:12px;margin-top:20px">Phasen</div>';
+                    phases.forEach((ph, i) => {
+                        html += `<div style="padding:14px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                                <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:var(--accent-glow);color:var(--accent-light)">${ph.phase||'Phase '+(i+1)}</span>
+                                <span style="font-size:13px;font-weight:600;color:white">${ph.name||''}</span>
+                                ${ph.duration_weeks ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">${ph.duration_weeks} Wochen</span>` : ''}
+                            </div>
+                            ${ph.description ? `<div style="font-size:12px;color:rgba(255,255,255,0.5)">${ph.description}</div>` : ''}
+                        </div>`;
+                    });
+                }
+                if (!html) {
+                    html = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Noch keine Projektplanung hinterlegt.</div>';
+                }
+                document.getElementById('prjPlanungContent').innerHTML = html;
+            }
+
+            else if (tab === 'meetings') {
+                const sessions = p.sessions || [];
+                let html = '';
+                if (sessions.length) {
+                    sessions.forEach(s => {
+                        const statusIcon = s.status === 'completed' ? '✅' : s.status === 'scheduled' ? '📅' : '📝';
+                        html += `<div style="padding:14px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+                            <div style="display:flex;align-items:center;gap:10px">
+                                <span style="font-size:16px">${statusIcon}</span>
+                                <div style="flex:1">
+                                    <div style="font-size:13px;font-weight:600;color:white">${s.purpose||s.type||s.id||'Session'}</div>
+                                    <div style="font-size:11px;color:rgba(255,255,255,0.3)">${s.date||''} · ${s.type||''} · ${s.mode||''}</div>
+                                </div>
+                                <span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.3)">${s.status||''}</span>
+                            </div>
+                        </div>`;
+                    });
+                } else {
+                    html = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Noch keine Meetings erfasst.</div>';
+                }
+                document.getElementById('prjMeetingsContent').innerHTML = html;
+            }
+
+            else if (tab === 'deliverables') {
+                const deliverables = p.deliverables || p.final_deliverables || fehradvice_scope.deliverables || [];
+                let html = '';
+                if (deliverables.length) {
+                    deliverables.forEach(d => {
+                        const name = typeof d === 'string' ? d : d.name || d.id || '';
+                        const desc = typeof d === 'object' ? d.description || '' : '';
+                        html += `<div style="padding:12px 14px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+                            <div style="font-size:13px;font-weight:600;color:white">📦 ${name}</div>
+                            ${desc ? `<div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px">${desc}</div>` : ''}
+                        </div>`;
+                    });
+                } else {
+                    html = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Keine Deliverables definiert.</div>';
+                }
+                document.getElementById('prjDeliverablesContent').innerHTML = html;
+            }
+
+            else if (tab === 'dokumente') {
+                const docs = res.documents || {};
+                let html = '';
+                if (docs.available) {
+                    if (docs.pdf_files?.length) {
+                        html += '<div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:10px">PDFs</div>';
+                        docs.pdf_files.forEach(f => {
+                            html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+                                <span style="font-size:16px">📕</span>
+                                <div style="flex:1;font-size:13px;color:rgba(255,255,255,0.7)">${f}</div>
+                            </div>`;
+                        });
+                    }
+                    if (docs.md_files?.length) {
+                        html += '<div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:10px;margin-top:16px">Markdown</div>';
+                        docs.md_files.forEach(f => {
+                            html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+                                <span style="font-size:16px">📝</span>
+                                <div style="flex:1;font-size:13px;color:rgba(255,255,255,0.7)">${f}</div>
+                            </div>`;
+                        });
+                    }
+                } else {
+                    html = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Keine Dokumente im Kundenordner.</div>';
+                }
+                document.getElementById('prjDokumenteContent').innerHTML = html;
+            }
+
+            else if (tab === 'modelle') {
+                const models = res.models || {};
+                const ebf = p.ebf_integration || {};
+                let html = '';
+                if (models.available) {
+                    html += '<div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:10px">Vorhandene Modelle</div>';
+                    models.files.forEach(f => {
+                        html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(42,127,142,0.05);border:1px solid rgba(42,127,142,0.15);border-radius:8px;margin-bottom:6px">
+                            <span style="font-size:16px">🧠</span>
+                            <div style="flex:1;font-size:13px;color:rgba(255,255,255,0.7)">${f.replace('.yaml','').replace(/_/g,' ')}</div>
+                        </div>`;
+                    });
+                }
+                // Context Vector
+                const cv = res.context_vector || {};
+                if (cv.available) {
+                    html += '<div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:10px;margin-top:16px">Kontextvektor</div>';
+                    html += `<div style="display:flex;flex-wrap:wrap;gap:6px">`;
+                    cv.files.forEach(f => {
+                        const dim = f.replace(/.*_context_/,'').replace('.yaml','').replace('_',' ');
+                        html += `<span style="padding:4px 10px;font-size:11px;border-radius:6px;background:rgba(42,127,142,0.1);color:#2A7F8E;border:1px solid rgba(42,127,142,0.2)">${dim}</span>`;
+                    });
+                    html += '</div>';
+                }
+                // EBF
+                if (ebf.primary_10c_dimensions?.length || ebf.behavioral_barriers?.length) {
+                    html += '<div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:10px;margin-top:16px">EBF Integration</div>';
+                    if (ebf.primary_10c_dimensions?.length) html += `<div style="margin-bottom:6px;font-size:12px;color:rgba(255,255,255,0.5)">10C: ${ebf.primary_10c_dimensions.join(', ')}</div>`;
+                    if (ebf.behavioral_barriers?.length) html += `<div style="font-size:12px;color:rgba(255,255,255,0.5)">Barriers: ${ebf.behavioral_barriers.join(', ')}</div>`;
+                }
+                if (!html) {
+                    html = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Noch keine Modelle für diesen Kunden erstellt.<br>→ Modell über den Model Builder anlegen.</div>';
+                }
+                document.getElementById('prjModelleContent').innerHTML = html;
+            }
+
+            else if (tab === 'risiken') {
+                const risks = p.risks || [];
+                let html = '';
+                if (risks.length) {
+                    risks.forEach(r => {
+                        const desc = typeof r === 'string' ? r : r.description || '';
+                        const prob = r.probability || '';
+                        const impact = r.impact || '';
+                        const mitigation = r.mitigation || '';
+                        html += `<div style="padding:14px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+                            <div style="font-size:13px;font-weight:600;color:white">⚠ ${desc}</div>
+                            ${prob || impact ? `<div style="display:flex;gap:12px;margin-top:6px;font-size:11px;color:rgba(255,255,255,0.3)">${prob ? `<span>P: ${prob}</span>` : ''}${impact ? `<span>Impact: ${impact}</span>` : ''}</div>` : ''}
+                            ${mitigation ? `<div style="margin-top:6px;padding:8px 10px;background:rgba(52,211,153,0.05);border-left:2px solid rgba(52,211,153,0.3);border-radius:0 6px 6px 0;font-size:12px;color:rgba(255,255,255,0.5)">Mitigation: ${mitigation}</div>` : ''}
+                        </div>`;
+                    });
+                } else {
+                    html = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Keine Risiken erfasst.</div>';
+                }
+                document.getElementById('prjRisikenContent').innerHTML = html;
+            }
+
+            else if (tab === 'budget') {
+                let budget = null, billing = '', currency = 'CHF';
+                if (typeof p.timeline === 'object' && !Array.isArray(p.timeline)) {
+                    budget = p.timeline.budget_chf || p.timeline.budget_eur || null;
+                    billing = p.timeline.billing_type || '';
+                    if (p.timeline.budget_eur) currency = 'EUR';
+                }
+                let html = '';
+                if (budget) {
+                    const billingLabels = {fixed:'Fixpreis',time_material:'Time & Material',retainer:'Retainer'};
+                    html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                        <div style="padding:20px;background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.15);border-radius:10px;text-align:center">
+                            <div style="font-size:10px;color:rgba(255,255,255,0.3)">Projektbudget</div>
+                            <div style="font-size:28px;font-weight:700;color:#34d399;margin-top:6px">${currency} ${parseInt(budget).toLocaleString('de-CH')}</div>
+                        </div>
+                        <div style="padding:20px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;text-align:center">
+                            <div style="font-size:10px;color:rgba(255,255,255,0.3)">Abrechnungsmodell</div>
+                            <div style="font-size:20px;font-weight:600;color:white;margin-top:6px">${billingLabels[billing]||billing||'–'}</div>
+                        </div>
+                    </div>`;
+                } else {
+                    html = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Kein Budget hinterlegt.</div>';
+                }
+                document.getElementById('prjBudgetContent').innerHTML = html;
+            }
+
+            else if (tab === 'kommunikation') {
+                document.getElementById('prjKommunikationContent').innerHTML = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Kommunikationslog wird in einer nächsten Version verfügbar.<br>Hier werden E-Mails, Abstimmungen und Vereinbarungen erfasst.</div>';
+            }
+
+            else if (tab === 'learnings') {
+                const kpis = p.kpis || [];
+                const sm = p.success_metrics || {};
+                let html = '';
+                if (kpis.length) {
+                    html += '<div style="font-size:12px;font-weight:600;color:var(--accent-light);margin-bottom:10px">KPIs & Wirkungsmessung</div>';
+                    kpis.forEach(k => {
+                        html += `<div style="padding:12px 14px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span style="font-size:13px;font-weight:600;color:white">${k.name||k.kpi_id||''}</span>
+                                ${k.target ? `<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(52,211,153,0.1);color:#34d399">Ziel: ${k.target}</span>` : ''}
+                            </div>
+                            ${k.description ? `<div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px">${k.description}</div>` : ''}
+                        </div>`;
+                    });
+                }
+                if (!html) {
+                    html = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.3)">Noch keine Learnings oder KPIs erfasst.<br>Wird nach Projektabschluss / Meilensteinen befüllt.</div>';
+                }
+                document.getElementById('prjLearningsContent').innerHTML = html;
+            }
+        }
+
+        function prjAddMeeting() { showToast('Meeting-Erfassung kommt in nächster Version', 'info'); }
 
         let crmCompanyFilter = null;
 
