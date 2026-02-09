@@ -266,6 +266,20 @@ def get_db():
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_role VARCHAR(30) DEFAULT 'none'"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_owner_code VARCHAR(20)"))
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS lead_management BOOLEAN DEFAULT FALSE"))
+                    # Knowledge calibration table (fact-check results per user)
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS knowledge_checks (
+                        id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
+                        chat_doc_id VARCHAR REFERENCES documents(id),
+                        claim_text TEXT NOT NULL,
+                        claim_topic VARCHAR(100),
+                        customer_code VARCHAR(50),
+                        verification_status VARCHAR(20) NOT NULL DEFAULT 'unverified',
+                        confidence_score FLOAT DEFAULT 0,
+                        evidence TEXT,
+                        evidence_source VARCHAR(500),
+                        is_quantitative BOOLEAN DEFAULT FALSE,
+                        user_certainty VARCHAR(20) DEFAULT 'stated',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     # Auto-enable CRM for FehrAdvice admins (Senior Management) – runs every startup
                     conn.execute(text("""UPDATE users SET crm_access = TRUE, crm_role = 'admin' 
                         WHERE is_admin = TRUE AND email LIKE '%%@fehradvice.com'"""))
@@ -675,6 +689,169 @@ def auto_save_chat_to_kb(question: str, answer: str, user_email: str, intent: st
         return None
     finally:
         db.close()
+
+# ── FACT-CHECK ENGINE: Knowledge Calibration ──
+
+FACT_CHECK_SYSTEM = """Du bist ein präziser Fact-Check-Analyst. Analysiere die USER-NACHRICHT und extrahiere alle überprüfbaren Behauptungen (Claims).
+
+REGELN:
+1. Extrahiere NUR konkrete, überprüfbare Aussagen – keine Meinungen oder Fragen
+2. Kategorisiere jeden Claim:
+   - Quantitative Claims: Zahlen, Prozente, Beträge, Daten (z.B. "72% Zufriedenheit", "Budget 50k")
+   - Faktische Claims: Strukturen, Zusammenhänge, Zustände (z.B. "UBS hat 3 Divisionen", "Kröll ist Head of CX")
+   - Kausale Claims: Ursache-Wirkungs-Behauptungen (z.B. "Standardisierung führt zu Abwanderung")
+3. Bewerte die User-Sicherheit:
+   - "certain": User präsentiert als Fakt ("es sind 72%")
+   - "hedged": User ist unsicher ("ich glaube es sind etwa 72%")
+   - "questioning": User fragt ("sind es 72%?")
+
+Antworte NUR mit JSON (keine Backticks):
+{
+  "claims": [
+    {
+      "text": "Die Kundenzufriedenheit liegt bei 72%",
+      "topic": "kundenzufriedenheit",
+      "type": "quantitative",
+      "customer": "zkb",
+      "user_certainty": "certain",
+      "verifiable": true
+    }
+  ]
+}
+
+Wenn keine überprüfbaren Claims in der Nachricht sind, antworte: {"claims": []}
+Maximal 5 Claims pro Nachricht. Fokus auf die wichtigsten."""
+
+def fact_check_user_claims(user_message: str, user_email: str, chat_doc_id: str = None,
+                            customer_code: str = None):
+    """Extract claims from user message, cross-reference with KB, store calibration data.
+    Runs as background enrichment – does not block chat response."""
+    import urllib.request, ssl, re
+
+    if not ANTHROPIC_API_KEY:
+        return []
+    if not user_message or len(user_message.strip()) < 20:
+        return []
+
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    # ── Step 1: Extract claims using Claude ──
+    try:
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1500,
+            "system": FACT_CHECK_SYSTEM,
+            "messages": [{"role": "user", "content": f"USER-NACHRICHT:\n{user_message[:3000]}"}]
+        }).encode()
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+                "User-Agent": "BEATRIXLab/3.20-factcheck"
+            })
+        resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=30).read())
+        answer = resp["content"][0]["text"]
+
+        # Parse claims
+        try:
+            # Try raw JSON first
+            parsed = json.loads(answer.strip())
+        except:
+            json_match = re.search(r'\{.*\}', answer, re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+            else:
+                return []
+
+        claims = parsed.get("claims", [])
+        if not claims:
+            return []
+
+        logger.info(f"🔍 Fact-check: {len(claims)} claims extracted from {user_email.split('@')[0]}")
+
+    except Exception as e:
+        logger.warning(f"Fact-check extraction failed: {e}")
+        return []
+
+    # ── Step 2: Cross-reference each claim against KB ──
+    from sqlalchemy import text as sql_text
+    db = get_db()
+    results = []
+    try:
+        for claim in claims[:5]:
+            claim_text = claim.get("text", "")
+            if not claim_text or not claim.get("verifiable", True):
+                continue
+
+            # Search KB for evidence
+            kb_results = search_knowledge_base(db, claim_text)
+            top_score = kb_results[0][0] if kb_results else 0
+            top_content = kb_results[0][1].content[:500] if kb_results else ""
+            top_source = kb_results[0][1].title if kb_results else ""
+
+            # Determine verification status based on KB match
+            if top_score >= 20:
+                verification = "verified"  # Strong KB match
+            elif top_score >= 8:
+                verification = "partially_verified"  # Weak match, needs review
+            elif top_score > 0:
+                verification = "unverified"  # Some results but not matching
+            else:
+                verification = "novel"  # Nothing in KB – new knowledge
+
+            confidence = min(top_score / 30.0, 1.0)  # Normalize to 0-1
+
+            # Store in DB
+            check_id = str(uuid.uuid4())
+            try:
+                db.execute(sql_text("""
+                    INSERT INTO knowledge_checks (id, user_email, chat_doc_id, claim_text,
+                        claim_topic, customer_code, verification_status, confidence_score,
+                        evidence, evidence_source, is_quantitative, user_certainty)
+                    VALUES (:id, :email, :doc_id, :claim, :topic, :customer, :status,
+                        :confidence, :evidence, :source, :is_quant, :certainty)
+                """), {
+                    "id": check_id,
+                    "email": user_email,
+                    "doc_id": chat_doc_id,
+                    "claim": claim_text[:1000],
+                    "topic": claim.get("topic", "")[:100],
+                    "customer": customer_code or claim.get("customer", ""),
+                    "status": verification,
+                    "confidence": confidence,
+                    "evidence": top_content[:2000] if top_score > 5 else None,
+                    "source": top_source[:500] if top_score > 5 else None,
+                    "is_quant": claim.get("type") == "quantitative",
+                    "certainty": claim.get("user_certainty", "stated")
+                })
+                results.append({
+                    "id": check_id,
+                    "claim": claim_text,
+                    "status": verification,
+                    "confidence": round(confidence, 2),
+                    "topic": claim.get("topic", ""),
+                    "type": claim.get("type", "factual"),
+                    "user_certainty": claim.get("user_certainty", "stated")
+                })
+            except Exception as e:
+                logger.warning(f"Store knowledge check failed: {e}")
+                db.rollback()
+                continue
+
+        db.commit()
+        status_counts = {}
+        for r in results:
+            status_counts[r["status"]] = status_counts.get(r["status"], 0) + 1
+        logger.info(f"🔍 Fact-check complete: {status_counts} for {user_email.split('@')[0]}")
+
+    except Exception as e:
+        logger.error(f"Fact-check KB search failed: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+    return results
 
 def vector_search(db, query: str, limit: int = 8) -> list:
     """Semantic search. Tries pgvector, falls back to JSON + Python cosine similarity."""
@@ -1746,6 +1923,212 @@ async def admin_kb_stats(user=Depends(require_auth)):
         }
     finally: db.close()
 
+@app.get("/api/admin/knowledge-calibration")
+async def admin_knowledge_calibration(user=Depends(require_auth)):
+    """Knowledge Calibration Dashboard – shows team knowledge profiles based on fact-checked claims."""
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    from sqlalchemy import text as sql_text
+    db = get_db()
+    try:
+        # Total checks
+        total = db.execute(sql_text("SELECT COUNT(*) FROM knowledge_checks")).scalar() or 0
+        if total == 0:
+            return {"total_checks": 0, "users": [], "summary": "Noch keine Fact-Checks. Daten werden automatisch bei Chat-Interaktionen gesammelt."}
+
+        # Per-user calibration profile
+        user_stats = db.execute(sql_text("""
+            SELECT user_email,
+                   COUNT(*) as total_claims,
+                   SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as verified,
+                   SUM(CASE WHEN verification_status='partially_verified' THEN 1 ELSE 0 END) as partial,
+                   SUM(CASE WHEN verification_status='unverified' THEN 1 ELSE 0 END) as unverified,
+                   SUM(CASE WHEN verification_status='novel' THEN 1 ELSE 0 END) as novel,
+                   SUM(CASE WHEN is_quantitative=TRUE THEN 1 ELSE 0 END) as quantitative,
+                   SUM(CASE WHEN user_certainty='certain' THEN 1 ELSE 0 END) as stated_certain,
+                   AVG(confidence_score) as avg_confidence
+            FROM knowledge_checks
+            GROUP BY user_email
+            ORDER BY total_claims DESC
+        """)).fetchall()
+
+        users = []
+        for r in user_stats:
+            total_claims = r[1]
+            verified = r[2] or 0
+            partial = r[3] or 0
+            novel = r[4] or 0
+            unverified = r[5] or 0
+            certain = r[7] or 0
+
+            # Knowledge Accuracy Score: verified / (verified + unverified)
+            checkable = verified + partial + unverified
+            accuracy = round(verified / checkable * 100, 1) if checkable > 0 else None
+
+            # Overconfidence: certain claims that are unverified
+            overconfident = 0
+            if certain > 0:
+                oc_result = db.execute(sql_text("""
+                    SELECT COUNT(*) FROM knowledge_checks
+                    WHERE user_email = :email
+                      AND user_certainty = 'certain'
+                      AND verification_status IN ('unverified', 'novel')
+                """), {"email": r[0]}).scalar() or 0
+                overconfident = round(oc_result / certain * 100, 1)
+
+            # Top topics
+            topics = db.execute(sql_text("""
+                SELECT claim_topic, COUNT(*) as cnt,
+                       SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v
+                FROM knowledge_checks
+                WHERE user_email = :email AND claim_topic IS NOT NULL AND claim_topic != ''
+                GROUP BY claim_topic ORDER BY cnt DESC LIMIT 5
+            """), {"email": r[0]}).fetchall()
+
+            # Top customers
+            customers = db.execute(sql_text("""
+                SELECT customer_code, COUNT(*) as cnt,
+                       SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v
+                FROM knowledge_checks
+                WHERE user_email = :email AND customer_code IS NOT NULL AND customer_code != ''
+                GROUP BY customer_code ORDER BY cnt DESC LIMIT 5
+            """), {"email": r[0]}).fetchall()
+
+            users.append({
+                "email": r[0],
+                "name": r[0].split("@")[0].replace(".", " ").title(),
+                "total_claims": total_claims,
+                "verified": verified,
+                "partially_verified": partial,
+                "unverified": unverified,
+                "novel_knowledge": novel,
+                "quantitative_claims": r[6] or 0,
+                "accuracy_pct": accuracy,
+                "overconfidence_pct": overconfident,
+                "avg_kb_confidence": round(float(r[8] or 0), 2),
+                "calibration_label": (
+                    "Gut kalibriert" if accuracy and accuracy >= 70 and overconfident < 20
+                    else "Überschätzt Wissen" if overconfident >= 30
+                    else "Vorsichtig" if accuracy and accuracy >= 50
+                    else "Explorativ" if novel > verified
+                    else "Zu wenig Daten" if total_claims < 5
+                    else "Wissenslücken"
+                ),
+                "top_topics": [{"topic": t[0], "claims": t[1], "verified": t[2]} for t in topics],
+                "top_customers": [{"customer": c[0], "claims": c[1], "verified": c[2]} for c in customers]
+            })
+
+        # Global summary
+        all_verified = sum(u["verified"] for u in users)
+        all_novel = sum(u["novel_knowledge"] for u in users)
+        return {
+            "total_checks": total,
+            "total_verified": all_verified,
+            "total_novel": all_novel,
+            "knowledge_growth_rate": round(all_novel / total * 100, 1) if total > 0 else 0,
+            "users": users
+        }
+    finally: db.close()
+
+@app.get("/api/admin/knowledge-checks")
+async def admin_knowledge_checks(user=Depends(require_auth), email: str = None, status: str = None, limit: int = 50):
+    """Recent fact-check results, optionally filtered by user or status."""
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    from sqlalchemy import text as sql_text
+    db = get_db()
+    try:
+        query = "SELECT id, user_email, claim_text, claim_topic, customer_code, verification_status, confidence_score, evidence_source, is_quantitative, user_certainty, created_at FROM knowledge_checks WHERE 1=1"
+        params = {"lim": limit}
+        if email:
+            query += " AND user_email = :email"
+            params["email"] = email
+        if status:
+            query += " AND verification_status = :status"
+            params["status"] = status
+        query += " ORDER BY created_at DESC LIMIT :lim"
+        rows = db.execute(sql_text(query), params).fetchall()
+        return [
+            {
+                "id": r[0], "user": r[1], "claim": r[2], "topic": r[3],
+                "customer": r[4], "status": r[5], "confidence": round(float(r[6] or 0), 2),
+                "source": r[7], "quantitative": r[8], "user_certainty": r[9],
+                "created_at": r[10].isoformat() if r[10] else None
+            } for r in rows
+        ]
+    finally: db.close()
+
+@app.get("/api/user/knowledge-profile")
+async def user_knowledge_profile(user=Depends(require_auth)):
+    """Own knowledge profile – shows the user their calibration data (self-awareness tool)."""
+    from sqlalchemy import text as sql_text
+    db = get_db()
+    email = user["sub"]
+    try:
+        total = db.execute(sql_text("SELECT COUNT(*) FROM knowledge_checks WHERE user_email=:e"), {"e": email}).scalar() or 0
+        if total == 0:
+            return {"total_claims": 0, "message": "Noch keine Daten. Chatte mit BEATRIX und dein Wissensprofil baut sich automatisch auf."}
+
+        stats = db.execute(sql_text("""
+            SELECT
+                SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN verification_status='partially_verified' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN verification_status='unverified' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN verification_status='novel' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN is_quantitative=TRUE THEN 1 ELSE 0 END),
+                AVG(confidence_score)
+            FROM knowledge_checks WHERE user_email=:e
+        """), {"e": email}).fetchone()
+
+        verified, partial, unverified, novel, quant, avg_conf = stats
+        checkable = (verified or 0) + (partial or 0) + (unverified or 0)
+        accuracy = round((verified or 0) / checkable * 100, 1) if checkable > 0 else None
+
+        # Recent checks
+        recent = db.execute(sql_text("""
+            SELECT claim_text, verification_status, claim_topic, customer_code, confidence_score, created_at
+            FROM knowledge_checks WHERE user_email=:e ORDER BY created_at DESC LIMIT 10
+        """), {"e": email}).fetchall()
+
+        # Strengths = topics with high verified rate
+        strengths = db.execute(sql_text("""
+            SELECT claim_topic, COUNT(*) as cnt,
+                   SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v
+            FROM knowledge_checks
+            WHERE user_email=:e AND claim_topic IS NOT NULL AND claim_topic != ''
+            GROUP BY claim_topic HAVING COUNT(*) >= 2
+            ORDER BY (SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END)::float / COUNT(*)) DESC
+            LIMIT 5
+        """), {"e": email}).fetchall()
+
+        # Gaps = topics with low verified rate
+        gaps = db.execute(sql_text("""
+            SELECT claim_topic, COUNT(*) as cnt,
+                   SUM(CASE WHEN verification_status IN ('unverified','novel') THEN 1 ELSE 0 END) as g
+            FROM knowledge_checks
+            WHERE user_email=:e AND claim_topic IS NOT NULL AND claim_topic != ''
+            GROUP BY claim_topic HAVING COUNT(*) >= 2
+            ORDER BY (SUM(CASE WHEN verification_status IN ('unverified','novel') THEN 1 ELSE 0 END)::float / COUNT(*)) DESC
+            LIMIT 5
+        """), {"e": email}).fetchall()
+
+        return {
+            "total_claims": total,
+            "verified": verified or 0,
+            "partially_verified": partial or 0,
+            "unverified": unverified or 0,
+            "novel_knowledge": novel or 0,
+            "quantitative_claims": quant or 0,
+            "accuracy_pct": accuracy,
+            "avg_kb_confidence": round(float(avg_conf or 0), 2),
+            "strengths": [{"topic": s[0], "claims": s[1], "verified": s[2]} for s in strengths],
+            "gaps": [{"topic": g[0], "claims": g[1], "unverified": g[2]} for g in gaps],
+            "recent_checks": [
+                {"claim": r[0][:150], "status": r[1], "topic": r[2], "customer": r[3],
+                 "confidence": round(float(r[4] or 0), 2), "created_at": r[5].isoformat() if r[5] else None}
+                for r in recent
+            ]
+        }
+    finally: db.close()
+
 @app.get("/api/admin/users")
 async def admin_users(user=Depends(require_auth)):
     if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
@@ -2327,7 +2710,12 @@ async def chat_intent(request: Request, user=Depends(require_auth)):
                 save_content = resp_message
                 if resp_data:
                     save_content = f"{resp_message}\n\nStrukturierte Daten ({intent}): {json.dumps(resp_data, ensure_ascii=False)}"
-                auto_save_chat_to_kb(message, save_content, user["sub"], intent=intent, metadata=meta)
+                doc_id = auto_save_chat_to_kb(message, save_content, user["sub"], intent=intent, metadata=meta)
+                # 🔍 Fact-check user claims (background)
+                try:
+                    fact_check_user_claims(message, user["sub"], chat_doc_id=doc_id,
+                                           customer_code=resp_data.get("customer_code", ""))
+                except Exception: pass
             except Exception: pass
 
             return {
@@ -2527,7 +2915,11 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
                     db2.close()
                 # 💬→📚 Auto-save to Knowledge Base
                 try:
-                    auto_save_chat_to_kb(question, complete_text, user["sub"], intent="knowledge")
+                    doc_id = auto_save_chat_to_kb(question, complete_text, user["sub"], intent="knowledge")
+                    # 🔍 Fact-check user claims (background)
+                    try:
+                        fact_check_user_claims(question, user["sub"], chat_doc_id=doc_id)
+                    except Exception: pass
                 except Exception as e:
                     logger.warning(f"Chat KB auto-save failed (stream): {e}")
 
@@ -2591,7 +2983,11 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
                 logger.info(f"FAST PATH answer for: {question[:50]}")
                 # 💬→📚 Auto-save to Knowledge Base
                 try:
-                    auto_save_chat_to_kb(question, answer, user["sub"], intent="knowledge")
+                    doc_id = auto_save_chat_to_kb(question, answer, user["sub"], intent="knowledge")
+                    # 🔍 Fact-check user claims (background)
+                    try:
+                        fact_check_user_claims(question, user["sub"], chat_doc_id=doc_id)
+                    except Exception: pass
                 except Exception: pass
                 return {
                     "status": "done",
