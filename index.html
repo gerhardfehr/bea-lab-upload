@@ -804,14 +804,17 @@
 
             <!-- ═══ STEP 4: Model ═══ -->
             <div class="mb-panel" id="mbStep4">
-                <div class="mb-step-title">Schritt 4: Modell wählen</div>
-                <div class="mb-step-desc">BEATRIX sucht in der Modell-Registry oder baut ein neues 10C-Modell.</div>
-                <div id="mbModelResult">
-                    <div class="mb-info-box"><p>BEATRIX analysiert deine Eingaben und sucht nach passenden Modellen...</p></div>
+                <div class="mb-step-title">Schritt 4: Modell-Spezifikation</div>
+                <div class="mb-step-desc">BEATRIX durchsucht die Modell-Registry und baut das 10C-Mapping.</div>
+                <div id="mbModelResult" style="min-height:120px">
+                    <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">
+                        <div style="font-size:20px;margin-bottom:8px">📊</div>
+                        Klicke «Modell erstellen» um die Analyse zu starten.
+                    </div>
                 </div>
                 <div class="mb-actions">
                     <button class="mb-btn mb-btn-back" onclick="mbGoStep(3)">← Zurück</button>
-                    <button class="mb-btn mb-btn-primary" id="mbStep4Btn" onclick="mbNextStep(5)">Weiter →</button>
+                    <button class="mb-btn mb-btn-primary" id="mbStep4Btn" onclick="mbRunStep4()">Modell erstellen →</button>
                 </div>
             </div>
 
@@ -819,12 +822,15 @@
             <div class="mb-panel" id="mbStep5">
                 <div class="mb-step-title">Schritt 5: Parameter-Schätzung</div>
                 <div class="mb-step-desc">LLMMC Prior generieren und Bayesian Updating mit BCM2 & Papers.</div>
-                <div id="mbParamResult">
-                    <div class="mb-info-box"><p>BEATRIX generiert Parameter...</p></div>
+                <div id="mbParamResult" style="min-height:120px">
+                    <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">
+                        <div style="font-size:20px;margin-bottom:8px">🔬</div>
+                        Klicke «Parameter schätzen» um die Berechnung zu starten.
+                    </div>
                 </div>
                 <div class="mb-actions">
                     <button class="mb-btn mb-btn-back" onclick="mbGoStep(4)">← Zurück</button>
-                    <button class="mb-btn mb-btn-primary" id="mbStep5Btn" onclick="mbNextStep(6)">Ergebnis berechnen →</button>
+                    <button class="mb-btn mb-btn-primary" id="mbStep5Btn" onclick="mbRunStep5()">Parameter schätzen →</button>
                 </div>
             </div>
 
@@ -2766,27 +2772,10 @@ Antworte NUR als JSON Array:
                     try { const m = data.answer.match(/\{[\s\S]*\}/); if(m) parsed = JSON.parse(m[0]); } catch(e){}
                 }
 
-                const modelResult = document.getElementById('mbModelResult');
                 if (parsed && parsed.psi_dimensions) {
                     mbState.selections.psi = parsed;
-                    let psiHtml = '<div class="mb-summary">';
-                    psiHtml += `<div class="mb-summary-row"><span class="mb-summary-label">Level</span><span class="mb-summary-value">${parsed.level||'Individual'}</span></div>`;
-                    for (const psi of parsed.psi_dimensions) {
-                        const pct = Math.round((psi.value||0.5)*100);
-                        psiHtml += `<div class="mb-summary-row"><span class="mb-summary-label">${psi.id} ${psi.name}</span><span class="mb-summary-value"><span style="display:inline-block;width:60px;height:6px;background:var(--navy-mid);border-radius:3px;overflow:hidden;vertical-align:middle;margin-right:8px"><span style="display:block;height:100%;width:${pct}%;background:var(--accent);border-radius:3px"></span></span>${pct}%</span></div>`;
-                    }
-                    if (parsed['10c_mapping']) {
-                        psiHtml += '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">';
-                        psiHtml += '<div style="font-size:12px;font-weight:700;color:var(--accent-light);margin-bottom:8px">10C CORE Mapping</div>';
-                        for (const [k,v] of Object.entries(parsed['10c_mapping'])) {
-                            psiHtml += `<div class="mb-summary-row"><span class="mb-summary-label">${k}</span><span class="mb-summary-value" style="font-size:12px;max-width:300px;text-align:right">${v}</span></div>`;
-                        }
-                        psiHtml += '</div>';
-                    }
-                    psiHtml += '</div>';
-                    modelResult.innerHTML = '<div class="mb-step-desc">BEATRIX sucht passende Modelle basierend auf deinem Kontext...</div>' + psiHtml;
-                } else {
-                    modelResult.innerHTML = '<div class="mb-info-box"><p>Kontext-Analyse abgeschlossen. Weiter zum Modell.</p></div>';
+                    // Store for use in Step 4+5 prompts
+                    mbState.selections.psiSummary = parsed.psi_dimensions.map(p => `${p.id}=${p.value}`).join(', ');
                 }
 
                 mbStopProgress(progHandle);
@@ -2799,6 +2788,108 @@ Antworte NUR als JSON Array:
                 btn.textContent = 'BEATRIX analysieren lassen →';
                 btn.disabled = false;
             }
+        }
+
+        async function mbRunStep4() {
+            const btn = document.getElementById('mbStep4Btn');
+            const resultEl = document.getElementById('mbModelResult');
+            btn.disabled = true;
+            btn.textContent = 'BEATRIX erstellt Modell...';
+
+            const prompt = `Erstelle die 10C Modell-Spezifikation für: "${mbState.question}".
+Session: ${mbState.sessionId}. Domain: ${mbState.selections.domain || 'OTH'}.
+Entry: ${mbState.selections.mbStep1 || 'practice'}. Scope: ${mbState.selections.mbStep2 || 'decision'}.
+Ψ-Config: ${mbState.selections.mbStep3 || 'ggg-default'}.
+
+Strukturiere mit Markdown:
+### Modell-Typ & ID
+Identifiziere den passenden Modell-Typ (Decision/Continuous/Process) und vergib eine BCM-Modell-ID.
+
+### 10C Complementarity Mapping
+Tabelle mit | Dimension | Spezifikation | Relevanz (Hoch/Mittel/Niedrig) |
+für alle 10 Dimensionen: WHO, WHAT, HOW, WHEN, WHERE, AWARE, READY, STAGE, HIERARCHY, EIT.
+
+### Funktionale Form
+Welche mathematische Spezifikation: Logistic, CES, Dynamic BCJ?
+
+Schreibe kompakt und präzise.`;
+
+            resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)">
+                <div style="width:14px;height:14px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0" id="mbStep4Spinner"></div>
+                <div style="font-size:13px;color:var(--text-secondary)" id="mbStep4Meta">Modell wird erstellt...</div>
+            </div><div id="mbStep4Stream" style="max-height:50vh;overflow-y:auto"></div>`;
+
+            const startTime = Date.now();
+            await mbStreamChat(prompt, document.getElementById('mbStep4Stream'), {
+                onDone: (text) => {
+                    const t = ((Date.now() - startTime) / 1000).toFixed(1);
+                    const sp = document.getElementById('mbStep4Spinner');
+                    if (sp) { sp.style.animation = 'none'; sp.style.borderColor = '#22c55e'; sp.style.borderTopColor = '#22c55e'; }
+                    const meta = document.getElementById('mbStep4Meta');
+                    if (meta) meta.textContent = `✓ Modell erstellt in ${t}s`;
+                    mbState.selections.step4Result = text;
+                    btn.textContent = 'Weiter zu Parameter →';
+                    btn.disabled = false;
+                    btn.onclick = () => mbNextStep(5);
+                }
+            });
+        }
+
+        async function mbRunStep5() {
+            const btn = document.getElementById('mbStep5Btn');
+            const resultEl = document.getElementById('mbParamResult');
+            btn.disabled = true;
+            btn.textContent = 'BEATRIX schätzt Parameter...';
+
+            const prompt = `Schätze die BCM-Parameter für: "${mbState.question}".
+Session: ${mbState.sessionId}. Domain: ${mbState.selections.domain || 'OTH'}.
+Ψ-Config: ${mbState.selections.mbStep3 || 'ggg-default'}.
+Modell-Kontext aus Step 4: ${(mbState.selections.step4Result || '').slice(0, 500)}
+
+Strukturiere mit Markdown:
+### Willingness (W)
+- **Aktueller Wert:** [0.0–1.0]
+- **Gate Condition:** W ≥ θ_W? Ja/Nein
+- Begründung (2–3 Sätze) basierend auf motivationalen Faktoren
+
+### Ability (A_mod)
+- **Aktueller Wert:** [0.0–1.0]
+- Subkomponenten: Skills, Knowledge, Resources
+- Begründung
+
+### Capacity (C)
+- **Aktueller Wert:** [0.0–1.0]
+- Externe Constraints, Facilitating Conditions
+- Begründung
+
+### BCM Gesamtschätzung
+Tabelle: | Parameter | Wert | Gate | Interpretation |
+| W | ... | ... | ... |
+| A_mod | ... | ... | ... |
+| C | ... | ... | ... |
+| **P(B)** | ... | — | Verhaltenswahrscheinlichkeit |
+
+Berechne P(B) nach BCM-Formel. Schreibe wissenschaftlich fundiert.`;
+
+            resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)">
+                <div style="width:14px;height:14px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0" id="mbStep5Spinner"></div>
+                <div style="font-size:13px;color:var(--text-secondary)" id="mbStep5Meta">Parameter werden geschätzt...</div>
+            </div><div id="mbStep5Stream" style="max-height:50vh;overflow-y:auto"></div>`;
+
+            const startTime = Date.now();
+            await mbStreamChat(prompt, document.getElementById('mbStep5Stream'), {
+                onDone: (text) => {
+                    const t = ((Date.now() - startTime) / 1000).toFixed(1);
+                    const sp = document.getElementById('mbStep5Spinner');
+                    if (sp) { sp.style.animation = 'none'; sp.style.borderColor = '#22c55e'; sp.style.borderTopColor = '#22c55e'; }
+                    const meta = document.getElementById('mbStep5Meta');
+                    if (meta) meta.textContent = `✓ Parameter geschätzt in ${t}s`;
+                    mbState.selections.step5Result = text;
+                    btn.textContent = 'Weiter zum Ergebnis →';
+                    btn.disabled = false;
+                    btn.onclick = () => mbNextStep(6);
+                }
+            });
         }
 
         function mbShowRegistry() {
@@ -2863,9 +2954,11 @@ Antworte NUR als JSON Array:
             timeEl.textContent = '';
 
             const startTime = Date.now();
+            const s4 = mbState.selections.step4Result ? `\n\nModell-Spezifikation aus Step 4:\n${mbState.selections.step4Result.slice(0, 800)}` : '';
+            const s5 = mbState.selections.step5Result ? `\n\nParameter-Schätzung aus Step 5:\n${mbState.selections.step5Result.slice(0, 800)}` : '';
 
             const promptStandard = `Erstelle einen kompakten BCM Modell-Report für: "${mbState.question}".
-Session: ${mbState.sessionId}. Mode: ${mbState.mode}. Selections: ${JSON.stringify(mbState.selections)}.
+Session: ${mbState.sessionId}. Mode: ${mbState.mode}.${s4}${s5}
 
 Struktur (nutze exakt diese Markdown-Überschriften):
 ## Modell-Report: [Kurztitel]
@@ -2875,7 +2968,7 @@ Kurze Einordnung (3–4 Sätze).
 Nenne die 3–4 relevantesten Complementarity-Dimensionen als Aufzählung mit je 1 Satz.
 ### 3. BCM Parameter
 Tabelle mit | Parameter | Wert | Interpretation |
-für Willingness (W), Ability (A), Capacity (C).
+für Willingness (W), Ability (A), Capacity (C). Nutze die Werte aus Step 5 falls vorhanden.
 ### 4. Ergebnis
 Klare Verhaltensvorhersage in 2–3 Sätzen.
 ### 5. Handlungsempfehlungen
@@ -2884,22 +2977,22 @@ Klare Verhaltensvorhersage in 2–3 Sätzen.
 Schreibe präzise und professionell. Maximal 500 Wörter.`;
 
             const promptDeep = `Erstelle einen umfassenden BCM Modell-Report (Standard++) für: "${mbState.question}".
-Session: ${mbState.sessionId}. Mode: ${mbState.mode}. Selections: ${JSON.stringify(mbState.selections)}.
+Session: ${mbState.sessionId}. Mode: ${mbState.mode}.${s4}${s5}
 
 Struktur (nutze exakt diese Markdown-Überschriften):
 ## Modell-Report: [Kurztitel]
 ### 1. Problemstellung & Domain-Analyse
 Detaillierte Einordnung der Fragestellung, Zielgruppe, Verhaltensänderungsziel.
 ### 2. 10C Complementarity Mapping
-Vollständige Tabelle | Dimension | Spezifikation | BCM Relevanz | für alle 10 Dimensionen (WHO, WHAT, HOW, WHEN, WHERE, AWARE, READY, STAGE, HIERARCHY, EIT).
+Vollständige Tabelle | Dimension | Spezifikation | BCM Relevanz | für alle 10 Dimensionen. Nutze die Spezifikation aus Step 4 falls vorhanden.
 ### 3. Ψ-Kontextdimensionen
 Tabelle | Ψ-Dimension | Wert (0–1) | Impact | Rationale | für die 8 Ψ-Dimensionen.
 ### 4. BCM Parameter (Willingness · Ability · Capacity)
-Detaillierte Tabelle mit Subkomponenten, Werten und Interpretation.
+Detaillierte Tabelle mit Subkomponenten, Werten und Interpretation. Nutze die Schätzungen aus Step 5 falls vorhanden.
 #### Key Insight
 Zusammenfassende Erkenntnis.
 ### 5. Ergebnis & Verhaltensvorhersage
-Klare Vorhersage mit Konfidenzintervall und Begründung.
+Klare Vorhersage mit Konfidenzintervall und Begründung. Berechne P(B) nach BCM-Formel.
 ### 6. Sensitivitätsanalyse
 Welche Parameter haben den grössten Einfluss? ±20% Variation analysieren.
 ### 7. Handlungsempfehlungen
