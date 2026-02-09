@@ -201,6 +201,11 @@
         .settings-label { font-size:13px; color:var(--text); font-weight:500; }
         .settings-value { font-size:13px; color:var(--accent-light); font-weight:600; font-family:'JetBrains Mono',monospace; }
         .nav-link.admin-link { color:var(--warning); }
+        .comp-cat-tab { display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:12px;font-weight:500;color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all 0.15s; }
+        .comp-cat-tab:hover { color:rgba(255,255,255,0.7);background:rgba(255,255,255,0.05); }
+        .comp-cat-tab.active { color:white;background:rgba(42,127,142,0.15);border-color:rgba(42,127,142,0.3); }
+        .comp-cat-count { font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3); }
+        .comp-cat-tab.active .comp-cat-count { background:rgba(42,127,142,0.2);color:rgba(255,255,255,0.6); }
         .nav-link.admin-link:hover,.nav-link.admin-link.active { color:var(--warning); background:rgba(251,191,36,0.08); }
 
         /* ── Password Modal ──────────────────────────────── */
@@ -1109,22 +1114,39 @@
         <div class="container">
             <!-- List View -->
             <div id="companiesListView">
-                <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
                     <div style="flex:1">
                         <h2 style="margin:0;font-size:22px;color:white">🏢 Firmen</h2>
                         <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="crmCompaniesCount"></div>
                     </div>
-                    <input id="crmCompaniesSearch" type="text" placeholder="Suchen nach Name, Branche, Land…" oninput="crmFilterCompanies()" style="font-size:13px;padding:8px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:white;width:min(300px,50vw);outline:none">
+                    <input id="crmCompaniesSearch" type="text" placeholder="Suchen…" oninput="crmFilterCompanies()" style="font-size:13px;padding:8px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:white;width:min(240px,40vw);outline:none">
+                </div>
+                <!-- Category Tabs -->
+                <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap" id="companyCategoryTabs">
+                    <button class="comp-cat-tab active" data-cat="all" onclick="companySetCategory('all',this)">Alle</button>
+                    <button class="comp-cat-tab" data-cat="active" onclick="companySetCategory('active',this)">
+                        <span style="width:8px;height:8px;border-radius:50%;background:#34d399;display:inline-block"></span> Aktive Projekte <span class="comp-cat-count" id="catCountActive">0</span>
+                    </button>
+                    <button class="comp-cat-tab" data-cat="leads" onclick="companySetCategory('leads',this)">
+                        <span style="width:8px;height:8px;border-radius:50%;background:#fbbf24;display:inline-block"></span> Leads <span class="comp-cat-count" id="catCountLeads">0</span>
+                    </button>
+                    <button class="comp-cat-tab" data-cat="past" onclick="companySetCategory('past',this)">
+                        <span style="width:8px;height:8px;border-radius:50%;background:rgba(139,170,255,0.5);display:inline-block"></span> Frühere Projekte <span class="comp-cat-count" id="catCountPast">0</span>
+                    </button>
+                    <button class="comp-cat-tab" data-cat="new" onclick="companySetCategory('new',this)">
+                        <span style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.2);display:inline-block"></span> Neu / Noch nie <span class="comp-cat-count" id="catCountNew">0</span>
+                    </button>
                 </div>
                 <div id="crmCompaniesList" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
             </div>
 
             <!-- Profile View (hidden by default) -->
             <div id="companiesProfileView" style="display:none">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
                     <button onclick="companyBackToList()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer">← Alle Firmen</button>
                     <h2 style="margin:0;font-size:22px;color:white" id="companyProfileName"></h2>
                     <span style="font-size:12px;color:rgba(255,255,255,0.3)" id="companyProfileCode"></span>
+                    <span id="companyProfileCatBadge"></span>
                 </div>
                 <div id="companyProfileContent"></div>
             </div>
@@ -2024,6 +2046,32 @@
 
         let crmCompaniesData = [];
         let companiesExpanded = {};
+        let companyCategory = 'all';
+
+        function companyGetCategory(c) {
+            // Active Projects: strategic/context type with ACTIVE status or has_customer_folder + active relationship
+            if ((c.type === 'strategic' || c.type === 'context') && (c.relationship_status === 'ACTIVE' || c.status === 'ACTIVE'))
+                return 'active';
+            // Past Projects: has customer folder or context data but NOT active
+            if (c.has_customer_folder || c.has_context || c.has_profile)
+                return 'past';
+            // Leads: has any lead activity, contacts, or next_action
+            const hasActivity = (c.children?.length > 0) || c.contact_persons > 0 || c.next_action || c.fit_score > 0 || c.hot_lead;
+            if (c.type === 'lead' && hasActivity)
+                return 'leads';
+            // Also leads if status suggests pipeline
+            if (['PROSPECT','QUALIFIED','PROPOSAL','NEGOTIATION'].includes((c.status||'').toUpperCase()))
+                return 'leads';
+            // New / Never worked with
+            return 'new';
+        }
+
+        function companySetCategory(cat, el) {
+            companyCategory = cat;
+            document.querySelectorAll('.comp-cat-tab').forEach(t => t.classList.remove('active'));
+            if (el) el.classList.add('active');
+            crmFilterCompanies();
+        }
 
         function crmShowCompanies() {
             showSection('companies', document.querySelector('[data-section=companies]'));
@@ -2036,8 +2084,18 @@
             try {
                 const resp = await fetch(`${API}/crm/companies/enriched`, { headers: H() });
                 crmCompaniesData = resp.ok ? await resp.json() : [];
+                // Assign categories + compute counts
+                const counts = {active:0, leads:0, past:0, new:0};
+                crmCompaniesData.forEach(c => {
+                    c._category = companyGetCategory(c);
+                    counts[c._category] = (counts[c._category]||0) + 1;
+                });
+                document.getElementById('catCountActive').textContent = counts.active;
+                document.getElementById('catCountLeads').textContent = counts.leads;
+                document.getElementById('catCountPast').textContent = counts.past;
+                document.getElementById('catCountNew').textContent = counts.new;
                 const totalChildren = crmCompaniesData.reduce((s, c) => s + (c.children?.length || 0), 0);
-                document.getElementById('crmCompaniesCount').textContent = `${crmCompaniesData.length} Unternehmen · ${totalChildren + crmCompaniesData.length} Einträge total · Quelle: GitHub`;
+                document.getElementById('crmCompaniesCount').textContent = `${crmCompaniesData.length} Unternehmen · ${totalChildren + crmCompaniesData.length} Einträge · Quelle: GitHub`;
                 crmFilterCompanies();
             } catch(e) {
                 document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:var(--error)">Fehler beim Laden</div>';
@@ -2049,13 +2107,23 @@
 
         function crmFilterCompanies() {
             const q = (document.getElementById('crmCompaniesSearch')?.value || '').toLowerCase();
-            const filtered = q ? crmCompaniesData.filter(c =>
-                (c.name || '').toLowerCase().includes(q) ||
-                (c.industry || '').toLowerCase().includes(q) ||
-                (c.code || '').toLowerCase().includes(q) ||
-                (c.country || '').toLowerCase().includes(q) ||
-                (c.children || []).some(ch => (ch.name||'').toLowerCase().includes(q))
-            ) : crmCompaniesData;
+            let filtered = crmCompaniesData;
+
+            // Category filter
+            if (companyCategory !== 'all') {
+                filtered = filtered.filter(c => c._category === companyCategory);
+            }
+
+            // Text search
+            if (q) {
+                filtered = filtered.filter(c =>
+                    (c.name || '').toLowerCase().includes(q) ||
+                    (c.industry || '').toLowerCase().includes(q) ||
+                    (c.code || '').toLowerCase().includes(q) ||
+                    (c.country || '').toLowerCase().includes(q) ||
+                    (c.children || []).some(ch => (ch.name||'').toLowerCase().includes(q))
+                );
+            }
 
             if (!filtered.length) {
                 document.getElementById('crmCompaniesList').innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Keine Firmen gefunden</div>';
@@ -2073,6 +2141,10 @@
                 const totalContacts = c.total_contacts || c.contact_persons || 0;
                 const contactBadge = totalContacts > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">\u{1F464}${totalContacts}</span>` : '';
 
+                // Category indicator
+                const catColors = {active:'#34d399',leads:'#fbbf24',past:'rgba(139,170,255,0.5)',new:'rgba(255,255,255,0.15)'};
+                const catDot = `<div style="width:8px;height:8px;border-radius:50%;background:${catColors[c._category]||catColors.new};flex-shrink:0" title="${{active:'Aktives Projekt',leads:'Lead',past:'Früheres Projekt',new:'Neu'}[c._category]||''}"></div>`;
+
                 const childCount = (c.children?.length || 0) + 1;
                 const isExpanded = companiesExpanded[c.code];
                 const expandable = c.children?.length > 0;
@@ -2081,6 +2153,7 @@
                     : '';
 
                 let html = `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="companyOpenProfile('${c.code}')">
+                    ${catDot}
                     <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,rgba(42,127,142,0.15),rgba(27,54,93,0.3));display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#2A7F8E;flex-shrink:0">${flag || (c.name||'?')[0].toUpperCase()}</div>
                     <div style="flex:1;min-width:0">
                         <div style="display:flex;align-items:center;gap:6px">
@@ -2135,6 +2208,10 @@
             document.getElementById('companiesProfileView').style.display = '';
             document.getElementById('companyProfileName').textContent = company.name || company.code;
             document.getElementById('companyProfileCode').textContent = company.code;
+            const catLabels = {active:'Aktives Projekt',leads:'Lead',past:'Früheres Projekt',new:'Noch nie gearbeitet'};
+            const catColors = {active:'#34d399',leads:'#fbbf24',past:'rgba(139,170,255,0.6)',new:'rgba(255,255,255,0.25)'};
+            const cat = company._category || companyGetCategory(company);
+            document.getElementById('companyProfileCatBadge').innerHTML = `<span style="font-size:11px;padding:3px 10px;border-radius:8px;display:inline-flex;align-items:center;gap:5px;background:${catColors[cat]}15;color:${catColors[cat]};border:1px solid ${catColors[cat]}30"><span style="width:6px;height:6px;border-radius:50%;background:${catColors[cat]}"></span>${catLabels[cat]}</span>`;
 
             const flag = COUNTRY_FLAGS[company.country] || '';
             const indLabel = INDUSTRY_LABELS[company.industry] || company.industry || '';
