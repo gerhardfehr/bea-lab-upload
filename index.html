@@ -1264,7 +1264,7 @@
     </div>
 
     <script>
-        const API = '/api';
+        const API = window.location.hostname === 'bea-lab.io' ? 'https://www.bea-lab.io/api' : '/api';
         console.log('🟢 BEATRIX v3.12.3 loaded — mbRenderMd active');
         let files=[], tags=[], selectedDB='knowledge_base', currentTab='file', authToken=null, currentUser=null;
 
