@@ -165,6 +165,8 @@
         @keyframes toastIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
         .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,0.3); border-top-color:white; border-radius:50%; animation:spin 0.6s linear infinite; }
         @keyframes spin { to{transform:rotate(360deg)} }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        @keyframes fadeSlideIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
         .footer { position:relative; z-index:1; text-align:center; padding:32px 24px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); }
         .footer a { color:var(--accent); text-decoration:none; }
 
@@ -664,11 +666,11 @@
                     <div class="mb-summary" id="mbSessionSummary"></div>
                 </div>
 
+                <div id="mbProgress0" class="mb-inline-progress" style="display:none"></div>
                 <div class="mb-actions">
                     <button class="mb-btn mb-btn-back" onclick="mbGoToStart()">← Zurück</button>
                     <button class="mb-btn mb-btn-primary" id="mbStep0Btn" onclick="mbProcessStep0()">Analysieren →</button>
                 </div>
-                <div id="mbProgress0" class="mb-inline-progress" style="display:none"></div>
             </div>
 
             <!-- ═══ STEP 1: Entry Point ═══ -->
@@ -788,11 +790,11 @@
                     </div>
                 </div>
 
+                <div id="mbProgress3" class="mb-inline-progress" style="display:none"></div>
                 <div class="mb-actions">
                     <button class="mb-btn mb-btn-back" onclick="mbGoStep(2)">← Zurück</button>
                     <button class="mb-btn mb-btn-primary" disabled id="mbStep3Btn" onclick="mbProcessStep3()">BEATRIX analysieren lassen →</button>
                 </div>
-                <div id="mbProgress3" class="mb-inline-progress" style="display:none"></div>
             </div>
 
             <!-- ═══ STEP 4: Model ═══ -->
@@ -1996,6 +1998,170 @@ Antworte NUR als JSON Array:
             }
         }
 
+        // ── Universal Streaming + Progressive Reveal ──────────
+        function mbRenderMd(text) {
+            // Simple markdown → HTML
+            return text
+                .replace(/### (.*)/g, '<h4 style="color:var(--accent);font-size:14px;font-weight:700;margin:16px 0 6px;letter-spacing:0.3px">$1</h4>')
+                .replace(/## (.*)/g, '<h3 style="color:white;font-size:16px;font-weight:700;margin:20px 0 8px">$1</h3>')
+                .replace(/# (.*)/g, '<h2 style="color:white;font-size:18px;font-weight:700;margin:20px 0 10px">$1</h2>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong style="color:rgba(255,255,255,0.95)">$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/`(.*?)`/g, '<code style="background:rgba(139,170,255,0.1);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--accent)">$1</code>')
+                .replace(/^- (.*)/gm, '<div style="padding-left:16px;margin:3px 0">• $1</div>')
+                .replace(/^(\d+)\. (.*)/gm, '<div style="padding-left:16px;margin:3px 0">$1. $2</div>')
+                .replace(/\n\n/g, '<br><br>')
+                .replace(/\n/g, '<br>');
+        }
+
+        async function mbStreamChat(prompt, targetEl, opts = {}) {
+            /**
+             * Streams Claude response into targetEl with typewriter effect.
+             * opts: { onStart, onDone, onError, showCursor }
+             */
+            const { onStart, onDone, onError, showCursor = true } = opts;
+            let fullText = '';
+            let renderBuffer = '';
+            let renderTimer = null;
+
+            // Show cursor
+            if (showCursor) {
+                targetEl.innerHTML = '<span class="mb-cursor" style="display:inline-block;width:2px;height:16px;background:var(--accent);animation:blink 0.8s infinite;vertical-align:middle"></span>';
+            }
+            if (onStart) onStart();
+
+            try {
+                const resp = await fetch(`${API}/chat/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                    body: JSON.stringify({ question: prompt })
+                });
+
+                if (!resp.ok) {
+                    throw new Error(`Stream error: ${resp.status}`);
+                }
+
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let sseBuffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    sseBuffer += decoder.decode(value, { stream: true });
+
+                    // Parse SSE events
+                    const events = sseBuffer.split('\n\n');
+                    sseBuffer = events.pop(); // Keep incomplete event
+
+                    for (const evt of events) {
+                        for (const line of evt.split('\n')) {
+                            if (!line.startsWith('data: ')) continue;
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                if (data.type === 'token' && data.text) {
+                                    fullText += data.text;
+                                    // Throttle rendering to every 50ms for performance
+                                    if (!renderTimer) {
+                                        renderTimer = setTimeout(() => {
+                                            targetEl.innerHTML = '<div style="font-size:14px;line-height:1.8;color:rgba(255,255,255,0.85)">' +
+                                                mbRenderMd(fullText) +
+                                                (showCursor ? '<span class="mb-cursor" style="display:inline-block;width:2px;height:14px;background:var(--accent);animation:blink 0.8s infinite;vertical-align:middle;margin-left:2px"></span>' : '') +
+                                                '</div>';
+                                            targetEl.scrollTop = targetEl.scrollHeight;
+                                            renderTimer = null;
+                                        }, 50);
+                                    }
+                                } else if (data.type === 'done') {
+                                    // Final render without cursor
+                                    if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+                                    targetEl.innerHTML = '<div style="font-size:14px;line-height:1.8;color:rgba(255,255,255,0.85)">' + mbRenderMd(fullText) + '</div>';
+                                }
+                            } catch(e) {}
+                        }
+                    }
+                }
+
+                // Ensure final render
+                if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+                targetEl.innerHTML = '<div style="font-size:14px;line-height:1.8;color:rgba(255,255,255,0.85)">' + mbRenderMd(fullText) + '</div>';
+                if (onDone) onDone(fullText);
+                return fullText;
+
+            } catch(e) {
+                console.error('Stream error:', e);
+                // Fallback to non-streaming
+                try {
+                    const resp = await fetch(`${API}/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                        body: JSON.stringify({ question: prompt })
+                    });
+                    const data = await resp.json();
+                    if (data.answer) {
+                        fullText = data.answer;
+                        targetEl.innerHTML = '<div style="font-size:14px;line-height:1.8;color:rgba(255,255,255,0.85)">' + mbRenderMd(fullText) + '</div>';
+                        if (onDone) onDone(fullText);
+                        return fullText;
+                    }
+                } catch(e2) {}
+                if (onError) onError(e);
+                targetEl.innerHTML = '<div style="color:#ef4444;padding:12px">⚠ Fehler bei der Verbindung. Bitte erneut versuchen.</div>';
+                return '';
+            }
+        }
+
+        function mbShowThinking(targetEl, stages) {
+            /**
+             * Shows animated "thinking" stages while waiting.
+             * Returns { stop() } to call when done.
+             */
+            let currentStage = 0;
+            const startTime = Date.now();
+
+            function render() {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+                let html = '<div style="padding:8px 0">';
+                for (let i = 0; i < stages.length; i++) {
+                    const isDone = i < currentStage;
+                    const isActive = i === currentStage;
+                    const icon = isDone ? '<span style="color:#22c55e">✓</span>' :
+                                 isActive ? '<span style="display:inline-block;width:12px;height:12px;border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle"></span>' :
+                                 '<span style="color:rgba(255,255,255,0.2)">○</span>';
+                    const opacity = isDone ? '0.5' : isActive ? '1' : '0.25';
+                    html += `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;opacity:${opacity};transition:all 0.3s">
+                        <div style="width:20px;text-align:center">${icon}</div>
+                        <div style="font-size:13px;color:rgba(255,255,255,0.7)">${stages[i]}</div>
+                    </div>`;
+                }
+                html += `<div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px;padding-left:30px">${elapsed}s</div>`;
+                html += '</div>';
+                targetEl.innerHTML = html;
+            }
+
+            render();
+            const interval = setInterval(() => {
+                if (currentStage < stages.length - 1) currentStage++;
+                render();
+            }, 2000);
+
+            return {
+                stop() { clearInterval(interval); },
+                complete() {
+                    clearInterval(interval);
+                    currentStage = stages.length;
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    let html = '<div style="padding:8px 0">';
+                    for (const s of stages) {
+                        html += `<div style="display:flex;align-items:center;gap:10px;padding:3px 0;opacity:0.5"><div style="width:20px;text-align:center"><span style="color:#22c55e">✓</span></div><div style="font-size:13px;color:rgba(255,255,255,0.5)">${s}</div></div>`;
+                    }
+                    html += `<div style="font-size:11px;color:#22c55e;margin-top:6px;padding-left:30px">✓ Abgeschlossen in ${elapsed}s</div></div>`;
+                    targetEl.innerHTML = html;
+                }
+            };
+        }
+
         function mbGoToStart() {
             mbState.step = 0;
             mbState.selections = {};
@@ -2380,136 +2546,84 @@ Antworte NUR als JSON Array:
         async function mbComputeResult() {
             const progressEl = document.getElementById('mbComputeProgress');
             const resultEl = document.getElementById('mbResultContent');
-            const barEl = document.getElementById('mbProgressBar');
-            const pctEl = document.getElementById('mbComputePercent');
             const stageEl = document.getElementById('mbComputeStage');
             const detailEl = document.getElementById('mbComputeDetail');
             const timeEl = document.getElementById('mbComputeTime');
+            const barEl = document.getElementById('mbProgressBar');
+            const pctEl = document.getElementById('mbComputePercent');
             const stagesContainer = document.getElementById('mbComputeStages');
 
-            // Reset UI
+            // Phase 1: Show brief init progress
             progressEl.style.display = 'block';
             resultEl.style.display = 'none';
             document.getElementById('mbExportBtn').style.display = 'none';
             document.getElementById('mbNewModelBtn').style.display = 'none';
             barEl.style.width = '0%';
-            pctEl.textContent = '0%';
-            stageEl.textContent = 'Initialisiere Berechnung...';
-
-            // Render stage checklist
-            stagesContainer.innerHTML = MB_COMPUTE_STAGES.map((s, i) => `
-                <div id="mbStage${i}" style="display:flex;align-items:center;gap:10px;padding:6px 0;opacity:0.3;transition:all 0.3s">
-                    <div id="mbStageIcon${i}" style="width:20px;height:20px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">○</div>
-                    <div style="font-size:13px;color:rgba(255,255,255,0.6)">${s.label}</div>
-                </div>
-            `).join('');
+            pctEl.textContent = '';
+            stageEl.textContent = 'Verbinde mit BEATRIX Intelligence...';
+            detailEl.textContent = 'Modell-Report wird generiert';
+            timeEl.textContent = '';
+            stagesContainer.innerHTML = '';
 
             const startTime = Date.now();
-            let currentStage = 0;
+            const prompt = `Erstelle einen vollständigen Modell-Report für: "${mbState.question}". Session: ${mbState.sessionId}. Mode: ${mbState.mode}. Selections: ${JSON.stringify(mbState.selections)}.
 
-            // Stage animation timer
-            const stageInterval = setInterval(() => {
-                if (currentStage >= MB_COMPUTE_STAGES.length) { clearInterval(stageInterval); return; }
-                const s = MB_COMPUTE_STAGES[currentStage];
+Strukturiere den Report mit Markdown-Überschriften:
+## Modell-Report: [Kurztitel]
+### 1. Problemstellung & Domain
+### 2. 10C Complementarity Mapping
+### 3. Ψ-Kontextdimensionen
+### 4. BCM Parameter (Willingness · Ability · Capacity)
+### 5. Ergebnis & Verhaltensvorhersage
+### 6. Sensitivitätsanalyse
+### 7. Handlungsempfehlungen
 
-                // Update progress bar
-                barEl.style.width = s.pct + '%';
-                pctEl.textContent = s.pct + '%';
-                stageEl.textContent = s.label;
-                detailEl.textContent = s.detail;
+Schreibe detailliert, professionell und wissenschaftlich fundiert. Nutze **fette** Begriffe für Schlüsselkonzepte.`;
 
-                // Update elapsed time
-                const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-                const estTotal = Math.max(15, Math.round(elapsed / (s.pct / 100)));
-                const remaining = Math.max(1, estTotal - elapsed);
-                timeEl.textContent = `${elapsed}s vergangen · ~${remaining}s verbleibend`;
-
-                // Activate stage in checklist
-                const stageRow = document.getElementById('mbStage' + currentStage);
-                const stageIcon = document.getElementById('mbStageIcon' + currentStage);
-                if (stageRow) { stageRow.style.opacity = '1'; }
-                if (stageIcon) {
-                    stageIcon.style.borderColor = 'var(--accent)';
-                    stageIcon.style.background = 'rgba(139,170,255,0.15)';
-                    stageIcon.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:var(--accent)"></div>';
-                }
-
-                // Mark previous stages as done
-                if (currentStage > 0) {
-                    const prevIcon = document.getElementById('mbStageIcon' + (currentStage - 1));
-                    if (prevIcon) {
-                        prevIcon.style.borderColor = '#22c55e';
-                        prevIcon.style.background = 'rgba(34,197,94,0.15)';
-                        prevIcon.innerHTML = '<span style="color:#22c55e;font-size:12px">✓</span>';
-                    }
-                }
-
-                currentStage++;
-            }, 1800); // ~1.8s per stage → ~16s total for 9 stages
-
-            // Actual API call in parallel
+            // Phase 2: Switch to streaming result
             try {
-                const resp = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
-                    body: JSON.stringify({ question: `Erstelle einen vollständigen Modell-Report für: "${mbState.question}". Session: ${mbState.sessionId}. Mode: ${mbState.mode}. Selections: ${JSON.stringify(mbState.selections)}. Formatiere als strukturierten Bericht mit: 1. Modell-ID und Typ, 2. 10C Mapping (welche Dimensionen relevant), 3. Ψ-Dimensionen und Kontextwerte, 4. BCM Parameter (Willingness/Ability/Capacity), 5. Ergebnis und Verhaltensvorhersage, 6. Sensitivitätsanalyse (welche Parameter am meisten Einfluss haben), 7. Handlungsempfehlungen.` })
-                });
-                const data = await resp.json();
-
-                // Stop stage animation
-                clearInterval(stageInterval);
-
-                // Complete all remaining stages
-                for (let i = 0; i < MB_COMPUTE_STAGES.length; i++) {
-                    const row = document.getElementById('mbStage' + i);
-                    const icon = document.getElementById('mbStageIcon' + i);
-                    if (row) row.style.opacity = '1';
-                    if (icon) {
-                        icon.style.borderColor = '#22c55e';
-                        icon.style.background = 'rgba(34,197,94,0.15)';
-                        icon.innerHTML = '<span style="color:#22c55e;font-size:12px">✓</span>';
-                    }
-                }
-
-                // 100% complete
-                barEl.style.width = '100%';
-                pctEl.textContent = '100%';
-                stageEl.textContent = '✓ Berechnung abgeschlossen';
-                detailEl.textContent = '';
-                const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-                timeEl.textContent = `Fertig in ${totalTime}s`;
-                document.getElementById('mbComputeSpinner').style.animation = 'none';
-                document.getElementById('mbComputeSpinner').style.borderColor = '#22c55e';
-                document.getElementById('mbComputeSpinner').style.borderTopColor = '#22c55e';
-
-                // Show result after brief pause
-                await new Promise(r => setTimeout(r, 800));
+                // Show streaming area
+                await new Promise(r => setTimeout(r, 600));
                 progressEl.style.display = 'none';
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+                        <div style="width:16px;height:16px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0" id="mbReportSpinner"></div>
+                        <div>
+                            <div style="font-size:14px;font-weight:600;color:white">📊 Modell-Report</div>
+                            <div style="font-size:11px;color:var(--text-secondary)" id="mbReportMeta">Session ${mbState.sessionId || 'N/A'} · Streaming...</div>
+                        </div>
+                    </div>
+                    <div id="mbStreamTarget" style="max-height:60vh;overflow-y:auto;padding-right:8px"></div>
+                `;
 
-                if (data.answer) {
-                    resultEl.style.display = 'block';
-                    resultEl.innerHTML = `
-                        <div class="mb-summary" style="margin-bottom:16px">
-                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-                                <div style="font-size:24px">📊</div>
-                                <div>
-                                    <div style="font-size:16px;font-weight:700;color:white">Modell-Report</div>
-                                    <div style="font-size:12px;color:var(--text-secondary)">Berechnet in ${totalTime}s · Session ${mbState.sessionId || 'N/A'}</div>
-                                </div>
-                            </div>
-                            <div style="white-space:pre-wrap;font-size:13px;color:var(--text);line-height:1.7">${data.answer}</div>
-                        </div>`;
+                const targetEl = document.getElementById('mbStreamTarget');
+                const fullText = await mbStreamChat(prompt, targetEl, {
+                    onDone: (text) => {
+                        const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+                        const spinner = document.getElementById('mbReportSpinner');
+                        if (spinner) {
+                            spinner.style.animation = 'none';
+                            spinner.style.borderColor = '#22c55e';
+                            spinner.style.borderTopColor = '#22c55e';
+                        }
+                        const meta = document.getElementById('mbReportMeta');
+                        if (meta) meta.textContent = `Session ${mbState.sessionId || 'N/A'} · Generiert in ${totalTime}s`;
+                        document.getElementById('mbExportBtn').style.display = '';
+                        document.getElementById('mbNewModelBtn').style.display = '';
+                    }
+                });
+
+                if (!fullText) {
+                    // Fallback if streaming returned nothing
+                    document.getElementById('mbExportBtn').style.display = '';
+                    document.getElementById('mbNewModelBtn').style.display = '';
                 }
-
-                document.getElementById('mbExportBtn').style.display = '';
-                document.getElementById('mbNewModelBtn').style.display = '';
 
             } catch(e) {
-                clearInterval(stageInterval);
                 console.error('Compute error:', e);
-                stageEl.textContent = '⚠ Fehler bei der Berechnung';
-                detailEl.textContent = 'Bitte versuche es erneut oder kontaktiere den Support.';
-                barEl.style.background = '#ef4444';
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = '<div style="color:#ef4444;padding:20px;text-align:center">⚠ Fehler bei der Berechnung. Bitte versuche es erneut.</div>';
                 document.getElementById('mbExportBtn').style.display = '';
                 document.getElementById('mbNewModelBtn').style.display = '';
             }
