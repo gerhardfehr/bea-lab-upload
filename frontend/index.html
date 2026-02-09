@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
+<script>if(location.hostname==='bea-lab.io')location.replace('https://www.bea-lab.io'+location.pathname+location.search+location.hash);</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -1479,7 +1480,7 @@
                     err.classList.add('visible'); btn.disabled=false; btn.textContent='Anmelden'; return;
                 }
                 onAuthSuccess(await r.json());
-            } catch(e) { err.textContent='Verbindungsfehler.'; err.classList.add('visible'); }
+            } catch(e) { err.textContent='Verbindungsfehler: ' + e.message + ' [' + API + '/login]'; err.classList.add('visible'); }
             btn.disabled=false; btn.textContent='Anmelden';
         }
 
