@@ -494,11 +494,39 @@ def embed_all_documents(db):
 
 # ── AUTO-SAVE CHAT TO KNOWLEDGE BASE ──
 
+def gh_put_file(repo: str, path: str, content: str, message: str) -> dict:
+    """Generic GitHub file PUT – creates or updates a file in any repo."""
+    if not GH_TOKEN:
+        return {"error": "no token"}
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    headers = {"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json",
+               "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
+    # Get existing SHA if file exists
+    sha = None
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+        sha = resp.get("sha")
+    except: pass
+    payload = {"message": message, "content": base64.b64encode(content.encode()).decode(), "branch": "main"}
+    if sha: payload["sha"] = sha
+    try:
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="PUT", headers=headers)
+        resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=30).read())
+        return {"ok": True, "url": resp.get("content", {}).get("html_url", ""), "sha": resp.get("content", {}).get("sha", "")}
+    except Exception as e:
+        logger.warning(f"GitHub PUT failed {path}: {e}")
+        return {"error": str(e)}
+
+
 def auto_save_chat_to_kb(question: str, answer: str, user_email: str, intent: str = "chat",
                           metadata: dict = None):
-    """Save a chat Q&A pair as a searchable document in the Knowledge Base.
-    Every conversation becomes organizational knowledge."""
-    import hashlib
+    """Save a chat Q&A pair as a searchable document in the Knowledge Base AND push to GitHub.
+    Every conversation becomes organizational knowledge – in PostgreSQL for fast search,
+    and on GitHub for permanence and team access."""
+    import hashlib, yaml
 
     # Skip trivially short or empty answers
     if not answer or len(answer.strip()) < 50:
@@ -516,19 +544,25 @@ def auto_save_chat_to_kb(question: str, answer: str, user_email: str, intent: st
     title = f"Chat: {question.strip()[:100]}"
 
     # Tags for filtering
-    tags = ["chat-insight", f"intent:{intent}", f"user:{user_email.split('@')[0]}"]
+    user_short = user_email.split('@')[0] if user_email else 'unknown'
+    tags = ["chat-insight", f"intent:{intent}", f"user:{user_short}"]
+    customer_code = ""
+    project_slug = ""
     if metadata:
         if metadata.get("customer_code"):
-            tags.append(f"customer:{metadata['customer_code']}")
+            customer_code = metadata["customer_code"]
+            tags.append(f"customer:{customer_code}")
         if metadata.get("project_slug"):
-            tags.append(f"project:{metadata['project_slug']}")
+            project_slug = metadata["project_slug"]
+            tags.append(f"project:{project_slug}")
 
+    now = datetime.utcnow()
     doc_meta = {
         "source": "chat",
         "intent": intent,
         "user_email": user_email,
         "question": question.strip()[:500],
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": now.isoformat(),
     }
     if metadata:
         doc_meta.update(metadata)
@@ -541,6 +575,7 @@ def auto_save_chat_to_kb(question: str, answer: str, user_email: str, intent: st
             logger.debug(f"Chat insight already in KB: {content_hash}")
             return existing.id
 
+        # ── 1) Save to PostgreSQL (fast search) ──
         doc = Document(
             title=title,
             content=content,
@@ -558,13 +593,48 @@ def auto_save_chat_to_kb(question: str, answer: str, user_email: str, intent: st
         db.add(doc)
         db.commit()
         doc_id = doc.id
-        logger.info(f"💬→📚 Chat saved to KB: '{title[:60]}' (intent={intent}, user={user_email.split('@')[0]})")
+        logger.info(f"💬→📚 Chat saved to KB: '{title[:60]}' (intent={intent}, user={user_short})")
 
-        # Embed in background (non-blocking)
+        # Embed for vector search (non-blocking)
         try:
             embed_document(db, doc_id)
         except Exception as e:
-            logger.warning(f"Embedding deferred for chat doc: {e}")
+            logger.warning(f"Embedding deferred: {e}")
+
+        # ── 2) Push to GitHub (permanent knowledge) ──
+        try:
+            year_month = now.strftime("%Y-%m")
+            # Build YAML for GitHub
+            gh_data = {
+                "id": doc_id,
+                "title": title,
+                "intent": intent,
+                "user": user_email,
+                "timestamp": now.isoformat(),
+                "customer_code": customer_code or None,
+                "project_slug": project_slug or None,
+                "tags": tags,
+                "question": question.strip()[:2000],
+                "answer": answer.strip()[:5000],
+            }
+            yaml_content = yaml.dump(gh_data, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            gh_path = f"data/knowledge/chat-insights/{year_month}/{content_hash}.yaml"
+            gh_result = gh_put_file(
+                GH_CONTEXT_REPO, gh_path, yaml_content,
+                f"💬 Chat insight: {intent} – {question.strip()[:60]}"
+            )
+            if gh_result.get("ok"):
+                # Update DB with GitHub URL
+                try:
+                    doc.github_url = gh_result.get("url", "")
+                    doc.status = "indexed+github"
+                    db.commit()
+                    logger.info(f"💬→🐙 Chat insight pushed to GitHub: {gh_path}")
+                except: pass
+            else:
+                logger.warning(f"GitHub push skipped: {gh_result.get('error','unknown')}")
+        except Exception as e:
+            logger.warning(f"GitHub push for chat insight failed: {e}")
 
         return doc_id
     except Exception as e:
