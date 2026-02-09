@@ -471,7 +471,7 @@
             <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
             <a href="#" class="nav-link" data-section="profile" onclick="showSection('profile',this)">Profil</a>
             <a href="#" class="nav-link" data-section="context" id="navContext" onclick="showSection('context',this)" style="display:none">Ausgangslage</a>
-            <a href="#" class="nav-link" data-section="leads" id="navLeads" onclick="showSection('leads',this)" style="display:none">Leads</a>
+            <a href="#" class="nav-link" data-section="leads" id="navLeads" onclick="showSection('leads',this)" style="display:none">CRM</a>
             <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">Admin</a>
         </div>
         <div class="nav-right">
@@ -998,83 +998,102 @@
     <section class="section" id="leads-section">
         <div class="container">
             <div class="section-header">
-                <h2>Lead-Management</h2>
-                <p>Pipeline, Aktivitäten und Conversion Tracking.</p>
+                <h2>CRM</h2>
+                <p>Pipeline, Kontakte und Deal-Management.</p>
             </div>
 
             <!-- KPI Cards -->
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Aktive Leads</div>
-                    <div id="leadsKpiActive" style="font-size:28px;font-weight:700;color:white;margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">in Pipeline</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:20px" id="crmKpis">
+                <div style="padding:14px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Aktive Deals</div>
+                    <div id="crmKpiActive" style="font-size:24px;font-weight:700;color:white;margin:4px 0">–</div>
                 </div>
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Diesen Monat</div>
-                    <div id="leadsKpiMonth" style="font-size:28px;font-weight:700;color:#34d399;margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(52,211,153,0.7)">neue Leads</div>
+                <div style="padding:14px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Pipeline (gew.)</div>
+                    <div id="crmKpiPipeline" style="font-size:24px;font-weight:700;color:var(--accent-light);margin:4px 0">–</div>
                 </div>
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Conversion</div>
-                    <div id="leadsKpiConv" style="font-size:28px;font-weight:700;color:#fbbf24;margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(251,191,36,0.7)">Rate</div>
+                <div style="padding:14px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Won</div>
+                    <div id="crmKpiWon" style="font-size:24px;font-weight:700;color:#34d399;margin:4px 0">–</div>
                 </div>
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Pipeline-Wert</div>
-                    <div id="leadsKpiValue" style="font-size:28px;font-weight:700;color:var(--accent-light);margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">CHF gesamt</div>
+                <div style="padding:14px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Conversion</div>
+                    <div id="crmKpiConv" style="font-size:24px;font-weight:700;color:#fbbf24;margin:4px 0">–</div>
                 </div>
-            </div>
-
-            <!-- Pipeline Stages -->
-            <div style="margin-bottom:24px">
-                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px">Pipeline</div>
-                <div id="leadsPipeline" style="display:flex;gap:2px;height:36px;border-radius:8px;overflow:hidden">
-                    <div style="flex:3;background:rgba(139,170,255,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600">Kontakt</div>
-                    <div style="flex:2;background:rgba(139,170,255,0.5);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600">Qualifiziert</div>
-                    <div style="flex:1.5;background:rgba(251,191,36,0.5);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600">Proposal</div>
-                    <div style="flex:1;background:rgba(52,211,153,0.5);display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600">Won</div>
+                <div style="padding:14px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                    <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Firmen</div>
+                    <div id="crmKpiCompanies" style="font-size:24px;font-weight:700;color:rgba(255,255,255,0.6);margin:4px 0">–</div>
                 </div>
             </div>
 
-            <!-- Lead Table -->
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:600;color:white">Leads <span id="leadsCount" style="font-size:12px;color:rgba(255,255,255,0.4)"></span></div>
-                <div style="display:flex;gap:8px">
-                    <button class="mb-btn mb-btn-primary" onclick="leadsShowAdd()" style="font-size:12px;padding:6px 14px">+ Neuer Lead</button>
-                    <button class="mb-btn mb-btn-back" onclick="leadsExport()" style="font-size:12px;padding:6px 14px">↓ Export</button>
+            <!-- View Toggle + Actions -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+                <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+                    <button class="fb-tool active" id="crmViewKanban" onclick="crmSetView('kanban')" style="border:none;border-radius:0;font-size:12px">▣ Kanban</button>
+                    <button class="fb-tool" id="crmViewTable" onclick="crmSetView('table')" style="border:none;border-radius:0;font-size:12px">☰ Tabelle</button>
                 </div>
+                <div style="flex:1"></div>
+                <button class="mb-btn mb-btn-primary" onclick="crmShowDealForm()" style="font-size:12px;padding:6px 14px">+ Neuer Deal</button>
+                <button class="mb-btn mb-btn-back" onclick="crmSyncGithub()" style="font-size:12px;padding:6px 14px" id="crmSyncBtn">🔄 GitHub Sync</button>
             </div>
 
-            <!-- Add Lead Form (hidden) -->
-            <div id="leadsAddForm" style="display:none;padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
-                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px">Neuer Lead</div>
+            <!-- Sync Hint -->
+            <div id="crmSyncHint" style="display:none;padding:16px;background:rgba(139,170,255,0.06);border:1px solid rgba(139,170,255,0.15);border-radius:12px;margin-bottom:16px;text-align:center">
+                <div style="font-size:14px;color:white;margin-bottom:6px">🔄 60 Leads aus GitHub verfügbar</div>
+                <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:10px">Klicke «GitHub Sync» um die Lead-Datenbank aus dem Framework-Repository zu importieren.</div>
+                <button class="mb-btn mb-btn-primary" onclick="crmSyncGithub()" style="font-size:13px;padding:8px 20px">Jetzt synchronisieren</button>
+            </div>
+
+            <!-- New Deal Form (hidden) -->
+            <div id="crmDealForm" style="display:none;padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
+                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px" id="crmDealFormTitle">Neuer Deal</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                    <input class="mb-input" id="leadName" placeholder="Firma / Name" style="font-size:13px;padding:8px 12px">
-                    <input class="mb-input" id="leadContact" placeholder="Kontaktperson" style="font-size:13px;padding:8px 12px">
-                    <input class="mb-input" id="leadEmail" placeholder="E-Mail" style="font-size:13px;padding:8px 12px">
-                    <input class="mb-input" id="leadValue" placeholder="Wert (CHF)" type="number" style="font-size:13px;padding:8px 12px">
-                    <select class="mb-input" id="leadStage" style="font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
-                        <option value="kontakt">Kontakt</option>
-                        <option value="qualifiziert">Qualifiziert</option>
+                    <input class="mb-input" id="crmDealTitle" placeholder="Deal-Titel / Projekt" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="crmDealCompany" placeholder="Firma" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="crmDealContact" placeholder="Kontaktperson" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="crmDealEmail" placeholder="E-Mail" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="crmDealValue" placeholder="Wert (CHF)" type="number" style="font-size:13px;padding:8px 12px">
+                    <select class="mb-input" id="crmDealStage" style="font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                        <option value="prospect">Prospect</option>
+                        <option value="qualified">Qualified</option>
                         <option value="proposal">Proposal</option>
+                        <option value="negotiation">Negotiation</option>
                         <option value="won">Won</option>
-                        <option value="lost">Lost</option>
+                        <option value="active">Active</option>
                     </select>
-                    <input class="mb-input" id="leadSource" placeholder="Quelle (z.B. Empfehlung, Event)" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="crmDealSource" placeholder="Quelle" style="font-size:13px;padding:8px 12px">
+                    <input class="mb-input" id="crmDealNextAction" placeholder="Nächste Aktion" style="font-size:13px;padding:8px 12px">
                 </div>
-                <textarea class="mb-input" id="leadNotes" placeholder="Notizen..." style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:60px;width:100%;box-sizing:border-box"></textarea>
+                <textarea class="mb-input" id="crmDealNotes" placeholder="Notizen..." style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:50px;width:100%;box-sizing:border-box"></textarea>
                 <div style="display:flex;gap:8px;margin-top:12px">
-                    <button class="mb-btn mb-btn-primary" onclick="leadsSave()" style="font-size:12px;padding:6px 14px">Speichern</button>
-                    <button class="mb-btn mb-btn-back" onclick="document.getElementById('leadsAddForm').style.display='none'" style="font-size:12px;padding:6px 14px">Abbrechen</button>
+                    <button class="mb-btn mb-btn-primary" onclick="crmSaveDeal()" style="font-size:12px;padding:6px 14px">Speichern</button>
+                    <button class="mb-btn mb-btn-back" onclick="document.getElementById('crmDealForm').style.display='none'" style="font-size:12px;padding:6px 14px">Abbrechen</button>
                 </div>
             </div>
 
-            <div id="leadsTable" style="overflow-x:auto">
-                <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Leads werden geladen...</div>
+            <!-- Kanban Board -->
+            <div id="crmKanban" style="display:flex;gap:10px;overflow-x:auto;padding-bottom:12px;min-height:300px">
+                <!-- Columns injected by JS -->
+            </div>
+
+            <!-- Table View (hidden) -->
+            <div id="crmTable" style="display:none;overflow-x:auto">
+                <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Laden...</div>
             </div>
         </div>
     </section>
+
+    <!-- Deal Detail Drawer -->
+    <div id="crmDrawer" style="display:none;position:fixed;top:0;right:0;bottom:0;width:min(440px,90vw);z-index:9000;background:var(--navy-card);border-left:1px solid var(--border);box-shadow:-8px 0 30px rgba(0,0,0,0.4);overflow-y:auto;transition:transform 0.25s ease">
+        <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+            <div style="flex:1">
+                <div style="font-size:16px;font-weight:700;color:white" id="crmDrawerTitle">Deal</div>
+                <div style="font-size:12px;color:rgba(255,255,255,0.4)" id="crmDrawerCompany">Firma</div>
+            </div>
+            <button onclick="crmCloseDrawer()" style="border:none;background:none;color:rgba(255,255,255,0.4);font-size:18px;cursor:pointer;padding:4px">✕</button>
+        </div>
+        <div id="crmDrawerContent" style="padding:16px"></div>
+    </div>
 
     <section class="section" id="admin-section">
         <div class="container">
@@ -1566,7 +1585,7 @@
             if(name==='documents') loadDocuments();
             if(name==='admin') loadAdminData();
             if(name==='context') ctxLoad();
-            if(name==='leads') leadsLoad();
+            if(name==='leads') crmLoad();
             if(name==='profile') loadProfile();
             if(name==='chat') { loadChatHistory(); document.getElementById('chatInput').focus(); }
             if(name==='model') { if (!mbUserProfile) mbLoadUserProfile().then(() => mbApplyDefault('start')); }
@@ -1619,7 +1638,7 @@
         // Role → Tab mapping (which tabs each role can see)
         const ROLE_TABS = {
             researcher: [],                    // standard tabs only
-            sales:      ['context', 'leads'],  // + Ausgangslage + Leads
+            sales:      ['context', 'leads'],  // + Ausgangslage + CRM
             operations: ['context'],           // + Ausgangslage
             admin:      ['context', 'leads']   // + everything (admin tab handled separately)
         };
@@ -1766,144 +1785,206 @@
             } catch(e) { showToast('Fehler', 'error'); }
         }
 
-        // ── Lead-Management ──────────────────────────
-        let leadsData = [];
+        // ── CRM ──────────────────────────────────────────
+        let crmDeals = [];
+        let crmView = 'kanban';
+        const CRM_STAGES = [
+            { id: 'prospect', label: 'Prospect', color: 'rgba(139,170,255,0.8)', prob: 10, icon: '🎯' },
+            { id: 'qualified', label: 'Qualified', color: 'rgba(56,189,248,0.8)', prob: 25, icon: '✅' },
+            { id: 'proposal', label: 'Proposal', color: 'rgba(251,191,36,0.8)', prob: 50, icon: '📄' },
+            { id: 'negotiation', label: 'Negotiation', color: 'rgba(232,163,61,0.9)', prob: 75, icon: '🤝' },
+            { id: 'won', label: 'Won', color: 'rgba(52,211,153,0.8)', prob: 100, icon: '🏆' },
+            { id: 'active', label: 'Active', color: 'rgba(52,211,153,0.6)', prob: 100, icon: '⚡' },
+            { id: 'dormant', label: 'Dormant', color: 'rgba(148,163,184,0.5)', prob: 5, icon: '💤' },
+            { id: 'churned', label: 'Churned', color: 'rgba(248,113,113,0.4)', prob: 0, icon: '📉' },
+            { id: 'lost', label: 'Lost', color: 'rgba(248,113,113,0.6)', prob: 0, icon: '✗' }
+        ];
+        const CRM_PIPELINE = ['prospect', 'qualified', 'proposal', 'negotiation', 'won', 'active'];
 
-        function leadsShowAdd() {
-            const f = document.getElementById('leadsAddForm');
-            f.style.display = f.style.display === 'none' ? 'block' : 'none';
-        }
-
-        async function leadsLoad() {
+        async function crmLoad() {
             try {
-                const r = await fetch(`${API}/leads`, { headers: H() });
-                if (!r.ok) throw new Error('Load failed');
-                leadsData = await r.json();
-                leadsRender();
-            } catch(e) {
-                console.error('Leads load:', e);
-                document.getElementById('leadsTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Leads vorhanden.</div>';
-                leadsData = [];
-                leadsRenderKpis();
-            }
+                const [dealsR, statsR] = await Promise.all([
+                    fetch(`${API}/crm/deals`, { headers: H() }),
+                    fetch(`${API}/crm/stats`, { headers: H() })
+                ]);
+                crmDeals = dealsR.ok ? await dealsR.json() : [];
+                const stats = statsR.ok ? await statsR.json() : {};
+                crmRenderKpis(stats);
+                crmRenderView();
+                const hint = document.getElementById('crmSyncHint');
+                if (hint) hint.style.display = crmDeals.length ? 'none' : 'block';
+            } catch(e) { console.error('CRM load:', e); crmDeals = []; crmRenderView(); }
         }
 
-        function leadsRender() {
-            const stageColors = { kontakt: 'rgba(139,170,255,0.8)', qualifiziert: 'rgba(56,189,248,0.8)', proposal: 'rgba(251,191,36,0.8)', won: 'rgba(52,211,153,0.8)', lost: 'rgba(248,113,113,0.6)' };
-            const stageLabels = { kontakt: 'Kontakt', qualifiziert: 'Qualifiziert', proposal: 'Proposal', won: 'Won', lost: 'Lost' };
+        function crmRenderKpis(s) {
+            document.getElementById('crmKpiActive').textContent = s.active_deals || 0;
+            document.getElementById('crmKpiPipeline').textContent = s.pipeline_value ? new Intl.NumberFormat('de-CH', {notation:'compact'}).format(s.pipeline_value) + ' CHF' : '–';
+            document.getElementById('crmKpiWon').textContent = s.won_deals || 0;
+            document.getElementById('crmKpiConv').textContent = (s.conversion_rate || 0) + '%';
+            document.getElementById('crmKpiCompanies').textContent = s.companies || 0;
+        }
 
-            document.getElementById('leadsCount').textContent = `(${leadsData.length})`;
+        function crmSetView(v) {
+            crmView = v;
+            document.getElementById('crmViewKanban').classList.toggle('active', v === 'kanban');
+            document.getElementById('crmViewTable').classList.toggle('active', v === 'table');
+            document.getElementById('crmKanban').style.display = v === 'kanban' ? 'flex' : 'none';
+            document.getElementById('crmTable').style.display = v === 'table' ? 'block' : 'none';
+            crmRenderView();
+        }
 
-            if (!leadsData.length) {
-                document.getElementById('leadsTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Leads vorhanden. Klicke «+ Neuer Lead» um zu starten.</div>';
-                leadsRenderKpis();
-                return;
-            }
+        function crmRenderView() { if (crmView === 'kanban') crmRenderKanban(); else crmRenderTable(); }
 
-            const rows = leadsData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at)).map(l => {
-                const date = new Date(l.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: '2-digit' });
-                const sc = stageColors[l.stage] || '#94a3b8';
-                const valStr = l.value ? new Intl.NumberFormat('de-CH').format(l.value) + ' CHF' : '–';
-                return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
-                    <td style="padding:10px 12px;font-weight:500;color:white">${l.company || '–'}</td>
-                    <td style="padding:10px 12px;color:rgba(255,255,255,0.6);font-size:13px">${l.contact || '–'}</td>
-                    <td style="padding:10px 12px"><span style="font-size:11px;padding:3px 10px;border-radius:12px;background:${sc}22;color:${sc};border:1px solid ${sc}44">${stageLabels[l.stage] || l.stage}</span></td>
-                    <td style="padding:10px 12px;color:rgba(255,255,255,0.6);font-size:13px">${valStr}</td>
-                    <td style="padding:10px 12px;color:rgba(255,255,255,0.35);font-size:12px">${date}</td>
-                    <td style="padding:10px 8px">
-                        <select onchange="leadsUpdateStage('${l.id}',this.value)" style="font-size:11px;padding:3px 6px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer">
-                            ${Object.keys(stageLabels).map(s => `<option value="${s}" ${s===l.stage?'selected':''}>${stageLabels[s]}</option>`).join('')}
-                        </select>
-                    </td>
-                </tr>`;
+        function crmRenderKanban() {
+            const container = document.getElementById('crmKanban');
+            container.innerHTML = CRM_PIPELINE.map(stageId => {
+                const stage = CRM_STAGES.find(s => s.id === stageId);
+                const deals = crmDeals.filter(d => d.stage === stageId);
+                const stageValue = deals.reduce((s, d) => s + (d.value || 0), 0);
+                return `<div class="crm-col" data-stage="${stageId}" ondragover="event.preventDefault();this.style.background='rgba(139,170,255,0.05)'" ondragleave="this.style.background=''" ondrop="crmDrop(event,'${stageId}');this.style.background=''">
+                    <div style="padding:10px 12px;border-bottom:2px solid ${stage.color};display:flex;align-items:center;gap:6px">
+                        <span style="font-size:11px">${stage.icon}</span>
+                        <span style="font-size:12px;font-weight:600;color:white;flex:1">${stage.label}</span>
+                        <span style="font-size:11px;color:rgba(255,255,255,0.3)">${deals.length}</span>
+                    </div>
+                    <div style="padding:6px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;max-height:60vh">
+                        ${deals.length === 0 ? '<div style="text-align:center;padding:16px;font-size:11px;color:rgba(255,255,255,0.15)">–</div>' :
+                        deals.map(d => crmRenderCard(d, stage.color)).join('')}
+                    </div>
+                </div>`;
             }).join('');
-
-            document.getElementById('leadsTable').innerHTML = `<table style="width:100%;border-collapse:collapse">
-                <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08)">
-                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Firma</th>
-                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Kontakt</th>
-                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Stage</th>
-                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Wert</th>
-                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Datum</th>
-                    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase">Aktion</th>
-                </tr></thead>
-                <tbody>${rows}</tbody>
-            </table>`;
-
-            leadsRenderKpis();
+            const other = crmDeals.filter(d => !CRM_PIPELINE.includes(d.stage));
+            if (other.length) {
+                container.innerHTML += `<div style="min-width:80px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid rgba(255,255,255,0.04)"><div style="padding:10px;text-align:center"><div style="font-size:11px;color:rgba(255,255,255,0.2)">Archiv</div><div style="font-size:16px;color:rgba(255,255,255,0.3)">${other.length}</div></div></div>`;
+            }
         }
 
-        function leadsRenderKpis() {
-            const active = leadsData.filter(l => l.stage !== 'lost' && l.stage !== 'won');
-            const won = leadsData.filter(l => l.stage === 'won');
-            const thisMonth = leadsData.filter(l => {
-                const d = new Date(l.created_at);
-                const now = new Date();
-                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-            });
-            const totalValue = active.reduce((s, l) => s + (l.value || 0), 0);
-            const convRate = leadsData.length > 0 ? Math.round(won.length / leadsData.length * 100) : 0;
-
-            document.getElementById('leadsKpiActive').textContent = active.length;
-            document.getElementById('leadsKpiMonth').textContent = thisMonth.length;
-            document.getElementById('leadsKpiConv').textContent = convRate + '%';
-            document.getElementById('leadsKpiValue').textContent = totalValue > 0 ? new Intl.NumberFormat('de-CH', { notation: 'compact' }).format(totalValue) : '–';
-
-            // Pipeline bar
-            const stages = ['kontakt', 'qualifiziert', 'proposal', 'won'];
-            const counts = stages.map(s => leadsData.filter(l => l.stage === s).length);
-            const total = Math.max(1, counts.reduce((a,b) => a+b, 0));
-            const colors = ['rgba(139,170,255,0.3)', 'rgba(139,170,255,0.5)', 'rgba(251,191,36,0.5)', 'rgba(52,211,153,0.5)'];
-            const labels = ['Kontakt', 'Qualifiziert', 'Proposal', 'Won'];
-            document.getElementById('leadsPipeline').innerHTML = stages.map((s, i) =>
-                counts[i] > 0 ? `<div style="flex:${counts[i]};background:${colors[i]};display:flex;align-items:center;justify-content:center;font-size:11px;color:white;font-weight:600;min-width:40px">${labels[i]} (${counts[i]})</div>` : ''
-            ).join('');
+        function crmRenderCard(d, stageColor) {
+            const val = d.value ? new Intl.NumberFormat('de-CH').format(d.value) : '';
+            const owner = d.owner ? d.owner.replace('OWN-','') : '';
+            const hot = d.notes && d.notes.includes('🔥') ? '🔥' : '';
+            return `<div class="crm-card" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${d.id}')" onclick="crmOpenDeal('${d.id}')">
+                <div style="font-size:12px;font-weight:600;color:white;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.title||'–'} ${hot}</div>
+                <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:1px">${d.company_name||''}</div>
+                ${d.contact_name ? `<div style="font-size:10px;color:rgba(255,255,255,0.25);margin-top:3px">👤 ${d.contact_name}</div>` : ''}
+                ${d.next_action ? `<div style="font-size:10px;color:rgba(251,191,36,0.8);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${d.next_action}</div>` : ''}
+                <div style="display:flex;align-items:center;gap:4px;margin-top:4px">
+                    ${val ? `<span style="font-size:10px;font-weight:600;color:${stageColor}">${val} CHF</span>` : ''}
+                    <span style="flex:1"></span>
+                    ${owner ? `<span style="font-size:9px;padding:1px 5px;border-radius:6px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3)">${owner}</span>` : ''}
+                </div>
+            </div>`;
         }
 
-        async function leadsSave() {
-            const lead = {
-                company: document.getElementById('leadName').value.trim(),
-                contact: document.getElementById('leadContact').value.trim(),
-                email: document.getElementById('leadEmail').value.trim(),
-                value: parseFloat(document.getElementById('leadValue').value) || 0,
-                stage: document.getElementById('leadStage').value,
-                source: document.getElementById('leadSource').value.trim(),
-                notes: document.getElementById('leadNotes').value.trim()
-            };
-            if (!lead.company) { showToast('Bitte Firma angeben', 'error'); return; }
+        async function crmDrop(event, newStage) {
+            event.preventDefault();
+            const dealId = event.dataTransfer.getData('text/plain');
+            if (!dealId) return;
             try {
-                const r = await fetch(`${API}/leads`, {
-                    method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify(lead)
-                });
-                if (!r.ok) throw new Error('Save failed');
-                showToast('Lead gespeichert', 'success');
-                document.getElementById('leadsAddForm').style.display = 'none';
-                ['leadName','leadContact','leadEmail','leadValue','leadSource','leadNotes'].forEach(id => document.getElementById(id).value = '');
-                leadsLoad();
-            } catch(e) { showToast('Fehler beim Speichern', 'error'); }
-        }
-
-        async function leadsUpdateStage(id, stage) {
-            try {
-                await fetch(`${API}/leads/${id}`, {
-                    method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ stage })
-                });
-                leadsLoad();
+                await fetch(`${API}/crm/deals/${dealId}`, { method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: newStage }) });
+                crmLoad(); showToast('Stage aktualisiert', 'success');
             } catch(e) { showToast('Fehler', 'error'); }
         }
 
-        function leadsExport() {
-            if (!leadsData.length) { showToast('Keine Leads zum Exportieren', 'info'); return; }
-            const headers = ['Firma', 'Kontakt', 'E-Mail', 'Stage', 'Wert', 'Quelle', 'Notizen', 'Erstellt'];
-            const rows = leadsData.map(l => [l.company, l.contact, l.email, l.stage, l.value || '', l.source || '', (l.notes||'').replace(/\n/g,' '), l.created_at]);
-            const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `leads-export-${new Date().toISOString().slice(0,10)}.csv`;
-            a.click();
+        function crmRenderTable() {
+            if (!crmDeals.length) { document.getElementById('crmTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Keine Deals. Klicke «GitHub Sync» um Leads zu importieren.</div>'; return; }
+            const stageMap = Object.fromEntries(CRM_STAGES.map(s => [s.id, s]));
+            const rows = crmDeals.map(d => {
+                const s = stageMap[d.stage] || {};
+                const date = d.created_at ? new Date(d.created_at).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+                const val = d.value ? new Intl.NumberFormat('de-CH').format(d.value) + ' CHF' : '–';
+                const owner = (d.owner||'').replace('OWN-','');
+                return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer" onclick="crmOpenDeal('${d.id}')"><td style="padding:8px 10px;font-weight:500;color:white;font-size:13px">${d.title||'–'}</td><td style="padding:8px 10px;color:rgba(255,255,255,0.5);font-size:12px">${d.company_name||'–'}</td><td style="padding:8px 10px"><span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${s.color||'#94a3b8'}22;color:${s.color||'#94a3b8'};border:1px solid ${s.color||'#94a3b8'}33">${s.icon||''} ${s.label||d.stage}</span></td><td style="padding:8px 10px;color:rgba(255,255,255,0.5);font-size:12px">${val}</td><td style="padding:8px 10px;color:rgba(255,255,255,0.25);font-size:11px">${owner}</td><td style="padding:8px 10px;color:rgba(255,255,255,0.25);font-size:11px">${date}</td></tr>`;
+            }).join('');
+            document.getElementById('crmTable').innerHTML = `<table style="width:100%;border-collapse:collapse"><thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08)"><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Deal</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Firma</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Stage</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Wert</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Owner</th><th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:rgba(255,255,255,0.25);text-transform:uppercase">Erstellt</th></tr></thead><tbody>${rows}</tbody></table>`;
+        }
+
+        function crmShowDealForm() { const f=document.getElementById('crmDealForm'); f.style.display=f.style.display==='none'?'block':'none'; }
+
+        async function crmSaveDeal() {
+            const title = document.getElementById('crmDealTitle').value.trim();
+            const company = document.getElementById('crmDealCompany').value.trim();
+            if (!title && !company) { showToast('Bitte Deal-Titel oder Firma', 'error'); return; }
+            try {
+                await fetch(`${API}/crm/deals`, { method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: title||company, company_name: company, contact_name: document.getElementById('crmDealContact').value.trim(), contact_email: document.getElementById('crmDealEmail').value.trim(), value: parseFloat(document.getElementById('crmDealValue').value)||0, stage: document.getElementById('crmDealStage').value, source: document.getElementById('crmDealSource').value.trim(), next_action: document.getElementById('crmDealNextAction').value.trim(), notes: document.getElementById('crmDealNotes').value.trim() })
+                });
+                showToast('Deal erstellt ✓', 'success');
+                document.getElementById('crmDealForm').style.display = 'none';
+                ['crmDealTitle','crmDealCompany','crmDealContact','crmDealEmail','crmDealValue','crmDealSource','crmDealNextAction','crmDealNotes'].forEach(id => document.getElementById(id).value = '');
+                crmLoad();
+            } catch(e) { showToast('Fehler', 'error'); }
+        }
+
+        function crmOpenDeal(id) {
+            const deal = crmDeals.find(d => d.id === id);
+            if (!deal) return;
+            document.getElementById('crmDrawerTitle').textContent = deal.title || '–';
+            document.getElementById('crmDrawerCompany').textContent = deal.company_name || '–';
+            const stageMap = Object.fromEntries(CRM_STAGES.map(s => [s.id, s]));
+            const s = stageMap[deal.stage] || {};
+            const val = deal.value ? new Intl.NumberFormat('de-CH').format(deal.value) + ' CHF' : '–';
+            const created = deal.created_at ? new Date(deal.created_at).toLocaleDateString('de-CH') : '';
+            const owner = (deal.owner||'').replace('OWN-','');
+            document.getElementById('crmDrawerContent').innerHTML = `
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+                    <span style="font-size:12px;padding:4px 12px;border-radius:12px;background:${s.color||'#94a3b8'}22;color:${s.color||'#94a3b8'};border:1px solid ${s.color||'#94a3b8'}44;font-weight:600">${s.icon||''} ${s.label||deal.stage}</span>
+                    <span style="font-size:13px;font-weight:600;color:var(--accent-light)">${val}</span>
+                    <span style="font-size:12px;color:rgba(255,255,255,0.3)">${deal.probability||0}%</span>
+                    ${owner ? `<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.4)">👤 ${owner}</span>` : ''}
+                </div>
+                <div style="display:flex;gap:3px;margin-bottom:16px;flex-wrap:wrap">
+                    ${CRM_STAGES.map(st => `<button onclick="crmChangeStage('${id}','${st.id}')" style="padding:5px 6px;border-radius:6px;border:1px solid ${st.id===deal.stage?st.color:'rgba(255,255,255,0.06)'};background:${st.id===deal.stage?st.color+'22':'transparent'};color:${st.id===deal.stage?'white':'rgba(255,255,255,0.2)'};font-size:9px;cursor:pointer;font-family:inherit">${st.icon} ${st.label}</button>`).join('')}
+                </div>
+                <div style="border-top:1px solid var(--border);padding-top:12px"><div style="font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase;margin-bottom:8px">Details</div>
+                <div style="display:grid;grid-template-columns:80px 1fr;gap:6px;font-size:13px">
+                    <span style="color:rgba(255,255,255,0.3)">Firma</span><span style="color:white">${deal.company_name||'–'}</span>
+                    <span style="color:rgba(255,255,255,0.3)">Kontakt</span><span style="color:white">${deal.contact_name||'–'}</span>
+                    <span style="color:rgba(255,255,255,0.3)">Quelle</span><span style="color:rgba(255,255,255,0.6)">${deal.source||'–'}</span>
+                    <span style="color:rgba(255,255,255,0.3)">Owner</span><span style="color:rgba(255,255,255,0.6)">${owner}</span>
+                    <span style="color:rgba(255,255,255,0.3)">Erstellt</span><span style="color:rgba(255,255,255,0.6)">${created}</span>
+                </div></div>
+                ${deal.next_action ? `<div style="margin-top:12px;padding:10px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px"><div style="font-size:10px;color:rgba(251,191,36,0.7);font-weight:600">NÄCHSTE AKTION</div><div style="font-size:13px;color:white;margin-top:2px">${deal.next_action}</div>${deal.next_action_date?`<div style="font-size:11px;color:rgba(251,191,36,0.5);margin-top:2px">📅 ${deal.next_action_date}</div>`:''}</div>` : ''}
+                ${deal.notes ? `<div style="margin-top:12px"><div style="font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase;margin-bottom:6px">Notizen</div><div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.5;white-space:pre-wrap;max-height:200px;overflow-y:auto">${deal.notes}</div></div>` : ''}
+                <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><div style="font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase;margin-bottom:8px">Quick-Notiz</div>
+                <div style="display:flex;gap:6px"><input class="mb-input" id="crmQuickNote" placeholder="Notiz..." style="flex:1;font-size:13px;padding:8px 12px" onkeydown="if(event.key==='Enter')crmAddNote('${id}')"><button class="mb-btn mb-btn-primary" onclick="crmAddNote('${id}')" style="font-size:12px;padding:6px 12px">+</button></div></div>
+                <div style="margin-top:12px"><button class="mb-btn mb-btn-back" onclick="crmDeleteDeal('${id}')" style="font-size:11px;padding:5px 12px;color:rgba(248,113,113,0.7)">🗑 Löschen</button></div>`;
+            document.getElementById('crmDrawer').style.display = 'block';
+        }
+
+        function crmCloseDrawer() { document.getElementById('crmDrawer').style.display = 'none'; }
+
+        async function crmChangeStage(dealId, ns) {
+            try { await fetch(`${API}/crm/deals/${dealId}`, { method:'PUT', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({stage:ns}) }); crmCloseDrawer(); crmLoad(); showToast('Stage → '+ns, 'success'); } catch(e) { showToast('Fehler','error'); }
+        }
+
+        async function crmAddNote(dealId) {
+            const note = document.getElementById('crmQuickNote')?.value.trim();
+            if (!note) return;
+            try {
+                await fetch(`${API}/crm/activities`, { method:'POST', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({deal_id:dealId,type:'note',subject:note}) });
+                const deal = crmDeals.find(d=>d.id===dealId);
+                const ts = new Date().toLocaleString('de-CH');
+                await fetch(`${API}/crm/deals/${dealId}`, { method:'PUT', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({notes:(deal?.notes||'')+`\n[${ts}] ${note}`}) });
+                showToast('Notiz ✓','success'); crmLoad(); crmCloseDrawer();
+            } catch(e) { showToast('Fehler','error'); }
+        }
+
+        async function crmDeleteDeal(id) {
+            if (!confirm('Deal löschen?')) return;
+            try { await fetch(`${API}/crm/deals/${id}`,{method:'DELETE',headers:H()}); crmCloseDrawer(); crmLoad(); showToast('Gelöscht','success'); } catch(e) { showToast('Fehler','error'); }
+        }
+
+        async function crmSyncGithub() {
+            const btn = document.getElementById('crmSyncBtn');
+            btn.disabled=true; btn.textContent='⏳ Synchronisiere...';
+            try {
+                const r = await fetch(`${API}/crm/sync-github`, { method:'POST', headers:H() });
+                const data = await r.json();
+                if (r.ok) { showToast(`Sync: ${data.stats.deals} Deals, ${data.stats.companies} Firmen ✓`, 'success'); crmLoad(); }
+                else throw new Error(data.detail||'failed');
+            } catch(e) { showToast('Sync fehlgeschlagen: '+e.message, 'error'); }
+            btn.disabled=false; btn.textContent='🔄 GitHub Sync';
         }
 
         async function loadStats() {
@@ -1919,7 +2000,7 @@
         // ── Admin Dashboard ──────────────────────────────
         const ROLE_CONFIG = {
             researcher: { label: 'Researcher', color: '#8b9aff', tabs: ['Fragen','Modell-Building','Upload','Dokumente','Profil'] },
-            sales:      { label: 'Sales',      color: '#fbbf24', tabs: ['Fragen','Upload','Ausgangslage','Leads','Profil'] },
+            sales:      { label: 'Sales',      color: '#fbbf24', tabs: ['Fragen','Upload','Ausgangslage','CRM','Profil'] },
             operations: { label: 'Operations', color: '#34d399', tabs: ['Fragen','Upload','Ausgangslage','Profil'] },
             admin:      { label: 'Admin',      color: '#f87171', tabs: ['Alle Tabs'] }
         };
@@ -4006,6 +4087,12 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
         #fbToolbar { display:flex; align-items:center; gap:6px; padding:8px 12px; background:rgba(20,20,40,0.95); border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0; flex-wrap:wrap; }
         .fb-tool { padding:5px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:transparent; color:rgba(255,255,255,0.6); font-size:12px; cursor:pointer; transition:all 0.15s; }
         .fb-tool:hover, .fb-tool.active { background:rgba(139,170,255,0.15); color:white; border-color:rgba(139,170,255,0.4); }
+        /* CRM Kanban */
+        .crm-col { min-width:180px; flex:1; background:rgba(255,255,255,0.02); border-radius:10px; border:1px solid rgba(255,255,255,0.04); display:flex; flex-direction:column; }
+        .crm-card { padding:10px; background:var(--navy-card); border:1px solid rgba(255,255,255,0.06); border-radius:8px; cursor:pointer; transition:all 0.15s; }
+        .crm-card:hover { border-color:rgba(139,170,255,0.3); background:rgba(139,170,255,0.04); transform:translateY(-1px); }
+        .crm-card[draggable=true] { cursor:grab; }
+        .crm-card[draggable=true]:active { cursor:grabbing; opacity:0.7; }
         .fb-color { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; transition:transform 0.15s; }
         .fb-color:hover, .fb-color.active { transform:scale(1.2); border-color:white; }
         #fbCanvas { flex:1; cursor:crosshair; }
