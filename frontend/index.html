@@ -1383,6 +1383,36 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Project Landing Page -->
+            <div id="prjLandingView" style="display:none">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+                    <button onclick="prjBackToList()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer">← Alle Projekte</button>
+                </div>
+
+                <!-- Project Header Card -->
+                <div id="prjLandingHeader" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px"></div>
+
+                <!-- Two columns -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+                    <!-- Left: Verfügbare Ressourcen -->
+                    <div>
+                        <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Verfügbare Ressourcen</div>
+                        <div id="prjLandingResources" style="display:flex;flex-direction:column;gap:8px"></div>
+                    </div>
+                    <!-- Right: Projektdaten -->
+                    <div>
+                        <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Projektdaten</div>
+                        <div id="prjLandingData" style="display:flex;flex-direction:column;gap:8px"></div>
+                    </div>
+                </div>
+
+                <!-- Andere Projekte -->
+                <div id="prjLandingOtherSection" style="margin-top:20px;display:none">
+                    <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Weitere Projekte mit diesem Kunden</div>
+                    <div id="prjLandingOther" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -2562,7 +2592,7 @@
                     const sc = statusColors[p.status] || 'rgba(255,255,255,0.2)';
                     const sl = statusLabels[p.status] || p.status;
                     const tl = typeLabels[p.type] || p.type || '';
-                    return `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04)">
+                    return `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="prjOpenLanding('${p.slug}')">
                         <div style="width:8px;height:8px;border-radius:50%;background:${sc};flex-shrink:0"></div>
                         <div style="flex:1;min-width:0">
                             <div style="font-weight:600;color:white;font-size:14px">${p.name || p.project_code}</div>
@@ -2850,6 +2880,252 @@
             } catch(e) {
                 showToast('Fehler: ' + e.message, 'error');
                 btn.disabled = false; btn.textContent = '✓ Projekt eröffnen → GitHub';
+            }
+        }
+
+        // ════════════════════════════════════════════════
+        // PROJECT LANDING PAGE
+        // ════════════════════════════════════════════════
+        let prjLandingData = null;
+
+        function prjBackToList() {
+            document.getElementById('prjLandingView').style.display = 'none';
+            document.getElementById('prjListView').style.display = '';
+        }
+
+        async function prjOpenLanding(slug) {
+            document.getElementById('prjListView').style.display = 'none';
+            document.getElementById('prjWizardView').style.display = 'none';
+            document.getElementById('prjLandingView').style.display = '';
+            document.getElementById('prjLandingHeader').innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.3)">Lade Projektdaten…</div>';
+            document.getElementById('prjLandingResources').innerHTML = '';
+            document.getElementById('prjLandingData').innerHTML = '';
+
+            try {
+                const resp = await fetch(`${API}/projects/${slug}/landing`, { headers: H() });
+                if (!resp.ok) throw new Error('Projekt nicht gefunden');
+                prjLandingData = await resp.json();
+                prjRenderLanding();
+            } catch(e) {
+                document.getElementById('prjLandingHeader').innerHTML = `<div style="text-align:center;padding:20px;color:var(--error)">${e.message}</div>`;
+            }
+        }
+
+        function prjRenderLanding() {
+            const d = prjLandingData;
+            const p = d.project || {};
+            const meta = p.metadata || {};
+            const client = p.client || {};
+            const project = p.project || {};
+            const timeline = p.timeline || {};
+            const team = p.team || {};
+            const scope = p.scope || {};
+            const objective = p.objective || {};
+            const fehradvice_scope = p.fehradvice_scope || {};
+            const res = d.resources || {};
+
+            // Status
+            const status = (meta.status || 'planning').toLowerCase();
+            const statusColors = {active:'#34d399',aktiv:'#34d399',planning:'#fbbf24',completed:'rgba(139,170,255,0.6)','on-hold':'rgba(255,255,255,0.3)'};
+            const statusLabels = {active:'Aktiv',aktiv:'Aktiv',planning:'Planung',completed:'Abgeschlossen','on-hold':'On Hold'};
+            const sc = statusColors[status] || 'rgba(255,255,255,0.3)';
+
+            // Header
+            const prjName = project.name || meta.name || meta.project_code || '–';
+            const custName = client.name || client.short_name || '';
+            const prjType = project.type || '';
+            const owner = team.fa_owner || '';
+            // Extract team members
+            let teamMembers = [];
+            if (Array.isArray(team.fa_team)) teamMembers = team.fa_team;
+            if (Array.isArray(team.fehradvice_team)) {
+                teamMembers = team.fehradvice_team.map(t => typeof t === 'string' ? t : t.name || t.code || '');
+            }
+            // Extract contacts
+            let contacts = [];
+            if (Array.isArray(client.contacts)) contacts = client.contacts.map(c => typeof c === 'string' ? c : c.name || '');
+            if (Array.isArray(team.customer_contacts)) contacts = team.customer_contacts.map(c => typeof c === 'string' ? c : c.name || '');
+
+            document.getElementById('prjLandingHeader').innerHTML = `
+                <div style="display:flex;align-items:flex-start;gap:16px">
+                    <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,${sc}30,${sc}10);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;border:1px solid ${sc}40">📋</div>
+                    <div style="flex:1">
+                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                            <div style="font-size:20px;font-weight:700;color:white">${prjName}</div>
+                            <span style="font-size:10px;padding:3px 10px;border-radius:8px;background:${sc}15;color:${sc};border:1px solid ${sc}30;font-weight:600">${statusLabels[status]||status}</span>
+                        </div>
+                        <div style="display:flex;gap:12px;align-items:center;margin-top:6px;flex-wrap:wrap;font-size:13px;color:rgba(255,255,255,0.5)">
+                            ${custName ? `<span>🏢 ${custName}</span>` : ''}
+                            ${owner ? `<span>👤 ${owner}</span>` : ''}
+                            ${prjType ? `<span>📌 ${prjType}</span>` : ''}
+                            ${meta.project_id ? `<span style="font-size:10px;color:rgba(255,255,255,0.2)">${meta.project_id}</span>` : ''}
+                        </div>
+                        ${contacts.length ? `<div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.3)">Kundenkontakte: ${contacts.join(', ')}</div>` : ''}
+                        ${teamMembers.length ? `<div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,0.3)">FA Team: ${teamMembers.join(', ')}</div>` : ''}
+                    </div>
+                </div>`;
+
+            // ── Left: Verfügbare Ressourcen ──
+            const tile = (icon, label, available, detail, sub) => `
+                <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all 0.15s" onmouseover="this.style.borderColor='rgba(42,127,142,0.3)'" onmouseout="this.style.borderColor='var(--border)'">
+                    <div style="font-size:18px;width:32px;text-align:center">${icon}</div>
+                    <div style="flex:1;min-width:0">
+                        <div style="font-size:13px;font-weight:600;color:white">${label}</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">${detail}</div>
+                        ${sub ? `<div style="font-size:10px;color:rgba(255,255,255,0.2);margin-top:2px">${sub}</div>` : ''}
+                    </div>
+                    <div style="font-size:14px;flex-shrink:0">${available ? '✅' : '❌'}</div>
+                </div>`;
+
+            const cv = res.context_vector || {};
+            const mo = res.models || {};
+            const pr = res.profile || {};
+            const sc2 = res.scenarios || {};
+            const pe = res.personas || {};
+            const docs = res.documents || {};
+            const df = res.data_files || {};
+            const kpis = res.kpis || {};
+
+            let resourceHtml = '';
+            resourceHtml += tile('🧭', 'Kontextvektor',
+                cv.available,
+                cv.available ? `${cv.count} Dimensionen erfasst` : 'Noch nicht erstellt',
+                cv.available ? cv.files?.slice(0,3).map(f => f.replace(/.*_context_/,'').replace('.yaml','')).join(', ') : '');
+            resourceHtml += tile('🧠', 'Modelle',
+                mo.available,
+                mo.available ? `${mo.count} Modell${mo.count>1?'e':''}` : 'Noch kein Modell',
+                mo.available ? mo.files?.join(', ') : '');
+            resourceHtml += tile('📁', 'Kundenprofil',
+                pr.available,
+                pr.available ? 'Profil vorhanden' : 'Noch nicht angelegt',
+                '');
+            resourceHtml += tile('📊', 'KPIs & Daten',
+                kpis.available || df.available,
+                `${kpis.available ? 'KPIs definiert' : ''}${kpis.available && df.available ? ' · ' : ''}${df.available ? df.count + ' Datensätze' : ''}` || 'Keine Daten',
+                '');
+            resourceHtml += tile('🔮', 'Szenarien',
+                sc2.available,
+                sc2.available ? `${sc2.count} Szenario${sc2.count>1?'s':''}` : 'Keine Szenarien',
+                '');
+            resourceHtml += tile('👤', 'Personas',
+                pe.available,
+                pe.available ? 'Personas vorhanden' : 'Keine Personas',
+                '');
+            resourceHtml += tile('📄', 'Dokumente',
+                docs.available,
+                `${docs.pdfs||0} PDFs · ${docs.mds||0} Markdown`,
+                docs.available ? docs.pdf_files?.slice(0,2).map(f => f.length > 35 ? f.substring(0,32)+'…' : f).join(', ') : '');
+
+            if (res.total_files) {
+                resourceHtml += `<div style="text-align:center;font-size:10px;color:rgba(255,255,255,0.2);padding:8px">📁 ${res.total_files} Dateien in data/customers/${res.customer_code}/</div>`;
+            }
+            if (res.customer_folder_exists === false) {
+                resourceHtml += `<div style="text-align:center;padding:16px;font-size:12px;color:rgba(255,255,255,0.3)">Kein Kundenordner vorhanden.<br>Wird bei erster Analyse automatisch erstellt.</div>`;
+            }
+
+            document.getElementById('prjLandingResources').innerHTML = resourceHtml;
+
+            // ── Right: Projektdaten ──
+            let projHtml = '';
+
+            // Beratungsauftrag (Scope)
+            const objSummary = objective.summary || project.description || fehradvice_scope.behavioral_objectives?.join(', ') || '';
+            const inScope = scope.in_scope || fehradvice_scope.deliverables || [];
+            const outScope = scope.out_of_scope || [];
+            const scopeCount = inScope.length + outScope.length;
+            projHtml += tile('📋', 'Beratungsauftrag',
+                !!(objSummary || scopeCount),
+                objSummary ? (objSummary.length > 60 ? objSummary.substring(0,57)+'…' : objSummary) : (scopeCount ? `${inScope.length} Scope-Punkte definiert` : 'Noch nicht definiert'),
+                outScope.length ? `${outScope.length} Out-of-Scope` : '');
+
+            // Team
+            const teamCount = teamMembers.length + (owner ? 1 : 0);
+            const contactCount = contacts.length;
+            projHtml += tile('👥', 'Team & Kontakte',
+                teamCount > 0 || contactCount > 0,
+                `${teamCount ? teamCount + ' FA' : ''}${teamCount && contactCount ? ' · ' : ''}${contactCount ? contactCount + ' Kunde' : ''}` || 'Noch nicht zugewiesen',
+                '');
+
+            // Timeline
+            let tlItems = [];
+            if (Array.isArray(p.timeline)) {
+                tlItems = p.timeline;
+            } else if (p.timeline && typeof p.timeline === 'object') {
+                if (p.timeline.start_date) tlItems.push({date: p.timeline.start_date, milestone: 'Start'});
+                if (p.timeline.end_date) tlItems.push({date: p.timeline.end_date, milestone: 'Ende'});
+            }
+            const phases = p.phases || [];
+            projHtml += tile('📅', 'Timeline',
+                tlItems.length > 0 || phases.length > 0,
+                tlItems.length ? `${tlItems.length} Milestones` : (phases.length ? `${phases.length} Phasen` : 'Keine Timeline'),
+                phases.length ? phases.map(ph => ph.name || ph.phase || '').filter(Boolean).slice(0,3).join(' → ') : '');
+
+            // Deliverables
+            const deliverables = p.deliverables || p.final_deliverables || fehradvice_scope.deliverables || [];
+            projHtml += tile('📦', 'Deliverables',
+                deliverables.length > 0,
+                deliverables.length ? `${deliverables.length} Deliverable${deliverables.length>1?'s':''}` : 'Keine definiert',
+                deliverables.length ? deliverables.slice(0,3).map(d => typeof d === 'string' ? d : d.name || d.id || '').filter(Boolean).join(', ') : '');
+
+            // EBF Integration
+            const ebf = p.ebf_integration || {};
+            const tenC = ebf.primary_10c_dimensions || fehradvice_scope.ten_c_focus || [];
+            const bcm = ebf.bcm_models || [];
+            const barriers = ebf.behavioral_barriers || [];
+            projHtml += tile('🧬', 'EBF Integration',
+                tenC.length > 0 || bcm.length > 0,
+                tenC.length ? `10C: ${tenC.join(', ')}` : (bcm.length ? `${bcm.length} BCM Modell${bcm.length>1?'e':''}` : 'Keine EBF-Verknüpfung'),
+                barriers.length ? `Barriers: ${barriers.slice(0,2).join(', ')}` : '');
+
+            // KPIs
+            const projKpis = p.kpis || [];
+            projHtml += tile('📊', 'KPIs & Wirkung',
+                projKpis.length > 0,
+                projKpis.length ? `${projKpis.length} KPI${projKpis.length>1?'s':''}` : 'Keine KPIs definiert',
+                projKpis.length ? projKpis.slice(0,2).map(k => k.name || k.kpi_id || '').filter(Boolean).join(', ') : '');
+
+            // Budget
+            let budget = '';
+            if (typeof p.timeline === 'object' && !Array.isArray(p.timeline)) {
+                budget = p.timeline.budget_chf || p.timeline.budget_eur || '';
+            }
+            if (budget) {
+                const curr = p.timeline.budget_eur ? 'EUR' : 'CHF';
+                projHtml += tile('💰', 'Budget',
+                    true,
+                    `${curr} ${parseInt(budget).toLocaleString('de-CH')}`,
+                    p.timeline.billing_type || '');
+            }
+
+            // Risks
+            const risks = p.risks || [];
+            if (risks.length) {
+                projHtml += tile('⚠', 'Risiken',
+                    true,
+                    `${risks.length} identifiziert`,
+                    risks.slice(0,2).map(r => typeof r === 'string' ? r : r.description || '').filter(Boolean).map(s => s.length > 40 ? s.substring(0,37)+'…' : s).join(', '));
+            }
+
+            document.getElementById('prjLandingData').innerHTML = projHtml;
+
+            // ── Other Projects ──
+            const other = d.other_projects || [];
+            const otherSection = document.getElementById('prjLandingOtherSection');
+            if (other.length > 0) {
+                otherSection.style.display = '';
+                const otherStatusColors = {active:'#34d399',completed:'rgba(139,170,255,0.5)',proposal:'#fbbf24',scoping:'#fbbf24'};
+                const rows = other.map(op => {
+                    const osc = otherStatusColors[op.status] || 'rgba(255,255,255,0.2)';
+                    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.03)">
+                        <div style="width:6px;height:6px;border-radius:50%;background:${osc};flex-shrink:0"></div>
+                        <div style="flex:1;font-size:13px;color:rgba(255,255,255,0.6)">${op.name}</div>
+                        <span style="font-size:10px;padding:2px 8px;border-radius:6px;background:${osc}15;color:${osc};border:1px solid ${osc}30">${op.status}</span>
+                        ${op.deliverables_count ? `<span style="font-size:10px;color:rgba(255,255,255,0.2)">${op.deliverables_count} Deliv.</span>` : ''}
+                    </div>`;
+                }).join('');
+                document.getElementById('prjLandingOther').innerHTML = rows;
+            } else {
+                otherSection.style.display = 'none';
             }
         }
 
