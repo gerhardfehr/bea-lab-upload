@@ -2660,7 +2660,7 @@ async def create_project(request: Request, user=Depends(require_auth)):
                 "project_code": slug,
                 "status": "planning",
                 "created": today,
-                "created_by": user["email"],
+                "created_by": user.get("sub", user.get("email","")),
                 "last_updated": today,
                 "version": "1.0"
             },
@@ -2694,7 +2694,7 @@ async def create_project(request: Request, user=Depends(require_auth)):
             "resources": [],
             "changelog": [{
                 "date": today,
-                "author": user["email"],
+                "author": user.get("sub", user.get("email","")),
                 "action": "Projekt eröffnet via BEATRIX"
             }]
         }
