@@ -206,6 +206,8 @@
         .comp-cat-tab.active { color:white;background:rgba(42,127,142,0.15);border-color:rgba(42,127,142,0.3); }
         .comp-cat-count { font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3); }
         .comp-cat-tab.active .comp-cat-count { background:rgba(42,127,142,0.2);color:rgba(255,255,255,0.6); }
+        .comp-card:hover { transform:translateY(-2px);border-color:rgba(42,127,142,0.3) !important;background:rgba(255,255,255,0.03) !important; }
+        .comp-card.active { border-color:rgba(42,127,142,0.5) !important;background:rgba(42,127,142,0.08) !important;box-shadow:0 0 20px rgba(42,127,142,0.1); }
         .nav-link.admin-link:hover,.nav-link.admin-link.active { color:var(--warning); background:rgba(251,191,36,0.08); }
 
         /* ── Password Modal ──────────────────────────────── */
@@ -1121,21 +1123,32 @@
                     </div>
                     <input id="crmCompaniesSearch" type="text" placeholder="Suchen…" oninput="crmFilterCompanies()" style="font-size:13px;padding:8px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:white;width:min(240px,40vw);outline:none">
                 </div>
-                <!-- Category Tabs -->
-                <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap" id="companyCategoryTabs">
-                    <button class="comp-cat-tab active" data-cat="all" onclick="companySetCategory('all',this)">Alle</button>
-                    <button class="comp-cat-tab" data-cat="active" onclick="companySetCategory('active',this)">
-                        <span style="width:8px;height:8px;border-radius:50%;background:#34d399;display:inline-block"></span> Aktive Projekte <span class="comp-cat-count" id="catCountActive">0</span>
-                    </button>
-                    <button class="comp-cat-tab" data-cat="leads" onclick="companySetCategory('leads',this)">
-                        <span style="width:8px;height:8px;border-radius:50%;background:#fbbf24;display:inline-block"></span> Leads <span class="comp-cat-count" id="catCountLeads">0</span>
-                    </button>
-                    <button class="comp-cat-tab" data-cat="past" onclick="companySetCategory('past',this)">
-                        <span style="width:8px;height:8px;border-radius:50%;background:rgba(139,170,255,0.5);display:inline-block"></span> Frühere Projekte <span class="comp-cat-count" id="catCountPast">0</span>
-                    </button>
-                    <button class="comp-cat-tab" data-cat="new" onclick="companySetCategory('new',this)">
-                        <span style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.2);display:inline-block"></span> Neu / Noch nie <span class="comp-cat-count" id="catCountNew">0</span>
-                    </button>
+                <!-- Category Cards -->
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="companyCategoryCards">
+                    <div class="comp-card" data-cat="active" onclick="companySetCategory('active',this)" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:all 0.15s;text-align:center">
+                        <div style="font-size:28px;margin-bottom:6px">🟢</div>
+                        <div style="font-size:22px;font-weight:700;color:white" id="catCountActive">0</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Aktive Projekte</div>
+                    </div>
+                    <div class="comp-card" data-cat="leads" onclick="companySetCategory('leads',this)" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:all 0.15s;text-align:center">
+                        <div style="font-size:28px;margin-bottom:6px">🟡</div>
+                        <div style="font-size:22px;font-weight:700;color:white" id="catCountLeads">0</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Leads</div>
+                    </div>
+                    <div class="comp-card" data-cat="past" onclick="companySetCategory('past',this)" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:all 0.15s;text-align:center">
+                        <div style="font-size:28px;margin-bottom:6px">🔵</div>
+                        <div style="font-size:22px;font-weight:700;color:white" id="catCountPast">0</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Frühere Projekte</div>
+                    </div>
+                    <div class="comp-card" data-cat="new" onclick="companySetCategory('new',this)" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:all 0.15s;text-align:center">
+                        <div style="font-size:28px;margin-bottom:6px">⚪</div>
+                        <div style="font-size:22px;font-weight:700;color:white" id="catCountNew">0</div>
+                        <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Noch nie gearbeitet</div>
+                    </div>
+                </div>
+                <div id="companyFilterBanner" style="display:none;margin-bottom:12px;padding:8px 16px;background:rgba(42,127,142,0.06);border:1px solid rgba(42,127,142,0.15);border-radius:8px;align-items:center;gap:8px">
+                    <span style="font-size:12px;color:rgba(255,255,255,0.5)" id="companyFilterLabel"></span>
+                    <span onclick="companySetCategory('all')" style="font-size:11px;color:var(--accent);cursor:pointer;margin-left:auto">✕ Alle zeigen</span>
                 </div>
                 <div id="crmCompaniesList" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
             </div>
@@ -2067,9 +2080,19 @@
         }
 
         function companySetCategory(cat, el) {
-            companyCategory = cat;
-            document.querySelectorAll('.comp-cat-tab').forEach(t => t.classList.remove('active'));
-            if (el) el.classList.add('active');
+            const catLabels = {active:'Aktive Projekte',leads:'Leads',past:'Frühere Projekte',new:'Noch nie gearbeitet'};
+            if (companyCategory === cat || cat === 'all') {
+                companyCategory = 'all';
+                document.querySelectorAll('.comp-card').forEach(c => c.classList.remove('active'));
+                document.getElementById('companyFilterBanner').style.display = 'none';
+            } else {
+                companyCategory = cat;
+                document.querySelectorAll('.comp-card').forEach(c => c.classList.remove('active'));
+                if (el) el.classList.add('active');
+                const banner = document.getElementById('companyFilterBanner');
+                banner.style.display = 'flex';
+                document.getElementById('companyFilterLabel').textContent = `Filter: ${catLabels[cat] || cat}`;
+            }
             crmFilterCompanies();
         }
 
