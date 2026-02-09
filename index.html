@@ -1265,7 +1265,7 @@
                         authToken = saved;
                         currentUser = user ? JSON.parse(user) : (await r.json());
                         // Also check JWT for admin flag
-                        try { const p = JSON.parse(atob(saved.split('.')[1])); currentUser.admin = p.admin || false; } catch(e) {}
+                        try { const p = JSON.parse(atob(saved.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; } catch(e) {}
                         document.getElementById('authOverlay').classList.add('hidden');
                         document.getElementById('navUser').textContent = currentUser.name || currentUser.email;
                         if (currentUser.admin) document.getElementById('navAdmin').style.display = 'inline';
@@ -1285,7 +1285,7 @@
             authToken = data.token;
             currentUser = data.user;
             // Decode JWT to get admin status
-            try { const p = JSON.parse(atob(data.token.split('.')[1])); currentUser.admin = p.admin || false; } catch(e) { currentUser.admin = false; }
+            try { const p = JSON.parse(atob(data.token.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; } catch(e) { currentUser.admin = false; currentUser.role = 'researcher'; }
             sessionStorage.setItem('bea_token', authToken);
             sessionStorage.setItem('bea_user', JSON.stringify(currentUser));
             document.getElementById('authOverlay').classList.add('hidden');
@@ -1610,33 +1610,33 @@
         }
 
         // ── Role-Based Tab Visibility ──────────────────
-        const TAB_ROLES = {
-            leads: ['nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com'],
-            context: ['nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com']
+        // Role → Tab mapping (which tabs each role can see)
+        const ROLE_TABS = {
+            researcher: [],                    // standard tabs only
+            sales:      ['context', 'leads'],  // + Ausgangslage + Leads
+            operations: ['context'],           // + Ausgangslage
+            admin:      ['context', 'leads']   // + everything (admin tab handled separately)
         };
 
         function applyUserTabs() {
             const email = (currentUser?.email || '').toLowerCase();
             const isAdmin = currentUser?.admin || false;
-            console.log('applyUserTabs called - email:', email, 'isAdmin:', isAdmin);
+            const role = currentUser?.role || 'researcher';
+            console.log('applyUserTabs - email:', email, 'admin:', isAdmin, 'role:', role);
 
-            // Admin tab
+            // Admin tab (only for admins)
             const adminEl = document.getElementById('navAdmin');
-            if (adminEl) {
-                adminEl.style.display = isAdmin ? 'inline' : 'none';
-                console.log('Admin tab:', isAdmin ? 'SHOWN' : 'hidden');
-            }
+            if (adminEl) adminEl.style.display = isAdmin ? 'inline' : 'none';
 
-            // Role-based tabs: visible for configured users + admins
-            for (const [tab, emails] of Object.entries(TAB_ROLES)) {
+            // Role-based extra tabs
+            const visibleTabs = isAdmin ? ['context', 'leads'] : (ROLE_TABS[role] || []);
+            const allExtraTabs = ['context', 'leads'];
+            for (const tab of allExtraTabs) {
                 const elId = 'nav' + tab.charAt(0).toUpperCase() + tab.slice(1);
                 const el = document.getElementById(elId);
                 if (el) {
-                    const hasAccess = isAdmin || emails.includes(email);
-                    el.style.display = hasAccess ? 'inline' : 'none';
-                    console.log('Tab', elId, ':', hasAccess ? 'SHOWN' : 'hidden');
-                } else {
-                    console.log('Tab element NOT FOUND:', elId);
+                    el.style.display = visibleTabs.includes(tab) ? 'inline' : 'none';
+                    console.log('Tab', elId, visibleTabs.includes(tab) ? 'SHOWN' : 'hidden');
                 }
             }
         }
@@ -1911,6 +1911,13 @@
         document.getElementById('textContent').addEventListener('input',updateCount);
 
         // ── Admin Dashboard ──────────────────────────────
+        const ROLE_CONFIG = {
+            researcher: { label: 'Researcher', color: '#8b9aff', tabs: ['Fragen','Modell-Building','Upload','Dokumente','Profil'] },
+            sales:      { label: 'Sales',      color: '#fbbf24', tabs: ['Fragen','Upload','Ausgangslage','Leads','Profil'] },
+            operations: { label: 'Operations', color: '#34d399', tabs: ['Fragen','Upload','Ausgangslage','Profil'] },
+            admin:      { label: 'Admin',      color: '#f87171', tabs: ['Alle Tabs'] }
+        };
+
         async function loadAdminData() {
             if (!currentUser || !currentUser.admin) return;
             try {
@@ -1931,34 +1938,59 @@
                 document.getElementById('adminStatReg').textContent = regMode;
                 const domains = settings.allowed_email_domains || [];
                 document.getElementById('adminStatRegSub').textContent = domains.includes('*') ? 'Alle Domains' : domains.map(d => '@'+d).join(', ') || 'Alle Domains';
-
-                // User count badge
                 document.getElementById('adminUserCount').textContent = users.length;
 
                 // User table
                 const tbody = users.map(u => {
                     const created = u.created_at ? new Date(u.created_at).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',year:'numeric'}) : '–';
                     const lastLogin = u.last_login ? new Date(u.last_login).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Nie';
-                    const roleBadge = u.is_admin ? '<span class="user-badge admin">Admin</span>' : '<span class="user-badge user">User</span>';
+                    const userRole = u.is_admin ? 'admin' : (u.role || 'researcher');
+                    const rc = ROLE_CONFIG[userRole] || ROLE_CONFIG.researcher;
                     const statusBadge = u.is_active ? '<span class="user-badge active">Aktiv</span>' : '<span class="user-badge inactive">Inaktiv</span>';
-                    const verifiedBadge = u.email_verified ? '<span class="user-badge active">✓ Verifiziert</span>' : '<span class="user-badge inactive">Ausstehend</span>';
+                    const verifiedBadge = u.email_verified ? '<span class="user-badge active">✓</span>' : '<span class="user-badge inactive">✗</span>';
+
+                    // Role dropdown (not for self)
+                    const isSelf = u.email === currentUser.email;
+                    const roleCell = u.is_admin
+                        ? `<span style="font-size:11px;padding:4px 10px;border-radius:12px;background:${ROLE_CONFIG.admin.color}18;color:${ROLE_CONFIG.admin.color};border:1px solid ${ROLE_CONFIG.admin.color}44;font-weight:600">Admin</span>`
+                        : `<select onchange="adminSetRole('${u.id}',this.value)" style="font-size:11px;padding:4px 8px;background:${rc.color}12;color:${rc.color};border:1px solid ${rc.color}44;border-radius:8px;cursor:pointer;font-weight:600;appearance:auto">
+                            ${Object.entries(ROLE_CONFIG).filter(([k]) => k !== 'admin').map(([k, v]) =>
+                                `<option value="${k}" ${k === userRole ? 'selected' : ''} style="color:#000">${v.label}</option>`
+                            ).join('')}
+                        </select>`;
+
+                    // Tab access pills
+                    const tabs = u.is_admin ? ['Alle'] : rc.tabs.filter(t => !['Profil'].includes(t));
+                    const tabPills = tabs.map(t =>
+                        `<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.35);border:1px solid rgba(255,255,255,0.06)">${t}</span>`
+                    ).join(' ');
+
                     const toggleBtn = u.is_active
                         ? `<button class="btn-toggle deactivate" onclick="toggleUserActive('${u.id}','${u.email}')">Deaktivieren</button>`
                         : `<button class="btn-toggle activate" onclick="toggleUserActive('${u.id}','${u.email}')">Aktivieren</button>`;
                     const verifyBtn = !u.email_verified ? ` <button class="btn-toggle activate" onclick="adminVerifyUser('${u.id}','${u.email}')">Bestätigen</button>` : '';
-                    return `<tr>
-                        <td><span class="user-email">${u.name || '–'}</span><br><span style="font-size:11px;color:var(--text-muted)">${u.email}</span></td>
-                        <td>${roleBadge}</td>
-                        <td>${verifiedBadge}</td>
-                        <td>${statusBadge}</td>
-                        <td>${created}</td>
-                        <td>${lastLogin}</td>
-                        <td>${toggleBtn}${verifyBtn}</td>
+
+                    return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
+                        <td style="padding:10px 8px"><span style="font-weight:500;color:white">${u.name || '–'}</span><br><span style="font-size:11px;color:var(--text-muted)">${u.email}</span></td>
+                        <td style="padding:10px 6px">${roleCell}</td>
+                        <td style="padding:10px 4px"><div style="display:flex;flex-wrap:wrap;gap:3px">${tabPills}</div></td>
+                        <td style="padding:10px 4px;text-align:center">${verifiedBadge}</td>
+                        <td style="padding:10px 4px">${statusBadge}</td>
+                        <td style="padding:10px 4px;font-size:11px;color:rgba(255,255,255,0.4)">${lastLogin}</td>
+                        <td style="padding:10px 4px">${toggleBtn}${verifyBtn}</td>
                     </tr>`;
                 }).join('');
 
-                document.getElementById('adminUserTable').innerHTML = `<table class="user-table">
-                    <thead><tr><th>Benutzer</th><th>Rolle</th><th>E-Mail</th><th>Status</th><th>Registriert</th><th>Letzter Login</th><th>Aktionen</th></tr></thead>
+                document.getElementById('adminUserTable').innerHTML = `<table class="user-table" style="width:100%;border-collapse:collapse">
+                    <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08)">
+                        <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Benutzer</th>
+                        <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Rolle</th>
+                        <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Tab-Zugang</th>
+                        <th style="text-align:center;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">E-Mail</th>
+                        <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Status</th>
+                        <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Letzter Login</th>
+                        <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Aktionen</th>
+                    </tr></thead>
                     <tbody>${tbody}</tbody>
                 </table>`;
 
@@ -1992,6 +2024,19 @@
                 const r = await fetch(`${API}/admin/users/${userId}/verify`, {method:'PUT', headers:H()});
                 if (!r.ok) { showToast('Fehler', 'error'); return; }
                 showToast(`${email}: E-Mail bestätigt ✓`, 'success');
+                loadAdminData();
+            } catch(e) { showToast('Verbindungsfehler', 'error'); }
+        }
+
+        async function adminSetRole(userId, role) {
+            try {
+                const r = await fetch(`${API}/admin/users/${userId}/role`, {
+                    method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role })
+                });
+                if (!r.ok) { showToast('Fehler beim Setzen der Rolle', 'error'); return; }
+                const rc = ROLE_CONFIG[role] || ROLE_CONFIG.researcher;
+                showToast(`Rolle → ${rc.label} gesetzt`, 'success');
                 loadAdminData();
             } catch(e) { showToast('Verbindungsfehler', 'error'); }
         }
