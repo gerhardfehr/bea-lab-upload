@@ -2726,17 +2726,27 @@
                 const statusColors = {active:'#34d399',aktiv:'#34d399',planning:'#fbbf24',completed:'rgba(139,170,255,0.5)',on_hold:'rgba(255,255,255,0.2)'};
                 const statusLabels = {active:'Aktiv',aktiv:'Aktiv',planning:'Planung',completed:'Abgeschlossen',on_hold:'On Hold'};
                 const typeLabels = {beratung:'Beratung',workshop:'Workshop',studie:'Studie',intervention:'Intervention',keynote:'Keynote',training:'Training',retainer:'Retainer'};
+                const catIcons = {mandat:'💼', lead:'🎯', probono:'🤝'};
+                const catColors = {mandat:'52,211,153', lead:'251,191,36', probono:'139,170,255'};
 
                 const rows = projects.map(p => {
                     const sc = statusColors[p.status] || 'rgba(255,255,255,0.2)';
                     const sl = statusLabels[p.status] || p.status;
                     const tl = typeLabels[p.type] || p.type || '';
+                    const cat = p.project_category || '';
+                    const catIcon = catIcons[cat] || '';
+                    const catRgb = catColors[cat] || '255,255,255';
+                    const code = p.project_code || '';
                     return `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="prjOpenLanding('${p.slug}')">
                         <div style="width:8px;height:8px;border-radius:50%;background:${sc};flex-shrink:0"></div>
                         <div style="flex:1;min-width:0">
-                            <div style="font-weight:600;color:white;font-size:14px">${p.name || p.project_code}</div>
+                            <div style="display:flex;align-items:center;gap:8px">
+                                ${code ? `<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,0.06);color:var(--accent-light);font-weight:700;font-family:monospace;letter-spacing:0.5px">${code}</span>` : ''}
+                                <span style="font-weight:600;color:white;font-size:14px">${p.name || p.project_code}</span>
+                            </div>
                             <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">
                                 <span style="font-size:11px;color:rgba(255,255,255,0.4)">${p.customer_name || ''}</span>
+                                ${cat ? `<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:rgba(${catRgb},0.08);color:rgba(${catRgb},0.7);border:1px solid rgba(${catRgb},0.15)">${catIcon} ${cat}</span>` : ''}
                                 ${tl ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(42,127,142,0.1);color:#2A7F8E;border:1px solid rgba(42,127,142,0.2)">${tl}</span>` : ''}
                                 <span style="font-size:10px;padding:2px 8px;border-radius:8px;background:${sc}15;color:${sc};border:1px solid ${sc}30">${sl}</span>
                             </div>
@@ -2905,6 +2915,8 @@
             const name = document.getElementById('prjName').value || '(kein Name)';
             const type = document.getElementById('prjType');
             const typeName = type.options[type.selectedIndex]?.text || '';
+            const category = document.getElementById('prjCategory').value || 'mandat';
+            const catLabels = {mandat:'💼 Bezahltes Mandatsprojekt', lead:'🎯 Lead-Projekt (Akquise)', probono:'🤝 Pro-Bono-Projekt'};
             const desc = document.getElementById('prjDesc').value;
             const start = document.getElementById('prjStart').value;
             const end = document.getElementById('prjEnd').value;
@@ -2915,9 +2927,15 @@
             const team = document.getElementById('prjTeam').value;
 
             const slug = (firma.value + '-' + name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').slice(0, 50);
+            // Preview code format
+            const prefix = firma.value.toUpperCase().replace(/-/g,'').slice(0,5);
+            const yymm = new Date().toISOString().slice(2,4) + new Date().toISOString().slice(5,7);
+            const previewCode = `${prefix || '???'}-${yymm}A`;
 
             document.getElementById('prjReviewContent').innerHTML = `
                 <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 16px">
+                    <div style="color:rgba(255,255,255,0.3)">Projektkürzel</div><div><strong style="color:var(--accent-light);font-size:15px">${previewCode}</strong> <span style="font-size:10px;color:rgba(255,255,255,0.2)">(wird bei Erstellung eindeutig vergeben)</span></div>
+                    <div style="color:rgba(255,255,255,0.3)">Kategorie</div><div>${catLabels[category] || category}</div>
                     <div style="color:rgba(255,255,255,0.3)">Firma</div><div><strong>${firmaName}</strong></div>
                     <div style="color:rgba(255,255,255,0.3)">Projekt</div><div><strong>${name}</strong></div>
                     <div style="color:rgba(255,255,255,0.3)">Typ</div><div>${typeName}</div>
@@ -3039,7 +3057,7 @@
                 });
                 const result = await resp.json();
                 if (resp.ok) {
-                    showToast(`✓ Projekt "${name}" eröffnet`, 'success');
+                    showToast(`✓ Projekt "${name}" eröffnet · Kürzel: ${result.project_code}`, 'success');
                     prjCancelWizard();
                     prjLoad();
                 } else {
@@ -3106,6 +3124,11 @@
             const custName = client.name || client.short_name || '';
             const prjType = project.type || '';
             const owner = team.fa_owner || '';
+            const prjCode = meta.project_code || '';
+            const prjCat = meta.project_category || '';
+            const catIcons = {mandat:'💼', lead:'🎯', probono:'🤝'};
+            const catLabels = {mandat:'Mandat', lead:'Lead', probono:'Pro Bono'};
+            const catColors = {mandat:'52,211,153', lead:'251,191,36', probono:'139,170,255'};
             // Extract team members
             let teamMembers = [];
             if (Array.isArray(team.fa_team)) teamMembers = team.fa_team;
@@ -3122,8 +3145,10 @@
                     <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,${sc}30,${sc}10);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;border:1px solid ${sc}40">📋</div>
                     <div style="flex:1">
                         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                            ${prjCode ? `<span style="font-size:12px;padding:3px 10px;border-radius:6px;background:rgba(255,255,255,0.06);color:var(--accent-light);font-weight:700;font-family:monospace;letter-spacing:0.5px">${prjCode}</span>` : ''}
                             <div style="font-size:20px;font-weight:700;color:white">${prjName}</div>
                             <span style="font-size:10px;padding:3px 10px;border-radius:8px;background:${sc}15;color:${sc};border:1px solid ${sc}30;font-weight:600">${statusLabels[status]||status}</span>
+                            ${prjCat ? `<span style="font-size:10px;padding:3px 10px;border-radius:8px;background:rgba(${catColors[prjCat]||'255,255,255'},0.08);color:rgba(${catColors[prjCat]||'255,255,255'},0.7);border:1px solid rgba(${catColors[prjCat]||'255,255,255'},0.15)">${catIcons[prjCat]||''} ${catLabels[prjCat]||prjCat}</span>` : ''}
                         </div>
                         <div style="display:flex;gap:12px;align-items:center;margin-top:6px;flex-wrap:wrap;font-size:13px;color:rgba(255,255,255,0.5)">
                             ${custName ? `<span>🏢 ${custName}</span>` : ''}
