@@ -528,19 +528,20 @@
                     <div class="chat-suggestions">
                         <button class="chat-suggestion" onclick="askSuggestion(this)">Was ist das BCM?</button>
                         <button class="chat-suggestion" onclick="askSuggestion(this)">Erkläre Complementarity</button>
-                        <button class="chat-suggestion" onclick="askSuggestion(this)">Welche Dokumente sind in der Knowledge Base?</button>
-                        <button class="chat-suggestion" onclick="askSuggestion(this)">Was ist Decision Architecture?</button>
-                        <button class="chat-suggestion" onclick="togglePrjChat();askSuggestion(this)" style="border-color:rgba(52,211,153,0.2);color:rgba(52,211,153,0.6)">💼 Neues Projekt eröffnen</button>
+                        <button class="chat-suggestion" onclick="askSuggestion(this)" style="border-color:rgba(52,211,153,0.2);color:rgba(52,211,153,0.6)">📋 Neues Projekt eröffnen</button>
+                        <button class="chat-suggestion" onclick="askSuggestion(this)" style="border-color:rgba(251,191,36,0.2);color:rgba(251,191,36,0.6)">🎯 Neuen Lead erfassen</button>
+                        <button class="chat-suggestion" onclick="askSuggestion(this)" style="border-color:rgba(139,170,255,0.2);color:rgba(139,170,255,0.6)">🔬 BCM-Modell bauen</button>
+                        <button class="chat-suggestion" onclick="askSuggestion(this)" style="border-color:rgba(232,163,61,0.2);color:rgba(232,163,61,0.6)">🧠 Ausgangslage erfassen</button>
                     </div>
                 </div>
             </div>
             <div class="chat-input-area">
-                <div id="prjChatIndicator" style="display:none;padding:6px 14px;margin-bottom:6px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.15);border-radius:8px;font-size:11px;color:rgba(52,211,153,0.7);display:none">
-                    💼 <strong>Projekt-Modus</strong> – Beschreibe dein Projekt in natürlicher Sprache. BEATRIX extrahiert die Daten.
-                    <span onclick="togglePrjChat()" style="cursor:pointer;margin-left:8px;color:rgba(255,255,255,0.3)">✕</span>
+                <div id="prjChatIndicator" style="display:none;padding:6px 14px;margin-bottom:6px;background:rgba(42,127,142,0.06);border:1px solid rgba(42,127,142,0.15);border-radius:8px;font-size:11px;color:rgba(42,127,142,0.7)">
+                    💡 <strong>BEATRIX Command Mode</strong> – Projekte, Leads, Modelle, Kontext per Sprache.
+                    <span onclick="toggleBxCmd()" style="cursor:pointer;margin-left:8px;color:rgba(255,255,255,0.3)">✕</span>
                 </div>
                 <div class="chat-input-wrap" style="display:flex;align-items:flex-end;gap:6px">
-                    <button id="prjChatToggle" onclick="togglePrjChat()" style="padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:14px;cursor:pointer;flex-shrink:0;transition:all 0.15s;line-height:1" title="Projekt per Chat eröffnen">💼</button>
+                    <button id="prjChatToggle" onclick="toggleBxCmd()" style="padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:14px;cursor:pointer;flex-shrink:0;transition:all 0.15s;line-height:1" title="BEATRIX Command Mode">💡</button>
                     <div style="flex:1;position:relative">
                         <textarea class="chat-input" id="chatInput" placeholder="Stelle eine Frage an BEATRIX..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="autoResize(this)"></textarea>
                     </div>
@@ -4604,21 +4605,21 @@
             const question = input.value.trim();
             if (!question) return;
 
-            // ── Auto-detect project intent OR use project mode ──
-            const prjKeywords = /\b(neues projekt|projekt eröffnen|projekt anlegen|eröffne.*projekt|erstell.*projekt|leg.*projekt an|mandat.*für|lead.*für|probono.*für|workshop.*für|beratung.*für)\b/i;
-            if (prjChatMode || prjKeywords.test(question)) {
-                if (!prjChatMode) {
-                    // Auto-activate project mode
-                    prjChatMode = true;
+            // ── Auto-detect intent OR use command mode ──
+            const intentKeywords = /\b(neues projekt|projekt eröffnen|projekt anlegen|eröffne.*projekt|erstell.*projekt|leg.*projekt an|mandat.*für|probono.*für|workshop.*für|beratung.*für|neuer lead|lead.*anlegen|lead.*erfassen|opportunity|akquise.*für|bcm.*modell|modell.*bauen|psi.*dimension|kontextvektor|behavioral.*model|intervention.*design|ausgangslage|kontext.*erfassen|situation.*bei|marktumfeld|herausforderung.*bei)\b/i;
+            if (bxCmdMode || intentKeywords.test(question)) {
+                if (!bxCmdMode) {
+                    bxCmdMode = true;
                     const tbtn = document.getElementById('prjChatToggle');
-                    tbtn.style.background = 'rgba(52,211,153,0.15)';
-                    tbtn.style.borderColor = 'rgba(52,211,153,0.3)';
-                    tbtn.style.color = '#34d399';
+                    tbtn.style.background = 'rgba(42,127,142,0.15)';
+                    tbtn.style.borderColor = 'rgba(42,127,142,0.4)';
+                    tbtn.style.color = 'var(--accent-light)';
                     document.getElementById('prjChatIndicator').style.display = '';
-                    prjChatDraft = {};
-                    prjChatHistory = [];
+                    bxCmdDraft = {};
+                    bxCmdHistory = [];
+                    bxCmdIntent = '';
                 }
-                sendProjectChat(question);
+                sendBxCmd(question);
                 return;
             }
 
@@ -4663,141 +4664,225 @@
             sendChat();
         }
 
-        // ── PROJECT CHAT MODE ──
-        let prjChatMode = false;
-        let prjChatDraft = {};
-        let prjChatHistory = [];
+        // ── BEATRIX COMMAND MODE (Universal Intent) ──
+        let bxCmdMode = false;
+        let bxCmdDraft = {};
+        let bxCmdHistory = [];
+        let bxCmdIntent = '';  // current active intent
 
-        function togglePrjChat() {
-            prjChatMode = !prjChatMode;
+        const BX_INTENTS = {
+            project: {icon:'📋', label:'Projekt', color:'52,211,153'},
+            lead:    {icon:'🎯', label:'Lead', color:'251,191,36'},
+            model:   {icon:'🔬', label:'Modell', color:'139,170,255'},
+            context: {icon:'🧠', label:'Kontext', color:'232,163,61'}
+        };
+
+        function toggleBxCmd() {
+            bxCmdMode = !bxCmdMode;
             const btn = document.getElementById('prjChatToggle');
             const indicator = document.getElementById('prjChatIndicator');
             const input = document.getElementById('chatInput');
-            if (prjChatMode) {
-                btn.style.background = 'rgba(52,211,153,0.15)';
-                btn.style.borderColor = 'rgba(52,211,153,0.3)';
-                btn.style.color = '#34d399';
-                btn.title = 'Projekt-Modus aktiv (klicken zum Beenden)';
+            if (bxCmdMode) {
+                btn.style.background = 'rgba(42,127,142,0.15)';
+                btn.style.borderColor = 'rgba(42,127,142,0.4)';
+                btn.style.color = 'var(--accent-light)';
+                btn.title = 'BEATRIX Command Mode aktiv (klicken zum Beenden)';
                 indicator.style.display = '';
-                input.placeholder = '💼 Beschreibe dein Projekt... z.B. "Neues Mandat für UBS, Workshop KI-Strategie, Budget 50k"';
-                prjChatDraft = {};
-                prjChatHistory = [];
+                input.placeholder = '💡 Beschreibe was du brauchst... Projekt, Lead, Modell, Kontext-Analyse...';
+                bxCmdDraft = {};
+                bxCmdHistory = [];
+                bxCmdIntent = '';
             } else {
                 btn.style.background = 'rgba(255,255,255,0.04)';
                 btn.style.borderColor = 'var(--border)';
                 btn.style.color = 'rgba(255,255,255,0.4)';
-                btn.title = 'Projekt per Chat eröffnen';
+                btn.title = 'BEATRIX Command Mode';
                 indicator.style.display = 'none';
                 input.placeholder = 'Stelle eine Frage an BEATRIX...';
-                prjChatDraft = {};
-                prjChatHistory = [];
+                bxCmdDraft = {};
+                bxCmdHistory = [];
+                bxCmdIntent = '';
             }
         }
 
-        function renderProjectCard(project, status, missing, confidence, message) {
+        // ── Card Renderers per Intent ──
+
+        function renderProjectCard(data, status, missing, confidence, message) {
+            const p = data;
             const catIcons = {mandat:'💼', lead:'🎯', probono:'🤝'};
             const catLabels = {mandat:'Bezahltes Mandat', lead:'Lead-Projekt', probono:'Pro Bono'};
-            const catColors = {mandat:'52,211,153', lead:'251,191,36', probono:'139,170,255'};
             const typeLabels = {beratung:'Beratung',workshop:'Workshop',studie:'Studie',intervention:'Intervention',keynote:'Keynote',training:'Training',retainer:'Retainer'};
-            const p = project;
             const cat = p.project_category || '';
-            const rgb = catColors[cat] || '42,127,142';
+            const rgb = '52,211,153';
             const isComplete = status === 'complete' && confidence >= 0.7;
+            const field = (l,v) => v ? `<div style="display:flex;gap:8px;padding:3px 0"><span style="color:rgba(255,255,255,0.3);min-width:100px;font-size:11px">${l}</span><span style="color:white;font-size:12px">${v}</span></div>` : '';
+            let f = '';
+            f += field('Kunde', (p.customer_code||'').toUpperCase());
+            f += field('Projekt', p.name);
+            f += field('Kategorie', `${catIcons[cat]||''} ${catLabels[cat]||cat}`);
+            f += field('Typ', typeLabels[p.type]||p.type);
+            if (p.description) f += field('Beschreibung', p.description);
+            f += field('Start', p.start_date);
+            if (p.end_date) f += field('Ende', p.end_date);
+            if (p.budget_chf) f += field('Budget', `${Number(p.budget_chf).toLocaleString('de-CH')} CHF`);
+            f += field('Owner', p.fa_owner);
+            if (p.fa_team?.length) f += field('Team', p.fa_team.join(', '));
+            return bxCard('📋','Projekt', rgb, isComplete, f, missing, message, confidence, isComplete ? `<button onclick="bxConfirmProject()" style="${bxBtnConfirm}">✓ Projekt eröffnen → GitHub</button><button onclick="bxRefine()" style="${bxBtnRefine}">✏ Anpassen</button>` : '');
+        }
 
-            let fieldsHtml = '';
-            const field = (label, val) => val ? `<div style="display:flex;gap:8px;padding:4px 0"><span style="color:rgba(255,255,255,0.3);min-width:100px;font-size:11px">${label}</span><span style="color:white;font-size:12px">${val}</span></div>` : '';
+        function renderLeadCard(data, status, missing, confidence, message) {
+            const d = data;
+            const rgb = '251,191,36';
+            const stageLabels = {initial_contact:'Erstkontakt',qualification:'Qualifizierung',proposal:'Proposal',negotiation:'Verhandlung',won:'Gewonnen',lost:'Verloren'};
+            const isComplete = status === 'complete' && confidence >= 0.7;
+            const field = (l,v) => v ? `<div style="display:flex;gap:8px;padding:3px 0"><span style="color:rgba(255,255,255,0.3);min-width:100px;font-size:11px">${l}</span><span style="color:white;font-size:12px">${v}</span></div>` : '';
+            let f = '';
+            f += field('Kunde', d.customer_name || (d.customer_code||'').toUpperCase());
+            f += field('Opportunity', d.opportunity);
+            f += field('Phase', stageLabels[d.stage]||d.stage);
+            f += field('Kontakt', d.contact_person);
+            if (d.contact_email) f += field('E-Mail', d.contact_email);
+            if (d.estimated_value_chf) f += field('Wert', `${Number(d.estimated_value_chf).toLocaleString('de-CH')} CHF`);
+            if (d.probability) f += field('Wahrsch.', `${d.probability}%`);
+            f += field('Next Step', d.next_action);
+            if (d.next_action_date) f += field('Datum', d.next_action_date);
+            f += field('Owner', d.fa_owner);
+            if (d.notes) f += field('Notizen', d.notes);
+            return bxCard('🎯','Lead', rgb, isComplete, f, missing, message, confidence, isComplete ? `<button onclick="bxConfirmLead()" style="${bxBtnConfirm}">✓ Lead erfassen → GitHub</button><button onclick="bxRefine()" style="${bxBtnRefine}">✏ Anpassen</button>` : '');
+        }
 
-            fieldsHtml += field('Kunde', (p.customer_code||'').toUpperCase());
-            fieldsHtml += field('Projekt', p.name);
-            fieldsHtml += field('Kategorie', `${catIcons[cat]||''} ${catLabels[cat]||cat}`);
-            fieldsHtml += field('Typ', typeLabels[p.type] || p.type);
-            fieldsHtml += field('Beschreibung', p.description);
-            fieldsHtml += field('Start', p.start_date);
-            fieldsHtml += field('Ende', p.end_date);
-            if (p.budget_chf) fieldsHtml += field('Budget', `${Number(p.budget_chf).toLocaleString('de-CH')} CHF`);
-            fieldsHtml += field('Abrechnung', p.billing_type === 'time_material' ? 'Time & Material' : p.billing_type === 'retainer' ? 'Retainer' : 'Fixpreis');
-            fieldsHtml += field('Owner', p.fa_owner);
-            if (p.fa_team?.length) fieldsHtml += field('Team', p.fa_team.join(', '));
-
-            let missingHtml = '';
-            if (missing?.length && !isComplete) {
-                missingHtml = `<div style="margin-top:10px;padding:8px 12px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);border-radius:8px;font-size:11px;color:rgba(251,191,36,0.7)">
-                    ⚠ Noch offen: ${missing.join(', ')}
-                </div>`;
+        function renderModelCard(data, status, missing, confidence, message) {
+            const d = data;
+            const rgb = '139,170,255';
+            const isComplete = status === 'complete' && confidence >= 0.6;
+            const field = (l,v) => v ? `<div style="display:flex;gap:8px;padding:3px 0"><span style="color:rgba(255,255,255,0.3);min-width:100px;font-size:11px">${l}</span><span style="color:white;font-size:12px">${typeof v==='object'?JSON.stringify(v):v}</span></div>` : '';
+            let f = '';
+            f += field('Typ', d.model_type);
+            f += field('Kunde', (d.customer_code||'').toUpperCase());
+            f += field('Zielverhalten', d.target_behavior);
+            f += field('Zielgruppe', d.target_group);
+            if (d.current_state) f += field('Ist-Zustand', d.current_state);
+            if (d.desired_state) f += field('Soll-Zustand', d.desired_state);
+            if (d.psi_dimensions && typeof d.psi_dimensions === 'object') {
+                const psiHtml = (Array.isArray(d.psi_dimensions) ? d.psi_dimensions : Object.entries(d.psi_dimensions)).map(p => {
+                    if (typeof p === 'string') return `<span style="padding:2px 8px;background:rgba(139,170,255,0.1);border-radius:6px;font-size:10px;color:rgba(139,170,255,0.7)">${p}</span>`;
+                    const [k,v] = Array.isArray(p) ? p : [p.dimension||p.name, p.level||p.score||''];
+                    return `<span style="padding:2px 8px;background:rgba(139,170,255,0.1);border-radius:6px;font-size:10px;color:rgba(139,170,255,0.7)">${k}: ${v}</span>`;
+                }).join(' ');
+                f += `<div style="padding:3px 0"><span style="color:rgba(255,255,255,0.3);font-size:11px">Ψ-Dimensionen</span><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${psiHtml}</div></div>`;
             }
+            if (d.hypotheses) f += field('Hypothesen', Array.isArray(d.hypotheses) ? d.hypotheses.join('; ') : d.hypotheses);
+            if (d.interventions) f += field('Interventionen', Array.isArray(d.interventions) ? d.interventions.join('; ') : d.interventions);
+            return bxCard('🔬','Modell', rgb, isComplete, f, missing, message, confidence, isComplete ? `<button onclick="bxConfirmModel()" style="${bxBtnConfirm}">✓ Modell speichern</button><button onclick="bxRefine()" style="${bxBtnRefine}">✏ Anpassen</button>` : '');
+        }
 
-            const messageHtml = message ? `<div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.5);line-height:1.5">${message}</div>` : '';
+        function renderContextCard(data, status, missing, confidence, message) {
+            const d = data;
+            const rgb = '232,163,61';
+            const isComplete = status === 'complete' && confidence >= 0.6;
+            const field = (l,v) => v ? `<div style="display:flex;gap:8px;padding:3px 0"><span style="color:rgba(255,255,255,0.3);min-width:100px;font-size:11px">${l}</span><span style="color:white;font-size:12px">${typeof v==='object'?(Array.isArray(v)?v.join('; '):JSON.stringify(v)):v}</span></div>` : '';
+            let f = '';
+            f += field('Kunde', (d.customer_code||'').toUpperCase());
+            f += field('Typ', d.context_type);
+            f += field('Zusammenfassung', d.summary);
+            if (d.challenges) f += field('Herausforderungen', d.challenges);
+            if (d.opportunities) f += field('Chancen', d.opportunities);
+            if (d.behavioral_patterns) f += field('Verhaltensmuster', d.behavioral_patterns);
+            if (d.assessment) f += field('Einschätzung', d.assessment);
+            return bxCard('🧠','Kontext', rgb, isComplete, f, missing, message, confidence, isComplete ? `<button onclick="bxConfirmContext()" style="${bxBtnConfirm}">✓ Kontext speichern</button><button onclick="bxRefine()" style="${bxBtnRefine}">✏ Anpassen</button>` : '');
+        }
 
-            const buttonsHtml = isComplete ? `
-                <div style="display:flex;gap:8px;margin-top:14px">
-                    <button onclick="prjChatConfirm()" style="flex:1;padding:10px;background:linear-gradient(135deg,#34d399,#2A7F8E);border:none;border-radius:8px;color:white;font-size:13px;font-weight:700;cursor:pointer">✓ Projekt eröffnen → GitHub</button>
-                    <button onclick="prjChatRefine()" style="padding:10px 16px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer">✏ Anpassen</button>
-                </div>` : '';
+        // Shared card shell
+        const bxBtnConfirm = "flex:1;padding:10px;background:linear-gradient(135deg,#34d399,#2A7F8E);border:none;border-radius:8px;color:white;font-size:13px;font-weight:700;cursor:pointer";
+        const bxBtnRefine = "padding:10px 16px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer";
 
-            return `<div style="background:rgba(${rgb},0.04);border:1px solid rgba(${rgb},0.15);border-radius:12px;padding:16px;margin:8px 0;max-width:480px">
+        function bxCard(icon, label, rgb, isComplete, fieldsHtml, missing, message, confidence, buttonsHtml) {
+            const missingHtml = (missing?.length && !isComplete) ? `<div style="margin-top:10px;padding:8px 12px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);border-radius:8px;font-size:11px;color:rgba(251,191,36,0.7)">⚠ Noch offen: ${missing.join(', ')}</div>` : '';
+            const msgHtml = message ? `<div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.5);line-height:1.5">${message}</div>` : '';
+            return `<div style="background:rgba(${rgb},0.04);border:1px solid rgba(${rgb},0.15);border-radius:12px;padding:16px;margin:8px 0;max-width:520px">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-                    <span style="font-size:16px">${isComplete ? '✅' : '📋'}</span>
-                    <span style="font-size:13px;font-weight:700;color:white">${isComplete ? 'Projekt bereit' : 'Projekt-Entwurf'}</span>
-                    ${confidence ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(${rgb},0.1);color:rgba(${rgb},0.7)">${Math.round(confidence*100)}%</span>` : ''}
+                    <span style="font-size:16px">${isComplete?'✅':icon}</span>
+                    <span style="font-size:13px;font-weight:700;color:white">${isComplete?label+' bereit':label+'-Entwurf'}</span>
+                    ${confidence?`<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(${rgb},0.1);color:rgba(${rgb},0.7)">${Math.round(confidence*100)}%</span>`:''}
                 </div>
-                ${fieldsHtml}
-                ${missingHtml}
-                ${messageHtml}
-                ${buttonsHtml}
+                ${fieldsHtml}${missingHtml}${msgHtml}
+                ${buttonsHtml?`<div style="display:flex;gap:8px;margin-top:14px">${buttonsHtml}</div>`:''}
             </div>`;
         }
 
-        async function sendProjectChat(message) {
+        // ── Universal Send ──
+        async function sendBxCmd(message) {
             const input = document.getElementById('chatInput');
             const btn = document.getElementById('chatSendBtn');
-            if (!message) { message = input.value.trim(); }
+            if (!message) message = input.value.trim();
             if (!message) return;
             input.value = ''; autoResize(input);
             btn.disabled = true;
 
             appendMessage('user', message);
-            prjChatHistory.push({role: 'user', content: message});
-            showTyping('BEATRIX analysiert dein Projekt...');
+            bxCmdHistory.push({role:'user', content:message});
+
+            const intentLabels = {project:'Projekt analysieren',lead:'Lead analysieren',model:'Modell bauen',context:'Kontext erfassen'};
+            showTyping(bxCmdIntent ? `BEATRIX: ${intentLabels[bxCmdIntent]||'analysiert'}...` : 'BEATRIX erkennt Intent...');
 
             try {
-                const r = await fetch(`${API}/chat/project-intent`, {
-                    method: 'POST',
-                    headers: {...H(), 'Content-Type': 'application/json'},
+                const r = await fetch(`${API}/chat/intent`, {
+                    method:'POST',
+                    headers:{...H(),'Content-Type':'application/json'},
                     body: JSON.stringify({
-                        message: message,
-                        history: prjChatHistory,
-                        current_draft: prjChatDraft
+                        message, history: bxCmdHistory, current_draft: bxCmdDraft,
+                        intent: bxCmdIntent  // force intent if already in conversation
                     })
                 });
                 const d = await r.json();
                 removeTyping();
 
                 if (!r.ok || !d.ok) {
-                    appendMessage('assistant', d.error || 'Fehler bei der Projekt-Analyse.');
-                    btn.disabled = false; input.focus();
+                    appendMessage('assistant', d.error || 'Fehler.');
+                    btn.disabled = false; input.focus(); return;
+                }
+
+                // If redirect to KB (knowledge/general questions)
+                if (d.status === 'redirect_kb') {
+                    bxCmdMode = false;
+                    toggleBxCmd(); // deactivate
+                    document.getElementById('chatInput').value = message;
+                    sendChat(); // redirect to normal chat
                     return;
                 }
 
+                // Set intent for follow-up messages
+                const intent = d.intent || 'project';
+                bxCmdIntent = intent;
+                updateBxIndicator(intent);
+
                 // Update draft
-                if (d.project && Object.keys(d.project).length > 0) {
-                    prjChatDraft = {...prjChatDraft, ...d.project};
+                if (d.data && Object.keys(d.data).length > 0) {
+                    bxCmdDraft = {...bxCmdDraft, ...d.data};
                 }
 
-                // Render card + message
+                // Render appropriate card
                 const container = document.getElementById('chatMessages');
-                const cardHtml = (d.project && Object.keys(d.project).length > 0)
-                    ? renderProjectCard(prjChatDraft, d.status, d.missing, d.confidence, d.message)
-                    : '';
+                let cardHtml = '';
+                const hasData = d.data && Object.keys(d.data).length > 0;
+
+                if (hasData) {
+                    switch(intent) {
+                        case 'project': cardHtml = renderProjectCard(bxCmdDraft, d.status, d.missing, d.confidence, d.message); break;
+                        case 'lead': cardHtml = renderLeadCard(bxCmdDraft, d.status, d.missing, d.confidence, d.message); break;
+                        case 'model': cardHtml = renderModelCard(bxCmdDraft, d.status, d.missing, d.confidence, d.message); break;
+                        case 'context': cardHtml = renderContextCard(bxCmdDraft, d.status, d.missing, d.confidence, d.message); break;
+                    }
+                }
                 const textHtml = (!cardHtml && d.message) ? formatMessage(d.message) : '';
+                const bi = BX_INTENTS[intent] || {icon:'💡', color:'42,127,142'};
 
                 container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
-                    <div class="chat-msg-avatar" style="background:linear-gradient(135deg,#34d399,#2A7F8E)">P</div>
+                    <div class="chat-msg-avatar" style="background:linear-gradient(135deg,rgba(${bi.color},0.8),rgba(${bi.color},0.4));font-size:12px">${bi.icon}</div>
                     <div class="chat-msg-body">${cardHtml}${textHtml}</div>
                 </div>`);
                 container.scrollTop = container.scrollHeight;
-
-                // Track assistant response in history
-                prjChatHistory.push({role: 'assistant', content: d.message || JSON.stringify(d.project)});
+                bxCmdHistory.push({role:'assistant', content: d.message || JSON.stringify(d.data)});
 
             } catch(e) {
                 removeTyping();
@@ -4807,71 +4892,147 @@
             input.focus();
         }
 
-        async function prjChatConfirm() {
-            if (!prjChatDraft.customer_code || !prjChatDraft.name) {
-                showToast('Kunde und Projektname fehlen noch', 'error');
-                return;
-            }
-            // Disable button
-            const btns = document.querySelectorAll('.chat-msg button');
-            btns.forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
+        function updateBxIndicator(intent) {
+            const bi = BX_INTENTS[intent];
+            if (!bi) return;
+            const el = document.getElementById('prjChatIndicator');
+            el.innerHTML = `${bi.icon} <strong>${bi.label}-Modus</strong> – Beschreibe Details, BEATRIX strukturiert automatisch.
+                <span onclick="toggleBxCmd()" style="cursor:pointer;margin-left:8px;color:rgba(255,255,255,0.3)">✕</span>`;
+            el.style.borderColor = `rgba(${bi.color},0.15)`;
+            el.style.background = `rgba(${bi.color},0.06)`;
+            el.style.color = `rgba(${bi.color},0.7)`;
+        }
 
+        function bxRefine() {
+            document.getElementById('chatInput').focus();
+            document.getElementById('chatInput').placeholder = '✏ Was möchtest du ändern?';
+        }
+
+        // ── Confirm Actions ──
+        async function bxConfirmProject() {
+            const d = bxCmdDraft;
+            if (!d.customer_code || !d.name) { showToast('Kunde und Projektname fehlen', 'error'); return; }
             showTyping('Projekt wird auf GitHub eröffnet...');
             try {
                 const r = await fetch(`${API}/projects`, {
-                    method: 'POST',
-                    headers: {...H(), 'Content-Type': 'application/json'},
+                    method:'POST', headers:{...H(),'Content-Type':'application/json'},
                     body: JSON.stringify({
-                        customer_code: prjChatDraft.customer_code,
-                        name: prjChatDraft.name,
-                        type: prjChatDraft.type || 'beratung',
-                        project_category: prjChatDraft.project_category || 'mandat',
-                        description: prjChatDraft.description || '',
-                        start_date: prjChatDraft.start_date || new Date().toISOString().slice(0,10),
-                        end_date: prjChatDraft.end_date || '',
-                        budget_chf: prjChatDraft.budget_chf || null,
-                        billing_type: prjChatDraft.billing_type || 'fixed',
-                        fa_owner: prjChatDraft.fa_owner || 'GF',
-                        fa_team: prjChatDraft.fa_team || []
+                        customer_code: d.customer_code, name: d.name,
+                        type: d.type||'beratung', project_category: d.project_category||'mandat',
+                        description: d.description||'', start_date: d.start_date||new Date().toISOString().slice(0,10),
+                        end_date: d.end_date||'', budget_chf: d.budget_chf||null,
+                        billing_type: d.billing_type||'fixed', fa_owner: d.fa_owner||'GF',
+                        fa_team: d.fa_team||[]
                     })
                 });
-                const d = await r.json();
+                const res = await r.json();
                 removeTyping();
-
-                if (r.ok && d.ok) {
-                    const container = document.getElementById('chatMessages');
-                    const catIcons = {mandat:'💼', lead:'🎯', probono:'🤝'};
-                    container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
-                        <div class="chat-msg-avatar" style="background:linear-gradient(135deg,#34d399,#2A7F8E)">✓</div>
-                        <div class="chat-msg-body">
-                            <div style="background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:12px;padding:16px">
-                                <div style="font-size:14px;font-weight:700;color:#34d399;margin-bottom:8px">✅ Projekt eröffnet!</div>
-                                <div style="font-size:20px;font-weight:800;color:white;font-family:monospace;letter-spacing:1px;margin-bottom:4px">${d.project_code}</div>
-                                <div style="font-size:12px;color:rgba(255,255,255,0.4)">${prjChatDraft.name} · ${catIcons[prjChatDraft.project_category]||''} ${prjChatDraft.project_category || ''}</div>
-                                <div style="margin-top:12px">
-                                    <button onclick="prjOpenLanding('${d.slug}');switchTab('projects')" style="padding:8px 16px;background:rgba(42,127,142,0.15);border:1px solid rgba(42,127,142,0.3);border-radius:8px;color:var(--accent-light);font-size:12px;font-weight:600;cursor:pointer">→ Projekt öffnen</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>`);
-                    container.scrollTop = container.scrollHeight;
-                    // Reset
-                    prjChatDraft = {};
-                    prjChatHistory = [];
-                    showToast(`✓ ${d.project_code} eröffnet!`, 'success');
-                } else {
-                    appendMessage('assistant', '❌ ' + (d.error || 'Fehler beim Eröffnen'));
-                }
-            } catch(e) {
-                removeTyping();
-                appendMessage('assistant', '❌ Fehler: ' + e.message);
-            }
+                if (r.ok && res.ok) {
+                    bxShowSuccess('Projekt eröffnet', res.project_code, d.name, d.project_category, `prjOpenLanding('${res.slug}');switchTab('projects')`);
+                    bxCmdDraft = {}; bxCmdHistory = []; bxCmdIntent = '';
+                    showToast(`✓ ${res.project_code} eröffnet!`, 'success');
+                } else { appendMessage('assistant', '❌ ' + (res.error||'Fehler')); }
+            } catch(e) { removeTyping(); appendMessage('assistant', '❌ ' + e.message); }
         }
 
-        function prjChatRefine() {
-            const input = document.getElementById('chatInput');
-            input.focus();
-            input.placeholder = '✏ Was möchtest du ändern? z.B. "Budget auf 60k" oder "Andrea ins Team"';
+        async function bxConfirmLead() {
+            const d = bxCmdDraft;
+            if (!d.customer_name && !d.customer_code) { showToast('Kundenname fehlt', 'error'); return; }
+            showTyping('Lead wird erfasst...');
+            try {
+                const r = await fetch(`${API}/leads`, {
+                    method:'POST', headers:{...H(),'Content-Type':'application/json'},
+                    body: JSON.stringify(d)
+                });
+                const res = await r.json();
+                removeTyping();
+                if (r.ok) {
+                    bxShowSuccess('Lead erfasst', '', d.opportunity||d.customer_name, 'lead', '');
+                    bxCmdDraft = {}; bxCmdHistory = []; bxCmdIntent = '';
+                    showToast('✓ Lead erfasst!', 'success');
+                } else { appendMessage('assistant', '❌ ' + (res.error||res.detail||'Fehler')); }
+            } catch(e) { removeTyping(); appendMessage('assistant', '❌ ' + e.message); }
+        }
+
+        async function bxConfirmModel() {
+            // Save model to project or as standalone
+            const d = bxCmdDraft;
+            showTyping('Modell wird gespeichert...');
+            try {
+                if (d.project_slug) {
+                    const r = await fetch(`${API}/projects/${d.project_slug}`, {
+                        method:'PUT', headers:{...H(),'Content-Type':'application/json'},
+                        body: JSON.stringify({section:'ebf_integration', data: d})
+                    });
+                    removeTyping();
+                    if (r.ok) {
+                        bxShowSuccess('Modell gespeichert', '', d.model_type||'BCM', 'model', d.project_slug ? `prjOpenLanding('${d.project_slug}');switchTab('projects')` : '');
+                        bxCmdDraft = {}; bxCmdHistory = []; bxCmdIntent = '';
+                        showToast('✓ Modell gespeichert!', 'success');
+                    } else { appendMessage('assistant', '❌ Fehler beim Speichern'); }
+                } else {
+                    removeTyping();
+                    // Show as downloadable summary
+                    const container = document.getElementById('chatMessages');
+                    container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
+                        <div class="chat-msg-avatar" style="background:linear-gradient(135deg,rgba(139,170,255,0.8),rgba(139,170,255,0.4));font-size:12px">🔬</div>
+                        <div class="chat-msg-body"><div style="padding:12px;background:rgba(139,170,255,0.06);border:1px solid rgba(139,170,255,0.15);border-radius:12px;font-size:12px;color:rgba(255,255,255,0.5)">
+                            ✅ Modell erstellt. Um es in ein Projekt zu integrieren, nenne das Projektkürzel oder erstelle zuerst ein Projekt.
+                            <pre style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:10px;overflow-x:auto;color:rgba(255,255,255,0.4)">${JSON.stringify(d, null, 2)}</pre>
+                        </div></div>
+                    </div>`);
+                    container.scrollTop = container.scrollHeight;
+                    bxCmdDraft = {}; bxCmdHistory = []; bxCmdIntent = '';
+                }
+            } catch(e) { removeTyping(); appendMessage('assistant', '❌ ' + e.message); }
+        }
+
+        async function bxConfirmContext() {
+            const d = bxCmdDraft;
+            if (!d.customer_code) { showToast('Kundencode fehlt', 'error'); return; }
+            showTyping('Kontext wird gespeichert...');
+            try {
+                // Save to customer folder as context.yaml
+                const r = await fetch(`${API}/customers/${d.customer_code}/context`, {
+                    method:'PUT', headers:{...H(),'Content-Type':'application/json'},
+                    body: JSON.stringify(d)
+                });
+                removeTyping();
+                if (r.ok) {
+                    bxShowSuccess('Kontext gespeichert', '', (d.customer_code||'').toUpperCase(), 'context', '');
+                    bxCmdDraft = {}; bxCmdHistory = []; bxCmdIntent = '';
+                    showToast('✓ Kontext gespeichert!', 'success');
+                } else {
+                    // Fallback: show summary
+                    const container = document.getElementById('chatMessages');
+                    container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
+                        <div class="chat-msg-avatar" style="background:linear-gradient(135deg,rgba(232,163,61,0.8),rgba(232,163,61,0.4));font-size:12px">🧠</div>
+                        <div class="chat-msg-body"><div style="padding:12px;background:rgba(232,163,61,0.06);border:1px solid rgba(232,163,61,0.15);border-radius:12px;font-size:12px;color:rgba(255,255,255,0.5)">
+                            ✅ Kontext erfasst. Speicher-Endpoint noch nicht eingerichtet – hier die strukturierten Daten:
+                            <pre style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:10px;overflow-x:auto;color:rgba(255,255,255,0.4)">${JSON.stringify(d, null, 2)}</pre>
+                        </div></div>
+                    </div>`);
+                    container.scrollTop = container.scrollHeight;
+                    bxCmdDraft = {}; bxCmdHistory = []; bxCmdIntent = '';
+                }
+            } catch(e) { removeTyping(); appendMessage('assistant', '❌ ' + e.message); }
+        }
+
+        function bxShowSuccess(title, code, subtitle, cat, onclickAction) {
+            const container = document.getElementById('chatMessages');
+            const bi = BX_INTENTS[cat] || {icon:'✅', color:'52,211,153'};
+            container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
+                <div class="chat-msg-avatar" style="background:linear-gradient(135deg,rgba(${bi.color},0.8),rgba(${bi.color},0.4));font-size:12px">✓</div>
+                <div class="chat-msg-body">
+                    <div style="background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:12px;padding:16px">
+                        <div style="font-size:14px;font-weight:700;color:#34d399;margin-bottom:8px">✅ ${title}</div>
+                        ${code ? `<div style="font-size:20px;font-weight:800;color:white;font-family:monospace;letter-spacing:1px;margin-bottom:4px">${code}</div>` : ''}
+                        <div style="font-size:12px;color:rgba(255,255,255,0.4)">${subtitle}</div>
+                        ${onclickAction ? `<div style="margin-top:12px"><button onclick="${onclickAction}" style="padding:8px 16px;background:rgba(42,127,142,0.15);border:1px solid rgba(42,127,142,0.3);border-radius:8px;color:var(--accent-light);font-size:12px;font-weight:600;cursor:pointer">→ Öffnen</button></div>` : ''}
+                    </div>
+                </div>
+            </div>`);
+            container.scrollTop = container.scrollHeight;
         }
 
         async function loadChatHistory() {
