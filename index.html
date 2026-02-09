@@ -825,37 +825,49 @@
 
             <!-- ═══ STEP 6: Result ═══ -->
             <div class="mb-panel" id="mbStep6">
-                <div class="mb-step-title">Schritt 6: Ergebnis & Sensitivitätsanalyse</div>
-                <div class="mb-step-desc">Modell anwenden, Ergebnis berechnen, Robustheit prüfen.</div>
+                <div class="mb-step-title">Schritt 6: Ergebnis & Report</div>
+                <div class="mb-step-desc">Wähle die Report-Tiefe. BEATRIX streamt den Bericht live.</div>
 
-                <!-- Progress Container -->
-                <div id="mbComputeProgress" style="margin:24px 0">
-                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-                        <div id="mbComputeSpinner" style="width:20px;height:20px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
-                        <div>
-                            <div id="mbComputeStage" style="font-size:15px;font-weight:600;color:rgba(255,255,255,0.9)">Initialisiere Berechnung...</div>
-                            <div id="mbComputeDetail" style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px">Modell wird vorbereitet</div>
-                        </div>
+                <!-- Depth Choice -->
+                <div id="mbDepthChoice" style="display:flex;gap:12px;margin:20px 0">
+                    <div onclick="mbSelectDepth('standard', this)" id="mbDepthStd" style="flex:1;padding:18px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);cursor:pointer;transition:all 0.2s"
+                         onmouseover="if(!this.classList.contains('depth-active'))this.style.background='rgba(255,255,255,0.04)'"
+                         onmouseout="if(!this.classList.contains('depth-active'))this.style.background='transparent'">
+                        <div style="font-size:15px;font-weight:600;color:white;margin-bottom:6px">📋 Standard</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.5">Kompakter Report mit Key Facts, 10C Mapping, BCM Parametern und Handlungsempfehlungen.</div>
+                        <div style="font-size:11px;color:var(--accent);margin-top:8px">~15 Sek. · 1–2 Seiten</div>
                     </div>
-                    <!-- Progress Bar -->
-                    <div style="background:rgba(255,255,255,0.06);border-radius:8px;height:10px;overflow:hidden;position:relative">
-                        <div id="mbProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#818cf8);border-radius:8px;transition:width 0.5s ease"></div>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;margin-top:8px">
-                        <div id="mbComputePercent" style="font-size:12px;color:var(--accent);font-weight:600">0%</div>
-                        <div id="mbComputeTime" style="font-size:12px;color:rgba(255,255,255,0.4)">Geschätzt: ~15s</div>
-                    </div>
-                    <!-- Stage Steps -->
-                    <div id="mbComputeStages" style="margin-top:20px;display:flex;flex-direction:column;gap:8px">
+                    <div onclick="mbSelectDepth('deep', this)" id="mbDepthDeep" style="flex:1;padding:18px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);cursor:pointer;transition:all 0.2s"
+                         onmouseover="if(!this.classList.contains('depth-active'))this.style.background='rgba(255,255,255,0.04)'"
+                         onmouseout="if(!this.classList.contains('depth-active'))this.style.background='transparent'">
+                        <div style="font-size:15px;font-weight:600;color:white;margin-bottom:6px">🔬 Standard++</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.5">Vertiefte Analyse mit Ψ-Kontext-Matrix, Sensitivitätsanalyse, Interventions-Roadmap und Detail-Tabellen.</div>
+                        <div style="font-size:11px;color:var(--accent);margin-top:8px">~30 Sek. · 4–6 Seiten</div>
                     </div>
                 </div>
 
-                <!-- Result (hidden until done) -->
+                <!-- Progress Container -->
+                <div id="mbComputeProgress" style="margin:24px 0;display:none">
+                    <div style="display:flex;align-items:center;gap:12px">
+                        <div id="mbComputeSpinner" style="width:16px;height:16px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
+                        <div>
+                            <div id="mbComputeStage" style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.9)">Verbinde mit BEATRIX...</div>
+                            <div id="mbComputeDetail" style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px"></div>
+                        </div>
+                    </div>
+                    <div id="mbComputeStages"></div>
+                    <div id="mbComputeTime" style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px"></div>
+                    <div id="mbProgressBar" style="display:none"></div>
+                    <div id="mbComputePercent" style="display:none"></div>
+                </div>
+
+                <!-- Result (streamed) -->
                 <div id="mbResultContent" style="display:none"></div>
 
                 <div class="mb-actions">
                     <button class="mb-btn mb-btn-back" onclick="mbGoStep(5)">← Zurück</button>
-                    <button class="mb-btn mb-btn-primary" id="mbExportBtn" onclick="mbExportModel()" style="display:none">📄 Modell exportieren</button>
+                    <button class="mb-btn mb-btn-primary" id="mbComputeBtn" onclick="mbComputeResult()" disabled style="opacity:0.4">Report generieren →</button>
+                    <button class="mb-btn mb-btn-primary" id="mbExportBtn" onclick="mbExportModel()" style="display:none">📄 Exportieren</button>
                     <button class="mb-btn mb-btn-secondary" onclick="mbGoToStart()" style="display:none" id="mbNewModelBtn">Neues Modell</button>
                 </div>
             </div>
@@ -2040,6 +2052,10 @@ Antworte NUR als JSON Array:
                 }
 
                 // Headers
+                if (line.startsWith('#### ')) {
+                    html += `<div style="font-size:13px;font-weight:700;color:rgba(255,255,255,0.85);margin:16px 0 6px">${inlineMd(line.slice(5))}</div>`;
+                    continue;
+                }
                 if (line.startsWith('### ')) {
                     html += `<h4 style="color:var(--accent);font-size:14px;font-weight:700;margin:20px 0 8px;letter-spacing:0.3px">${line.slice(4)}</h4>`;
                     continue;
@@ -2273,8 +2289,36 @@ Antworte NUR als JSON Array:
             mbState.step = step;
             mbUpdateProgress(step);
             mbShowPanel('mbStep' + step);
-            // Auto-trigger computation for Step 6
-            if (step === 6) mbComputeResult();
+            // Step 6: reset depth choice, let user pick
+            if (step === 6) {
+                mbState.reportDepth = null;
+                const btn = document.getElementById('mbComputeBtn');
+                if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; }
+                document.getElementById('mbDepthChoice').style.display = 'flex';
+                document.getElementById('mbComputeProgress').style.display = 'none';
+                document.getElementById('mbResultContent').style.display = 'none';
+                document.getElementById('mbExportBtn').style.display = 'none';
+                document.getElementById('mbNewModelBtn').style.display = 'none';
+                document.querySelectorAll('#mbDepthChoice > div').forEach(d => {
+                    d.classList.remove('depth-active');
+                    d.style.borderColor = 'rgba(255,255,255,0.08)';
+                    d.style.background = 'transparent';
+                });
+            }
+        }
+
+        function mbSelectDepth(depth, el) {
+            mbState.reportDepth = depth;
+            document.querySelectorAll('#mbDepthChoice > div').forEach(d => {
+                d.classList.remove('depth-active');
+                d.style.borderColor = 'rgba(255,255,255,0.08)';
+                d.style.background = 'transparent';
+            });
+            el.classList.add('depth-active');
+            el.style.borderColor = 'var(--accent)';
+            el.style.background = 'rgba(139,170,255,0.08)';
+            const btn = document.getElementById('mbComputeBtn');
+            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
         }
 
         function mbSelect(el, value) {
@@ -2618,69 +2662,95 @@ Antworte NUR als JSON Array:
         ];
 
         async function mbComputeResult() {
+            const depth = mbState.reportDepth || 'standard';
+            const isDeep = depth === 'deep';
+
+            // Hide choice, show progress
+            document.getElementById('mbDepthChoice').style.display = 'none';
+            document.getElementById('mbComputeBtn').style.display = 'none';
+
             const progressEl = document.getElementById('mbComputeProgress');
             const resultEl = document.getElementById('mbResultContent');
             const stageEl = document.getElementById('mbComputeStage');
             const detailEl = document.getElementById('mbComputeDetail');
             const timeEl = document.getElementById('mbComputeTime');
-            const barEl = document.getElementById('mbProgressBar');
-            const pctEl = document.getElementById('mbComputePercent');
-            const stagesContainer = document.getElementById('mbComputeStages');
 
-            // Phase 1: Show brief init progress
             progressEl.style.display = 'block';
             resultEl.style.display = 'none';
-            document.getElementById('mbExportBtn').style.display = 'none';
-            document.getElementById('mbNewModelBtn').style.display = 'none';
-            barEl.style.width = '0%';
-            pctEl.textContent = '';
-            stageEl.textContent = 'Verbinde mit BEATRIX Intelligence...';
-            detailEl.textContent = 'Modell-Report wird generiert';
+            stageEl.textContent = isDeep ? 'Tiefenanalyse wird vorbereitet...' : 'Report wird vorbereitet...';
+            detailEl.textContent = isDeep ? 'Standard++ · 4–6 Seiten' : 'Standard · 1–2 Seiten';
             timeEl.textContent = '';
-            stagesContainer.innerHTML = '';
 
             const startTime = Date.now();
-            const prompt = `Erstelle einen vollständigen Modell-Report für: "${mbState.question}". Session: ${mbState.sessionId}. Mode: ${mbState.mode}. Selections: ${JSON.stringify(mbState.selections)}.
 
-Strukturiere den Report mit Markdown-Überschriften:
+            const promptStandard = `Erstelle einen kompakten BCM Modell-Report für: "${mbState.question}".
+Session: ${mbState.sessionId}. Mode: ${mbState.mode}. Selections: ${JSON.stringify(mbState.selections)}.
+
+Struktur (nutze exakt diese Markdown-Überschriften):
 ## Modell-Report: [Kurztitel]
 ### 1. Problemstellung & Domain
+Kurze Einordnung (3–4 Sätze).
+### 2. 10C Mapping
+Nenne die 3–4 relevantesten Complementarity-Dimensionen als Aufzählung mit je 1 Satz.
+### 3. BCM Parameter
+Tabelle mit | Parameter | Wert | Interpretation |
+für Willingness (W), Ability (A), Capacity (C).
+### 4. Ergebnis
+Klare Verhaltensvorhersage in 2–3 Sätzen.
+### 5. Handlungsempfehlungen
+3–5 konkrete Massnahmen als nummerierte Liste.
+
+Schreibe präzise und professionell. Maximal 500 Wörter.`;
+
+            const promptDeep = `Erstelle einen umfassenden BCM Modell-Report (Standard++) für: "${mbState.question}".
+Session: ${mbState.sessionId}. Mode: ${mbState.mode}. Selections: ${JSON.stringify(mbState.selections)}.
+
+Struktur (nutze exakt diese Markdown-Überschriften):
+## Modell-Report: [Kurztitel]
+### 1. Problemstellung & Domain-Analyse
+Detaillierte Einordnung der Fragestellung, Zielgruppe, Verhaltensänderungsziel.
 ### 2. 10C Complementarity Mapping
+Vollständige Tabelle | Dimension | Spezifikation | BCM Relevanz | für alle 10 Dimensionen (WHO, WHAT, HOW, WHEN, WHERE, AWARE, READY, STAGE, HIERARCHY, EIT).
 ### 3. Ψ-Kontextdimensionen
+Tabelle | Ψ-Dimension | Wert (0–1) | Impact | Rationale | für die 8 Ψ-Dimensionen.
 ### 4. BCM Parameter (Willingness · Ability · Capacity)
+Detaillierte Tabelle mit Subkomponenten, Werten und Interpretation.
+#### Key Insight
+Zusammenfassende Erkenntnis.
 ### 5. Ergebnis & Verhaltensvorhersage
+Klare Vorhersage mit Konfidenzintervall und Begründung.
 ### 6. Sensitivitätsanalyse
+Welche Parameter haben den grössten Einfluss? ±20% Variation analysieren.
 ### 7. Handlungsempfehlungen
+#### Strategische Intervention Roadmap
+Phasenplan mit 3–4 Phasen, jeweils mit Zeitrahmen, Ziel, Taktiken und Interventionen.
 
-Schreibe detailliert, professionell und wissenschaftlich fundiert. Nutze **fette** Begriffe für Schlüsselkonzepte.`;
+Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabellen wo sinnvoll.`;
 
-            // Phase 2: Switch to streaming result
+            const prompt = isDeep ? promptDeep : promptStandard;
+
             try {
-                // Show streaming area
-                await new Promise(r => setTimeout(r, 600));
+                await new Promise(r => setTimeout(r, 500));
                 progressEl.style.display = 'none';
                 resultEl.style.display = 'block';
+                const depthLabel = isDeep ? '🔬 Standard++' : '📋 Standard';
                 resultEl.innerHTML = `
                     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
                         <div style="width:16px;height:16px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0" id="mbReportSpinner"></div>
                         <div>
-                            <div style="font-size:14px;font-weight:600;color:white">📊 Modell-Report</div>
+                            <div style="font-size:14px;font-weight:600;color:white">📊 Modell-Report <span style="font-size:12px;color:var(--accent);font-weight:400">${depthLabel}</span></div>
                             <div style="font-size:11px;color:var(--text-secondary)" id="mbReportMeta">Session ${mbState.sessionId || 'N/A'} · Streaming...</div>
                         </div>
                     </div>
-                    <div id="mbStreamTarget" style="max-height:60vh;overflow-y:auto;padding-right:8px"></div>
+                    <div id="mbStreamTarget" style="max-height:65vh;overflow-y:auto;padding-right:8px"></div>
                 `;
 
                 const targetEl = document.getElementById('mbStreamTarget');
-                const fullText = await mbStreamChat(prompt, targetEl, {
+                await mbStreamChat(prompt, targetEl, {
                     onDone: (text) => {
                         const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
                         const spinner = document.getElementById('mbReportSpinner');
-                        if (spinner) {
-                            spinner.style.animation = 'none';
-                            spinner.style.borderColor = '#22c55e';
-                            spinner.style.borderTopColor = '#22c55e';
-                        }
+                        if (spinner) { spinner.style.animation = 'none'; spinner.style.borderColor = '#22c55e'; spinner.style.borderTopColor = '#22c55e'; }
                         const meta = document.getElementById('mbReportMeta');
                         if (meta) meta.textContent = `Session ${mbState.sessionId || 'N/A'} · Generiert in ${totalTime}s`;
                         document.getElementById('mbExportBtn').style.display = '';
@@ -2688,16 +2758,10 @@ Schreibe detailliert, professionell und wissenschaftlich fundiert. Nutze **fette
                     }
                 });
 
-                if (!fullText) {
-                    // Fallback if streaming returned nothing
-                    document.getElementById('mbExportBtn').style.display = '';
-                    document.getElementById('mbNewModelBtn').style.display = '';
-                }
-
             } catch(e) {
                 console.error('Compute error:', e);
                 resultEl.style.display = 'block';
-                resultEl.innerHTML = '<div style="color:#ef4444;padding:20px;text-align:center">⚠ Fehler bei der Berechnung. Bitte versuche es erneut.</div>';
+                resultEl.innerHTML = '<div style="color:#ef4444;padding:20px;text-align:center">⚠ Fehler. Bitte erneut versuchen.</div>';
                 document.getElementById('mbExportBtn').style.display = '';
                 document.getElementById('mbNewModelBtn').style.display = '';
             }
