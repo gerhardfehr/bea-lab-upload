@@ -2258,7 +2258,12 @@ Gib genau 3 konkrete, umsetzbare Verbesserungsvorschläge als JSON-Array zurück
 - "type": "bug" | "ux" | "wunsch" | "performance"
 - "title": kurzer Titel (max 40 Zeichen)
 - "description": konkrete Beschreibung (max 80 Zeichen)
+- "x": horizontale Position in Prozent (0-100) wo das Problem auf dem Screen ist
+- "y": vertikale Position in Prozent (0-100) wo das Problem auf dem Screen ist
+- "w": Breite des betroffenen Bereichs in Prozent (5-40)
+- "h": Höhe des betroffenen Bereichs in Prozent (5-30)
 
+Die Koordinaten sollen möglichst genau auf den relevanten UI-Bereich zeigen.
 Fokussiere auf: UX-Verbesserungen, fehlende Features, visuelle Probleme, Barrierefreiheit.
 Antworte NUR mit dem JSON-Array, kein anderer Text."""}
                 ]
