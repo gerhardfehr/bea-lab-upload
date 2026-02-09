@@ -4018,14 +4018,18 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
         #fbSend { padding:8px 18px; border-radius:10px; border:none; background:linear-gradient(135deg,#8b9aff,#6366f1); color:white; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
         #fbSend:hover { filter:brightness(1.1); }
         #fbSend:disabled { opacity:0.5; cursor:not-allowed; }
-        /* AI annotation badges on screenshot */
-        .fb-ai-badge { position:absolute; z-index:3; pointer-events:auto; cursor:pointer; display:flex; align-items:center; gap:6px; padding:4px 10px 4px 6px; border-radius:20px; font-size:11px; font-weight:600; color:white; box-shadow:0 2px 12px rgba(0,0,0,0.5); animation:fbPop 0.4s ease-out; white-space:nowrap; max-width:260px; }
-        .fb-ai-badge:hover { filter:brightness(1.15); transform:scale(1.04); }
-        .fb-ai-badge .fb-ai-num { width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; background:rgba(255,255,255,0.25); flex-shrink:0; }
-        .fb-ai-badge .fb-ai-x { margin-left:auto; opacity:0.5; cursor:pointer; padding:0 2px; }
-        .fb-ai-badge .fb-ai-x:hover { opacity:1; }
+        /* AI circles on screenshot */
+        .fb-ai-circle { position:absolute; z-index:3; pointer-events:auto; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:white; box-shadow:0 2px 10px rgba(0,0,0,0.5); animation:fbPop 0.4s ease-out; border:2px solid rgba(255,255,255,0.4); }
+        .fb-ai-circle:hover { transform:scale(1.15); }
         .fb-ai-area { position:absolute; z-index:2; border:2px dashed; border-radius:6px; pointer-events:none; animation:fbPop 0.5s ease-out; }
-        @keyframes fbPop { from { transform:scale(0.7); opacity:0; } to { transform:scale(1); opacity:1; } }
+        @keyframes fbPop { from { transform:scale(0.5); opacity:0; } to { transform:scale(1); opacity:1; } }
+        /* Suggestion list items */
+        .fb-sug-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; cursor:pointer; transition:all 0.15s; border:1px solid transparent; margin-bottom:4px; }
+        .fb-sug-item:hover { background:rgba(139,170,255,0.06); border-color:rgba(139,170,255,0.2); }
+        .fb-sug-num { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:white; flex-shrink:0; }
+        .fb-sug-text { flex:1; min-width:0; }
+        .fb-sug-title { font-size:12px; font-weight:600; color:rgba(255,255,255,0.85); }
+        .fb-sug-desc { font-size:11px; color:rgba(255,255,255,0.35); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         #fbAiLoading { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:4; display:flex; align-items:center; gap:10px; padding:12px 22px; background:rgba(20,20,40,0.9); border-radius:12px; border:1px solid rgba(255,255,255,0.08); }
     </style>
 
@@ -4055,6 +4059,14 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
                 <div style="width:14px;height:14px;border:2px solid rgba(139,170,255,0.2);border-top:2px solid #8b9aff;border-radius:50%;animation:spin 0.8s linear infinite"></div>
                 <span style="font-size:12px;color:rgba(255,255,255,0.5)">BEATRIX analysiert...</span>
             </div>
+        </div>
+        <!-- AI Suggestion List (appears after analysis) -->
+        <div id="fbSugList" style="display:none;padding:8px 12px;background:rgba(20,20,40,0.95);border-top:1px solid rgba(255,255,255,0.08);flex-shrink:0">
+            <div style="display:flex;align-items:center;margin-bottom:6px">
+                <span style="font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.5px;flex:1">BEATRIX Vorschläge</span>
+                <button onclick="fbDismissAll()" style="border:none;background:none;color:rgba(255,255,255,0.25);font-size:11px;cursor:pointer;padding:2px 6px">alle ausblenden</button>
+            </div>
+            <div id="fbSugItems"></div>
         </div>
         <div id="fbBottom">
             <button class="fb-type active" onclick="fbSetType('bug')" id="fbTypeBug">🐛</button>
@@ -4088,6 +4100,7 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
             document.getElementById('fbComment').value = '';
             document.getElementById('fbAnnotations').innerHTML = '';
             document.getElementById('fbAiLoading').style.display = 'flex';
+            document.getElementById('fbSugList').style.display = 'none';
             document.getElementById('fbHeaderMsg').textContent = '🙏 Danke! BEATRIX analysiert...';
 
             fbAnalyzeScreen();
@@ -4119,19 +4132,31 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
                 const cW = wrap.clientWidth, cH = wrap.clientHeight;
                 const annotEl = document.getElementById('fbAnnotations');
                 annotEl.style.pointerEvents = 'auto';
+
+                // Small numbered circles on screenshot + dashed areas
                 annotEl.innerHTML = fbState.suggestions.map((s, i) => {
                     const color = colors[i % 3];
                     const x = (s.x || 50) / 100 * cW;
                     const y = (s.y || 30 + i * 25) / 100 * cH;
                     const aW = (s.w || 20) / 100 * cW;
                     const aH = (s.h || 8) / 100 * cH;
-                    return `<div class="fb-ai-area" style="left:${x - aW/2}px;top:${y - aH/2}px;width:${aW}px;height:${aH}px;border-color:${color}50;background:${color}0a;animation-delay:${i*0.15}s"></div>
-                    <div class="fb-ai-badge" style="left:${x - aW/2}px;top:${y - aH/2 - 30}px;background:${color}dd;animation-delay:${i*0.15}s" onclick="fbUseSuggestion(${i})" id="fbBadge${i}">
-                        <span class="fb-ai-num">${i+1}</span>
-                        <span style="overflow:hidden;text-overflow:ellipsis">${s.title}</span>
-                        <span class="fb-ai-x" onclick="event.stopPropagation();fbDismissBadge(${i})">✕</span>
+                    return `<div class="fb-ai-area" id="fbArea${i}" style="left:${x - aW/2}px;top:${y - aH/2}px;width:${aW}px;height:${aH}px;border-color:${color}50;background:${color}08;animation-delay:${i*0.15}s"></div>
+                    <div class="fb-ai-circle" id="fbCircle${i}" style="left:${x - aW/2 - 10}px;top:${y - aH/2 - 10}px;background:${color};animation-delay:${i*0.15}s" onclick="fbUseSuggestion(${i})">${i+1}</div>`;
+                }).join('');
+
+                // Suggestion list panel
+                const typeIcons = { bug:'🐛', wunsch:'💡', ux:'✨', performance:'⚡', frage:'❓' };
+                document.getElementById('fbSugItems').innerHTML = fbState.suggestions.map((s, i) => {
+                    const color = colors[i % 3];
+                    return `<div class="fb-sug-item" onclick="fbUseSuggestion(${i})" id="fbSugItem${i}">
+                        <div class="fb-sug-num" style="background:${color}">${i+1}</div>
+                        <div class="fb-sug-text">
+                            <div class="fb-sug-title">${typeIcons[s.type] || '💡'} ${s.title}</div>
+                            <div class="fb-sug-desc">${s.description}</div>
+                        </div>
                     </div>`;
                 }).join('');
+                document.getElementById('fbSugList').style.display = 'block';
             } else {
                 document.getElementById('fbHeaderMsg').textContent = '🙏 Danke! Zeichne und beschreibe dein Feedback.';
             }
@@ -4153,11 +4178,16 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
     }
 
     function fbDismissBadge(i) {
-        const badge = document.getElementById('fbBadge' + i);
-        if (badge) { badge.style.transition = 'opacity 0.3s'; badge.style.opacity = '0'; setTimeout(() => badge.remove(), 300); }
-        // Also remove the dashed area (previous sibling)
-        const areas = document.querySelectorAll('.fb-ai-area');
-        if (areas[i]) { areas[i].style.transition = 'opacity 0.3s'; areas[i].style.opacity = '0'; setTimeout(() => areas[i]?.remove(), 300); }
+        ['fbCircle','fbArea','fbSugItem'].forEach(prefix => {
+            const el = document.getElementById(prefix + i);
+            if (el) { el.style.transition = 'opacity 0.3s'; el.style.opacity = '0'; setTimeout(() => el?.remove(), 300); }
+        });
+    }
+
+    function fbDismissAll() {
+        document.getElementById('fbAnnotations').innerHTML = '';
+        document.getElementById('fbSugList').style.display = 'none';
+        document.getElementById('fbHeaderMsg').textContent = '🙏 Zeichne und beschreibe dein Feedback.';
     }
 
     function fbRedraw() {
