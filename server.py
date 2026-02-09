@@ -2253,6 +2253,153 @@ async def crm_get_companies(user=Depends(require_auth)):
     except: return []
     finally: db.close()
 
+# GitHub-enriched companies – merges customer-registry.yaml with CRM data
+_github_companies_cache = {"data": None, "ts": 0}
+
+@app.get("/api/crm/companies/enriched")
+async def crm_get_companies_enriched(user=Depends(require_auth)):
+    """Fetch companies from GitHub customer-registry.yaml + customer profiles, merge with CRM DB."""
+    import yaml, time as _time
+    db = get_db()
+    try:
+        # Cache GitHub data for 5 minutes
+        now = _time.time()
+        if _github_companies_cache["data"] and now - _github_companies_cache["ts"] < 300:
+            github_customers = _github_companies_cache["data"]
+        else:
+            github_customers = []
+            try:
+                # Fetch customer-registry.yaml
+                headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3.raw"}
+                url = f"https://api.github.com/repos/{TARGET_REPO}/contents/data/customer-registry.yaml"
+                req = urllib.request.Request(url, headers=headers)
+                content = urllib.request.urlopen(req, timeout=10).read().decode()
+                registry = yaml.safe_load(content)
+                github_customers = registry.get("customers", [])
+
+                # Fetch customer-contacts.yaml for contact data
+                contacts_by_customer = {}
+                try:
+                    url2 = f"https://api.github.com/repos/{TARGET_REPO}/contents/data/customer-contacts.yaml"
+                    req2 = urllib.request.Request(url2, headers=headers)
+                    contacts_content = urllib.request.urlopen(req2, timeout=10).read().decode()
+                    contacts_data = yaml.safe_load(contacts_content)
+                    for c in contacts_data.get("customers", []):
+                        cid = c.get("customer_id", "")
+                        contacts_by_customer[cid] = c
+                except: pass
+
+                # Enrich each customer with contacts
+                for cust in github_customers:
+                    code = cust.get("code", "")
+                    if code in contacts_by_customer:
+                        cust["_contacts"] = contacts_by_customer[code]
+
+                _github_companies_cache["data"] = github_customers
+                _github_companies_cache["ts"] = now
+                logger.info(f"GitHub customer registry loaded: {len(github_customers)} customers")
+            except Exception as e:
+                logger.error(f"GitHub customer fetch error: {e}")
+
+        # Get CRM DB companies + deals for merge
+        db_companies = {}
+        try:
+            rows = db.execute(text("SELECT * FROM crm_companies")).fetchall()
+            for r in rows:
+                m = dict(r._mapping)
+                db_companies[m.get("name", "")] = m
+                db_companies[m.get("domain", "")] = m
+        except: pass
+
+        # Get deal stats per company
+        deal_stats = {}
+        try:
+            deals = db.execute(text("""SELECT d.company_id, d.company_name, d.stage, d.value, c.name as cname
+                FROM crm_deals d LEFT JOIN crm_companies c ON d.company_id = c.id""")).fetchall()
+            for d in deals:
+                key = d.cname or d.company_name or d.company_id
+                if not key: continue
+                if key not in deal_stats:
+                    deal_stats[key] = {"leads": 0, "active": 0, "won": 0, "pipeline": 0}
+                deal_stats[key]["leads"] += 1
+                if d.stage in ('Prospect','Qualified','Proposal','Negotiation','Active'):
+                    deal_stats[key]["active"] += 1
+                if d.stage == 'Won':
+                    deal_stats[key]["won"] += 1
+                deal_stats[key]["pipeline"] += float(d.value or 0)
+        except: pass
+
+        # Get contact counts
+        contact_counts = {}
+        try:
+            contacts = db.execute(text("SELECT company_id, COUNT(*) as cnt FROM crm_contacts GROUP BY company_id")).fetchall()
+            for c in contacts:
+                contact_counts[c.company_id] = c.cnt
+        except: pass
+
+        # Merge: GitHub as primary, enriched with CRM stats
+        result = []
+        for cust in github_customers:
+            code = cust.get("code", "")
+            name = cust.get("name", "")
+            short = cust.get("short_name", code)
+            db_match = db_companies.get(name) or db_companies.get(code) or {}
+            ds = deal_stats.get(name) or deal_stats.get(short) or deal_stats.get(code) or {}
+            cc = contacts_by_customer.get(code, {}) if 'contacts_by_customer' in dir() else cust.get("_contacts", {})
+
+            result.append({
+                "id": cust.get("id", ""),
+                "code": code,
+                "name": name,
+                "short_name": short,
+                "type": cust.get("type", ""),
+                "industry": cust.get("industry", ""),
+                "country": cust.get("country", ""),
+                "status": cust.get("status", ""),
+                "profile_path": cust.get("profile_path"),
+                "context_path": cust.get("context_path"),
+                "notes": cust.get("notes", ""),
+                "has_profile": bool(cust.get("profile_path")),
+                "has_context": bool(cust.get("context_path")),
+                "has_customer_folder": code.lower() in [d.lower() for d in _get_customer_folders()],
+                # CRM stats
+                "leads": ds.get("leads", 0),
+                "active_leads": ds.get("active", 0),
+                "won": ds.get("won", 0),
+                "pipeline": ds.get("pipeline", 0),
+                "db_contacts": contact_counts.get(db_match.get("id"), 0),
+                # Contact info from GitHub
+                "fa_owner": cc.get("fa_owner", ""),
+                "relationship_status": cc.get("relationship_status", ""),
+                "contact_persons": len(cc.get("contacts", [])) if isinstance(cc.get("contacts"), list) else 0,
+            })
+
+        result.sort(key=lambda x: (-x["leads"], x["name"]))
+        return result
+    except Exception as e:
+        logger.error(f"Enriched companies error: {e}")
+        return []
+    finally: db.close()
+
+# Cache customer folders list
+_customer_folders_cache = {"data": [], "ts": 0}
+def _get_customer_folders():
+    import time as _time
+    now = _time.time()
+    if _customer_folders_cache["data"] and now - _customer_folders_cache["ts"] < 300:
+        return _customer_folders_cache["data"]
+    try:
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        url = f"https://api.github.com/repos/{TARGET_REPO}/contents/data/customers"
+        req = urllib.request.Request(url, headers=headers)
+        items = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        folders = [i["name"] for i in items if i["type"] == "dir"]
+        _customer_folders_cache["data"] = folders
+        _customer_folders_cache["ts"] = now
+        return folders
+    except:
+        return _customer_folders_cache["data"]
+
 @app.post("/api/crm/companies")
 async def crm_create_company(request: Request, user=Depends(require_auth)):
     db = get_db()
