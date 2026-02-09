@@ -1599,6 +1599,25 @@ async def set_user_crm_access(user_id: str, request: Request, user=Depends(requi
         return {"email": target.email, "crm_access": target.crm_access, "crm_role": target.crm_role, "crm_owner_code": target.crm_owner_code, "lead_management": target.lead_management or False}
     finally: db.close()
 
+@app.put("/api/admin/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: str, request: Request, user=Depends(require_auth)):
+    """Admin resets a user's password."""
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        data = await request.json()
+        new_pw = data.get("password", "")
+        if len(new_pw) < 8: raise HTTPException(400, "Passwort muss mindestens 8 Zeichen haben")
+        target = db.query(User).filter(User.id == user_id).first()
+        if not target: raise HTTPException(404, "Benutzer nicht gefunden")
+        pw_hash, pw_salt = hash_password(new_pw)
+        target.password_hash = pw_hash
+        target.password_salt = pw_salt
+        db.commit()
+        logger.info(f"Admin password reset: {target.email}")
+        return {"email": target.email, "status": "password_reset"}
+    finally: db.close()
+
 # ── BEATRIX Chat (RAG) ──────────────────────────────────────────────────
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
