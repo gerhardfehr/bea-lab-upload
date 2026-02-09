@@ -2047,9 +2047,15 @@
                 // Data completeness indicators
                 const hasFolder = c.has_customer_folder ? '📁' : '';
                 const hasContext = c.has_context ? '🧠' : '';
+                const hasVectors = c.ebf_context_vectors ? '🔬' : '';
+                const hot = c.hot_lead ? '🔥' : '';
                 const contactCount = c.contact_persons > 0 ? `<span style="font-size:10px;color:rgba(255,255,255,0.3)">👤${c.contact_persons}</span>` : '';
                 const owner = c.fa_owner ? `<span style="font-size:9px;padding:1px 5px;border-radius:6px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3)">${c.fa_owner}</span>` : '';
 
+                // Scores
+                const fitScore = c.fit_score > 0 ? `<span style="font-size:9px;padding:1px 5px;border-radius:6px;background:rgba(139,170,255,0.08);color:rgba(139,170,255,0.6)" title="Fit Score">Fit:${c.fit_score}</span>` : '';
+                const segment = c.segment ? `<span style="font-size:9px;color:rgba(255,255,255,0.2)">${c.segment}</span>` : '';
+                
                 // CRM stats
                 const leadsBadge = c.leads > 0
                     ? `<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(251,191,36,0.1);color:#fbbf24">${c.leads} Lead${c.leads>1?'s':''}</span>`
@@ -2063,9 +2069,9 @@
                         <div style="display:flex;align-items:center;gap:6px">
                             <span style="font-weight:600;color:white;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name || '–'}</span>
                             <span style="font-size:10px;color:rgba(255,255,255,0.2)">${c.code}</span>
-                            ${hasFolder}${hasContext}
+                            ${hot}${hasFolder}${hasContext}${hasVectors}
                         </div>
-                        <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">${ind}${type}${status}${contactCount}${owner}</div>
+                        <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">${ind}${type}${status}${segment}${fitScore}${contactCount}${owner}</div>
                     </div>
                     <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">${pipeline}${leadsBadge}${wonBadge}</div>
                 </div>`;
