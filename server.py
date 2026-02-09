@@ -492,6 +492,88 @@ def embed_all_documents(db):
     logger.info(f"Embedded {count}/{len(rows)} documents")
     return count
 
+# ── AUTO-SAVE CHAT TO KNOWLEDGE BASE ──
+
+def auto_save_chat_to_kb(question: str, answer: str, user_email: str, intent: str = "chat",
+                          metadata: dict = None):
+    """Save a chat Q&A pair as a searchable document in the Knowledge Base.
+    Every conversation becomes organizational knowledge."""
+    import hashlib
+
+    # Skip trivially short or empty answers
+    if not answer or len(answer.strip()) < 50:
+        return None
+    if not question or len(question.strip()) < 5:
+        return None
+
+    # Build content: Question + Answer combined for best searchability
+    content = f"FRAGE: {question.strip()}\n\nANTWORT: {answer.strip()}"
+
+    # Deduplicate: hash the content
+    content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+
+    # Build title from question (first 100 chars)
+    title = f"Chat: {question.strip()[:100]}"
+
+    # Tags for filtering
+    tags = ["chat-insight", f"intent:{intent}", f"user:{user_email.split('@')[0]}"]
+    if metadata:
+        if metadata.get("customer_code"):
+            tags.append(f"customer:{metadata['customer_code']}")
+        if metadata.get("project_slug"):
+            tags.append(f"project:{metadata['project_slug']}")
+
+    doc_meta = {
+        "source": "chat",
+        "intent": intent,
+        "user_email": user_email,
+        "question": question.strip()[:500],
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    if metadata:
+        doc_meta.update(metadata)
+
+    db = get_db()
+    try:
+        # Check for duplicate (same hash already exists)
+        existing = db.query(Document).filter(Document.content_hash == content_hash).first()
+        if existing:
+            logger.debug(f"Chat insight already in KB: {content_hash}")
+            return existing.id
+
+        doc = Document(
+            title=title,
+            content=content,
+            source_type="chat_insight",
+            file_type="chat",
+            database_target="knowledge_base",
+            category=intent,
+            language="de",
+            tags=tags,
+            doc_metadata=doc_meta,
+            uploaded_by=user_email,
+            content_hash=content_hash,
+            status="indexed"
+        )
+        db.add(doc)
+        db.commit()
+        doc_id = doc.id
+        logger.info(f"💬→📚 Chat saved to KB: '{title[:60]}' (intent={intent}, user={user_email.split('@')[0]})")
+
+        # Embed in background (non-blocking)
+        try:
+            embed_document(db, doc_id)
+        except Exception as e:
+            logger.warning(f"Embedding deferred for chat doc: {e}")
+
+        return doc_id
+    except Exception as e:
+        logger.error(f"Auto-save chat to KB failed: {e}")
+        db.rollback()
+        return None
+    finally:
+        db.close()
+
 def vector_search(db, query: str, limit: int = 8) -> list:
     """Semantic search. Tries pgvector, falls back to JSON + Python cosine similarity."""
     if not VOYAGE_API_KEY: return []
@@ -1540,6 +1622,28 @@ async def admin_settings(user=Depends(require_auth)):
     if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
     return {"allowed_email_domains": ALLOWED_EMAIL_DOMAINS or ["*"], "registration": "restricted" if ALLOWED_EMAIL_DOMAINS else "open", "jwt_expiry_hours": JWT_EXPIRY // 3600, "email_verification": REQUIRE_EMAIL_VERIFICATION, "smtp_configured": bool(RESEND_API_KEY)}
 
+@app.get("/api/admin/kb-stats")
+async def admin_kb_stats(user=Depends(require_auth)):
+    """Knowledge Base statistics – shows how many chat insights have been captured."""
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    from sqlalchemy import text as sql_text
+    db = get_db()
+    try:
+        total = db.execute(sql_text("SELECT COUNT(*) FROM documents")).scalar()
+        chat_insights = db.execute(sql_text("SELECT COUNT(*) FROM documents WHERE source_type='chat_insight'")).scalar()
+        by_intent = db.execute(sql_text("SELECT category, COUNT(*) as cnt FROM documents WHERE source_type='chat_insight' GROUP BY category ORDER BY cnt DESC")).fetchall()
+        by_user = db.execute(sql_text("SELECT uploaded_by, COUNT(*) as cnt FROM documents WHERE source_type='chat_insight' GROUP BY uploaded_by ORDER BY cnt DESC")).fetchall()
+        recent = db.execute(sql_text("SELECT title, category, uploaded_by, created_at FROM documents WHERE source_type='chat_insight' ORDER BY created_at DESC LIMIT 10")).fetchall()
+        return {
+            "total_documents": total,
+            "chat_insights": chat_insights,
+            "other_documents": total - chat_insights,
+            "by_intent": [{"intent": r[0], "count": r[1]} for r in by_intent],
+            "by_user": [{"user": r[0], "count": r[1]} for r in by_user],
+            "recent": [{"title": r[0], "intent": r[1], "user": r[2], "created_at": r[3].isoformat() if r[3] else None} for r in recent]
+        }
+    finally: db.close()
+
 @app.get("/api/admin/users")
 async def admin_users(user=Depends(require_auth)):
     if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
@@ -2111,14 +2215,27 @@ async def chat_intent(request: Request, user=Depends(require_auth)):
         parsed, raw = call_claude_json(domain_prompt + draft_note, messages, today)
 
         if parsed:
+            resp_message = parsed.get("message", "")
+            resp_data = parsed.get("data", parsed.get("project", {}))
+            # 💬→📚 Auto-save to Knowledge Base
+            try:
+                meta = {"intent": intent}
+                if resp_data.get("customer_code"): meta["customer_code"] = resp_data["customer_code"]
+                if resp_data.get("project_slug"): meta["project_slug"] = resp_data["project_slug"]
+                save_content = resp_message
+                if resp_data:
+                    save_content = f"{resp_message}\n\nStrukturierte Daten ({intent}): {json.dumps(resp_data, ensure_ascii=False)}"
+                auto_save_chat_to_kb(message, save_content, user["sub"], intent=intent, metadata=meta)
+            except Exception: pass
+
             return {
                 "ok": True,
                 "intent": parsed.get("intent", intent),
                 "action": parsed.get("action", "create"),
                 "status": parsed.get("status", "need_info"),
-                "data": parsed.get("data", parsed.get("project", {})),
+                "data": resp_data,
                 "missing": parsed.get("missing", []),
-                "message": parsed.get("message", ""),
+                "message": resp_message,
                 "confidence": parsed.get("confidence", 0),
                 "entities": entities,
                 "raw": raw
@@ -2294,7 +2411,7 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
 
             conn.close()
 
-            # Store complete answer in DB
+            # Store complete answer in DB + auto-save to KB
             complete_text = "".join(full_text)
             if complete_text:
                 db2 = get_db()
@@ -2306,6 +2423,11 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
                     pass
                 finally:
                     db2.close()
+                # 💬→📚 Auto-save to Knowledge Base
+                try:
+                    auto_save_chat_to_kb(question, complete_text, user["sub"], intent="knowledge")
+                except Exception as e:
+                    logger.warning(f"Chat KB auto-save failed (stream): {e}")
 
             # Final done event
             yield f"data: {json.dumps({'type': 'done', 'text': ''})}\n\n"
@@ -2365,6 +2487,10 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
                 assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=answer, sources=sources)
                 db.add(assistant_msg); db.commit()
                 logger.info(f"FAST PATH answer for: {question[:50]}")
+                # 💬→📚 Auto-save to Knowledge Base
+                try:
+                    auto_save_chat_to_kb(question, answer, user["sub"], intent="knowledge")
+                except Exception: pass
                 return {
                     "status": "done",
                     "answer": answer,
