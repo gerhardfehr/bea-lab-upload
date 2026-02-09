@@ -470,7 +470,7 @@
             <a href="#" class="nav-link" data-section="upload" onclick="showSection('upload',this)">Upload</a>
             <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
             <a href="#" class="nav-link" data-section="profile" onclick="showSection('profile',this)">Profil</a>
-            <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">⚙ Admin</a>
+            <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">Admin</a>
         </div>
         <div class="nav-right">
             <div class="nav-status"><span class="dot"></span> Online</div>
@@ -1107,6 +1107,8 @@
                     if (r.ok) {
                         authToken = saved;
                         currentUser = user ? JSON.parse(user) : (await r.json());
+                        // Also check JWT for admin flag
+                        try { const p = JSON.parse(atob(saved.split('.')[1])); currentUser.admin = p.admin || false; } catch(e) {}
                         document.getElementById('authOverlay').classList.add('hidden');
                         document.getElementById('navUser').textContent = currentUser.name || currentUser.email;
                         if (currentUser.admin) document.getElementById('navAdmin').style.display = '';
