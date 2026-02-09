@@ -1618,6 +1618,29 @@ async def admin_reset_password(user_id: str, request: Request, user=Depends(requ
         return {"email": target.email, "status": "password_reset"}
     finally: db.close()
 
+@app.put("/api/admin/users/{user_id}/toggle-admin")
+async def admin_toggle_admin(user_id: str, request: Request, user=Depends(require_auth)):
+    """Promote/demote a user to/from admin. Only existing admins can do this."""
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        data = await request.json()
+        target = db.query(User).filter(User.id == user_id).first()
+        if not target: raise HTTPException(404, "Benutzer nicht gefunden")
+        # Don't allow removing own admin
+        if target.email.lower() == user.get("sub", "").lower() and not data.get("is_admin", True):
+            raise HTTPException(400, "Eigenen Admin-Status kann man nicht entfernen")
+        target.is_admin = bool(data.get("is_admin", False))
+        # Auto-enable CRM for new FehrAdvice admins
+        if target.is_admin and target.email.lower().endswith("@fehradvice.com"):
+            target.crm_access = True
+            if not target.crm_role or target.crm_role == "none":
+                target.crm_role = "admin"
+        db.commit()
+        logger.info(f"Admin toggle: {target.email} → admin={target.is_admin}")
+        return {"email": target.email, "is_admin": target.is_admin}
+    finally: db.close()
+
 # ── BEATRIX Chat (RAG) ──────────────────────────────────────────────────
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
