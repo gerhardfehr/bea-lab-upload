@@ -633,6 +633,38 @@ def auto_save_chat_to_kb(question: str, answer: str, user_email: str, intent: st
                 except: pass
             else:
                 logger.warning(f"GitHub push skipped: {gh_result.get('error','unknown')}")
+
+            # ── 3) Also push to CUSTOMER folder if customer_code is known ──
+            if customer_code:
+                try:
+                    # Slugify question for readable filename
+                    import re as _re
+                    q_slug = _re.sub(r'[^a-z0-9]+', '-', question.strip()[:60].lower()).strip('-')[:40]
+                    customer_path = f"data/customers/{customer_code}/insights/{year_month}_{q_slug}.yaml"
+                    gh_cust = gh_put_file(
+                        GH_CONTEXT_REPO, customer_path, yaml_content,
+                        f"💬→👤 {customer_code.upper()} insight: {question.strip()[:50]}"
+                    )
+                    if gh_cust.get("ok"):
+                        logger.info(f"💬→👤 Insight assigned to customer: {customer_path}")
+                    else:
+                        logger.warning(f"Customer push skipped: {gh_cust.get('error','')[:80]}")
+                except Exception as e:
+                    logger.warning(f"Customer folder push failed: {e}")
+
+            # ── 4) Also push to PROJECT folder if project_slug is known ──
+            if project_slug:
+                try:
+                    prj_q_slug = _re.sub(r'[^a-z0-9]+', '-', question.strip()[:60].lower()).strip('-')[:40]
+                    project_path = f"data/projects/{project_slug}/insights/{year_month}_{prj_q_slug}.yaml"
+                    gh_prj = gh_put_file(
+                        GH_CONTEXT_REPO, project_path, yaml_content,
+                        f"💬→📋 {project_slug} insight: {question.strip()[:50]}"
+                    )
+                    if gh_prj.get("ok"):
+                        logger.info(f"💬→📋 Insight assigned to project: {project_path}")
+                except Exception as e:
+                    logger.warning(f"Project folder push failed: {e}")
         except Exception as e:
             logger.warning(f"GitHub push for chat insight failed: {e}")
 
