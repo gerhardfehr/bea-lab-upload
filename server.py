@@ -2225,6 +2225,64 @@ async def create_feedback(request: Request, user=Depends(require_auth)):
         raise HTTPException(500, str(e))
     finally: db.close()
 
+@app.post("/api/feedback/analyze")
+async def analyze_feedback(request: Request, user=Depends(require_auth)):
+    """AI-powered screen analysis: BEATRIX suggests improvements"""
+    try:
+        data = await request.json()
+        screenshot = data.get("screenshot", "")
+        page = data.get("page", "unknown")
+        viewport = data.get("viewport", "")
+
+        if not screenshot or not ANTHROPIC_API_KEY:
+            return {"suggestions": []}
+
+        # Extract base64 data from data URL
+        img_data = screenshot.split(",")[1] if "," in screenshot else screenshot
+
+        import urllib.request, ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 600,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": img_data}},
+                    {"type": "text", "text": f"""Du bist BEATRIX, eine Strategic Intelligence Suite. Analysiere diesen Screenshot der Seite '{page}' (Viewport: {viewport}).
+
+Gib genau 3 konkrete, umsetzbare Verbesserungsvorschläge als JSON-Array zurück. Jeder Vorschlag hat:
+- "type": "bug" | "ux" | "wunsch" | "performance"
+- "title": kurzer Titel (max 40 Zeichen)
+- "description": konkrete Beschreibung (max 80 Zeichen)
+
+Fokussiere auf: UX-Verbesserungen, fehlende Features, visuelle Probleme, Barrierefreiheit.
+Antworte NUR mit dem JSON-Array, kein anderer Text."""}
+                ]
+            }]
+        }).encode()
+
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST", headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        })
+
+        resp = urllib.request.urlopen(req, context=ctx, timeout=30)
+        result = json.loads(resp.read())
+        text = result.get("content", [{}])[0].get("text", "[]").strip()
+        if text.startswith("```"): text = text.split("\n", 1)[1].rsplit("```", 1)[0]
+        suggestions = json.loads(text)
+        logger.info(f"Feedback analyze for {user['sub']}: {len(suggestions)} suggestions")
+        return {"suggestions": suggestions[:3]}
+
+    except Exception as e:
+        logger.error(f"Feedback analyze error: {e}")
+        return {"suggestions": []}
+
 @app.get("/api/feedback")
 async def get_feedback(user=Depends(require_auth)):
     if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
