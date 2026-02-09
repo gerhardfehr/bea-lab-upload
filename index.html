@@ -689,125 +689,139 @@
 
             <!-- ═══ STEP 1: Entry Point ═══ -->
             <div class="mb-panel" id="mbStep1">
-                <div class="mb-step-title">Schritt 1: Entry Point</div>
-                <div class="mb-step-desc">Starte mit Theorie (EBF-Konzept anwenden) oder Praxis (konkretes Problem lösen)?</div>
-
-                <div class="mb-choices">
-                    <div class="mb-choice" onclick="mbSelect(this,'theory')">
-                        <div class="mb-choice-num">1</div>
-                        <div class="mb-choice-icon">📚</div>
-                        <div class="mb-choice-title">Theory-Driven</div>
-                        <div class="mb-choice-desc">Start mit existierenden CORE Appendices (AAA-AW). Passt, wenn du ein EBF-Konzept anwenden möchtest.</div>
-                        <div class="mb-choice-meta">→ Begin with EBF concept</div>
+                <div id="mbStep1ViewA">
+                    <div class="mb-step-title">Entry Point wählen</div>
+                    <div class="mb-step-desc">Starte mit Theorie oder Praxis?</div>
+                    <div class="mb-choices">
+                        <div class="mb-choice" onclick="mbSelect(this,'theory')">
+                            <div class="mb-choice-num">1</div>
+                            <div class="mb-choice-icon">📚</div>
+                            <div class="mb-choice-title">Theory-Driven</div>
+                            <div class="mb-choice-desc">Start mit existierenden CORE Appendices (AAA-AW). Passt, wenn du ein EBF-Konzept anwenden möchtest.</div>
+                            <div class="mb-choice-meta">→ Begin with EBF concept</div>
+                        </div>
+                        <div class="mb-choice" onclick="mbSelect(this,'practice')">
+                            <div class="mb-choice-num">2</div>
+                            <div class="mb-choice-icon">🎯</div>
+                            <div class="mb-choice-title">Practice-Driven</div>
+                            <div class="mb-choice-desc">Start mit konkretem Problem oder Situation. Passt, wenn du ein reales Verhalten modellieren musst.</div>
+                            <div class="mb-choice-meta">→ Begin with Gestaltungsanlass</div>
+                        </div>
+                        <div class="mb-choice" onclick="mbSelect(this,'hybrid')">
+                            <div class="mb-choice-num">3</div>
+                            <div class="mb-choice-icon">🔄</div>
+                            <div class="mb-choice-title">Hybrid</div>
+                            <div class="mb-choice-desc">Abwechselnde Theorie-Praxis-Zyklen. Passt, wenn Iteration erforderlich ist.</div>
+                            <div class="mb-choice-meta">→ Theory ↔ Practice Iteration</div>
+                        </div>
+                        <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
+                            <div class="mb-choice-num">4</div>
+                            <div class="mb-choice-icon">🔧</div>
+                            <div class="mb-choice-title">Custom</div>
+                            <div class="mb-choice-desc">Freie Wahl — du definierst den Entry Point selbst.</div>
+                        </div>
                     </div>
-                    <div class="mb-choice" onclick="mbSelect(this,'practice')">
-                        <div class="mb-choice-num">2</div>
-                        <div class="mb-choice-icon">🎯</div>
-                        <div class="mb-choice-title">Practice-Driven</div>
-                        <div class="mb-choice-desc">Start mit konkretem Problem oder Situation. Passt, wenn du ein reales Verhalten modellieren musst.</div>
-                        <div class="mb-choice-meta">→ Begin with Gestaltungsanlass</div>
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="mbGoStep(0)">← Zurück</button>
+                        <button class="mb-btn mb-btn-primary" disabled id="mbStep1Btn" onclick="mbConfirmAndAdvance(1,2)">Weiter →</button>
                     </div>
-                    <div class="mb-choice" onclick="mbSelect(this,'hybrid')">
-                        <div class="mb-choice-num">3</div>
-                        <div class="mb-choice-icon">🔄</div>
-                        <div class="mb-choice-title">Hybrid</div>
-                        <div class="mb-choice-desc">Abwechselnde Theorie-Praxis-Zyklen. Passt, wenn Iteration erforderlich ist.</div>
-                        <div class="mb-choice-meta">→ Theory ↔ Practice Iteration</div>
-                    </div>
-                    <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
-                        <div class="mb-choice-num">4</div>
-                        <div class="mb-choice-icon">🔧</div>
-                        <div class="mb-choice-title">Custom</div>
-                        <div class="mb-choice-desc">Freie Wahl — du definierst den Entry Point selbst.</div>
-                    </div>
-                </div>
-
-                <div class="mb-actions">
-                    <button class="mb-btn mb-btn-back" onclick="mbGoStep(0)">← Zurück</button>
-                    <button class="mb-btn mb-btn-primary" disabled id="mbStep1Btn" onclick="mbNextStep(2)">Weiter →</button>
                 </div>
             </div>
 
             <!-- ═══ STEP 2: Scope ═══ -->
             <div class="mb-panel" id="mbStep2">
-                <div class="mb-step-title">Schritt 2: Scope Definition</div>
-                <div class="mb-step-desc">Welchen Verhaltenstyp modellierst du?</div>
-
-                <div class="mb-choices">
-                    <div class="mb-choice" onclick="mbSelect(this,'decision')">
-                        <div class="mb-choice-num">1</div>
-                        <div class="mb-choice-icon">⚖️</div>
-                        <div class="mb-choice-title">Decision</div>
-                        <div class="mb-choice-desc">Einmalentscheidung: Rentenmodell wählen, Impfung, Jobwechsel, Kaufentscheid.</div>
-                        <div class="mb-choice-meta">Mathematik: Logistic / Binary Choice</div>
+                <div id="mbStep2ViewA">
+                    <div class="mb-step-title">Scope wählen</div>
+                    <div class="mb-step-desc">Welchen Verhaltenstyp modellierst du?</div>
+                    <div class="mb-choices">
+                        <div class="mb-choice" onclick="mbSelect(this,'decision')">
+                            <div class="mb-choice-num">1</div>
+                            <div class="mb-choice-icon">⚖️</div>
+                            <div class="mb-choice-title">Decision</div>
+                            <div class="mb-choice-desc">Einmalentscheidung: Rentenmodell wählen, Impfung, Jobwechsel, Kaufentscheid.</div>
+                            <div class="mb-choice-meta">Mathematik: Logistic / Binary Choice</div>
+                        </div>
+                        <div class="mb-choice" onclick="mbSelect(this,'continuous')">
+                            <div class="mb-choice-num">2</div>
+                            <div class="mb-choice-icon">📈</div>
+                            <div class="mb-choice-title">Continuous</div>
+                            <div class="mb-choice-desc">Wiederholtes Verhalten: Sparbetrag, Energieverbrauch, Trainingsfrequenz.</div>
+                            <div class="mb-choice-meta">Mathematik: Linear / CES Functional Form</div>
+                        </div>
+                        <div class="mb-choice" onclick="mbSelect(this,'process')">
+                            <div class="mb-choice-num">3</div>
+                            <div class="mb-choice-icon">🔄</div>
+                            <div class="mb-choice-title">Process</div>
+                            <div class="mb-choice-desc">Veränderung über Zeit: Habit-Bildung, Learning, Adoption Journey.</div>
+                            <div class="mb-choice-meta">Mathematik: Dynamic / BCJ Models</div>
+                        </div>
+                        <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
+                            <div class="mb-choice-num">4</div>
+                            <div class="mb-choice-icon">🔧</div>
+                            <div class="mb-choice-title">Custom</div>
+                            <div class="mb-choice-desc">Spezifisch definieren — kombiniere oder erweitere die Typen.</div>
+                        </div>
                     </div>
-                    <div class="mb-choice" onclick="mbSelect(this,'continuous')">
-                        <div class="mb-choice-num">2</div>
-                        <div class="mb-choice-icon">📈</div>
-                        <div class="mb-choice-title">Continuous</div>
-                        <div class="mb-choice-desc">Wiederholtes Verhalten: Sparbetrag, Energieverbrauch, Trainingsfrequenz.</div>
-                        <div class="mb-choice-meta">Mathematik: Linear / CES Functional Form</div>
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="mbGoStep(1)">← Zurück</button>
+                        <button class="mb-btn mb-btn-primary" disabled id="mbStep2Btn" onclick="mbConfirmAndAdvance(2,3)">Weiter →</button>
                     </div>
-                    <div class="mb-choice" onclick="mbSelect(this,'process')">
-                        <div class="mb-choice-num">3</div>
-                        <div class="mb-choice-icon">🔄</div>
-                        <div class="mb-choice-title">Process</div>
-                        <div class="mb-choice-desc">Veränderung über Zeit: Habit-Bildung, Learning, Adoption Journey.</div>
-                        <div class="mb-choice-meta">Mathematik: Dynamic / BCJ Models</div>
-                    </div>
-                    <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
-                        <div class="mb-choice-num">4</div>
-                        <div class="mb-choice-icon">🔧</div>
-                        <div class="mb-choice-title">Custom</div>
-                        <div class="mb-choice-desc">Spezifisch definieren — kombiniere oder erweitere die Typen.</div>
-                    </div>
-                </div>
-
-                <div class="mb-actions">
-                    <button class="mb-btn mb-btn-back" onclick="mbGoStep(1)">← Zurück</button>
-                    <button class="mb-btn mb-btn-primary" disabled id="mbStep2Btn" onclick="mbNextStep(3)">Weiter →</button>
                 </div>
             </div>
 
             <!-- ═══ STEP 3: Context Ψ ═══ -->
             <div class="mb-panel" id="mbStep3">
-                <div class="mb-step-title">Schritt 3: Kontext-Spezifikation (Ψ)</div>
-                <div class="mb-step-desc">Welche Kontextdimensionen sind relevant? BEATRIX schlägt basierend auf deiner Frage vor.</div>
-
-                <div class="mb-choices">
-                    <div class="mb-choice" onclick="mbSelect(this,'ggg-default')">
-                        <div class="mb-choice-num">1</div>
-                        <div class="mb-choice-icon">📊</div>
-                        <div class="mb-choice-title">GGG Defaults</div>
-                        <div class="mb-choice-desc">Vorkonfigurierte Ψ-Werte nach Domain & Level aus Tabelle GGG-1 (trust, digital_adoption, autonomy, risk_aversion).</div>
-                        <div class="mb-choice-meta">Empfohlen für Schnell-Modus</div>
+                <div id="mbStep3ViewA">
+                    <div class="mb-step-title">Kontext-Spezifikation (Ψ)</div>
+                    <div class="mb-step-desc">Welche Kontextdimensionen sind relevant?</div>
+                    <div class="mb-choices">
+                        <div class="mb-choice" onclick="mbSelect(this,'ggg-default')">
+                            <div class="mb-choice-num">1</div>
+                            <div class="mb-choice-icon">📊</div>
+                            <div class="mb-choice-title">GGG Defaults</div>
+                            <div class="mb-choice-desc">Vorkonfigurierte Ψ-Werte nach Domain & Level aus Tabelle GGG-1 (trust, digital_adoption, autonomy, risk_aversion).</div>
+                            <div class="mb-choice-meta">Empfohlen für Schnell-Modus</div>
+                        </div>
+                        <div class="mb-choice" onclick="mbSelect(this,'custom-psi')">
+                            <div class="mb-choice-num">2</div>
+                            <div class="mb-choice-icon">🎛️</div>
+                            <div class="mb-choice-title">Custom Ψ-Dimensionen</div>
+                            <div class="mb-choice-desc">Du definierst explizit welche Ψ-Faktoren relevant sind (z.B. Saisonalität, Peer Effects, Availability).</div>
+                            <div class="mb-choice-meta">Für spezifische Kontexte</div>
+                        </div>
+                        <div class="mb-choice" onclick="mbSelect(this,'full-8psi')">
+                            <div class="mb-choice-num">3</div>
+                            <div class="mb-choice-icon">🔬</div>
+                            <div class="mb-choice-title">Alle 8 Ψ-Dimensionen</div>
+                            <div class="mb-choice-desc">Vollständige Analyse: Ψ_I, Ψ_S, Ψ_K, Ψ_C, Ψ_T, Ψ_E, Ψ_M, Ψ_F.</div>
+                            <div class="mb-choice-meta">Maximale Tiefe</div>
+                        </div>
+                        <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
+                            <div class="mb-choice-num">4</div>
+                            <div class="mb-choice-icon">🔧</div>
+                            <div class="mb-choice-title">Custom</div>
+                            <div class="mb-choice-desc">Eigene Kontext-Konfiguration mit freier Ψ-Auswahl.</div>
+                        </div>
                     </div>
-                    <div class="mb-choice" onclick="mbSelect(this,'custom-psi')">
-                        <div class="mb-choice-num">2</div>
-                        <div class="mb-choice-icon">🎛️</div>
-                        <div class="mb-choice-title">Custom Ψ-Dimensionen</div>
-                        <div class="mb-choice-desc">Du definierst explizit welche Ψ-Faktoren relevant sind (z.B. Saisonalität, Peer Effects, Availability).</div>
-                        <div class="mb-choice-meta">Für spezifische Kontexte</div>
-                    </div>
-                    <div class="mb-choice" onclick="mbSelect(this,'full-8psi')">
-                        <div class="mb-choice-num">3</div>
-                        <div class="mb-choice-icon">🔬</div>
-                        <div class="mb-choice-title">Alle 8 Ψ-Dimensionen</div>
-                        <div class="mb-choice-desc">Vollständige Analyse: Ψ_I (Institutional), Ψ_S (Social), Ψ_K (Knowledge), Ψ_C (Cultural), Ψ_T (Temporal), Ψ_E (Economic), Ψ_M (Motivational), Ψ_F (Framing).</div>
-                        <div class="mb-choice-meta">Maximale Tiefe</div>
-                    </div>
-                    <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
-                        <div class="mb-choice-num">4</div>
-                        <div class="mb-choice-icon">🔧</div>
-                        <div class="mb-choice-title">Custom</div>
-                        <div class="mb-choice-desc">Eigene Kontext-Konfiguration mit freier Ψ-Auswahl.</div>
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="mbGoStep(2)">← Zurück</button>
+                        <button class="mb-btn mb-btn-primary" disabled id="mbStep3Btn" onclick="mbProcessStep3()">BEATRIX analysieren lassen →</button>
                     </div>
                 </div>
 
-                <div id="mbProgress3" class="mb-inline-progress" style="display:none"></div>
-                <div class="mb-actions">
-                    <button class="mb-btn mb-btn-back" onclick="mbGoStep(2)">← Zurück</button>
-                    <button class="mb-btn mb-btn-primary" disabled id="mbStep3Btn" onclick="mbProcessStep3()">BEATRIX analysieren lassen →</button>
+                <!-- ViewB: Processing -->
+                <div id="mbStep3ViewB" style="display:none">
+                    <div class="mb-step-title">Ψ-Kontext wird analysiert</div>
+                    <div id="mbStep3Selection" style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:16px;padding:12px 16px;background:rgba(139,170,255,0.05);border-left:3px solid var(--accent);border-radius:0 8px 8px 0"></div>
+                    <div id="mbProgress3" class="mb-inline-progress" style="display:none"></div>
+                    <div id="mbStep3Result" style="margin-top:16px"></div>
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="mbGoStep(2)">← Zurück</button>
+                        <button class="mb-btn mb-btn-back" onclick="mbStep3Back()">↻ Andere Wahl</button>
+                        <button class="mb-btn mb-btn-primary" id="mbStep3NextBtn" disabled>BEATRIX analysiert...</button>
+                    </div>
+                </div>
+            </div>
                 </div>
             </div>
 
@@ -2508,13 +2522,24 @@ Antworte NUR als JSON Array:
             mbState.step = step;
             mbUpdateProgress(step);
             mbShowPanel('mbStep' + step);
+            // Reset to ViewA for steps with dual views
+            mbResetStepViews(step);
             mbApplyDefault(step);
+        }
+
+        function mbResetStepViews(step) {
+            const viewA = document.getElementById('mbStep' + step + 'ViewA');
+            const viewB = document.getElementById('mbStep' + step + 'ViewB');
+            if (viewA) viewA.style.display = 'block';
+            if (viewB) viewB.style.display = 'none';
         }
 
         function mbNextStep(step) {
             mbState.step = step;
             mbUpdateProgress(step);
             mbShowPanel('mbStep' + step);
+            // Reset to ViewA for the new step
+            mbResetStepViews(step);
             // Step 6: reset depth choice first, THEN apply defaults
             if (step === 6) {
                 mbState.reportDepth = null;
@@ -3017,12 +3042,18 @@ Antworte NUR als JSON: {"icon":"emoji","title":"Kurztitel 3-4 Worte","question":
         }
 
         async function mbProcessStep3() {
-            const btn = document.getElementById('mbStep3Btn');
-            btn.disabled = true;
-            btn.textContent = 'BEATRIX analysiert Kontext...';
-            const progHandle = mbStartProgress(3);
-
             const psiChoice = mbState.selections.mbStep3 || 'ggg-default';
+            const psiLabels = { 'ggg-default': '📊 GGG Defaults', 'custom-psi': '🎛️ Custom Ψ', 'full-8psi': '🔬 Alle 8 Ψ-Dimensionen', 'custom': '🔧 Custom' };
+
+            // Switch to ViewB
+            document.getElementById('mbStep3ViewA').style.display = 'none';
+            document.getElementById('mbStep3ViewB').style.display = 'block';
+            document.getElementById('mbStep3Selection').textContent = psiLabels[psiChoice] || psiChoice;
+
+            const btn = document.getElementById('mbStep3NextBtn');
+            btn.disabled = true;
+            btn.textContent = 'BEATRIX analysiert...';
+            const progHandle = mbStartProgress(3);
 
             try {
                 const resp = await fetch('/api/chat', {
@@ -3048,10 +3079,20 @@ Antworte NUR als JSON: {"icon":"emoji","title":"Kurztitel 3-4 Worte","question":
             } catch(e) {
                 mbStopProgress(progHandle);
                 console.error('Step 3 error:', e);
-            } finally {
-                btn.textContent = 'BEATRIX analysieren lassen →';
+                btn.textContent = 'Erneut versuchen →';
                 btn.disabled = false;
+                btn.onclick = () => mbProcessStep3();
             }
+        }
+
+        function mbStep3Back() {
+            document.getElementById('mbStep3ViewB').style.display = 'none';
+            document.getElementById('mbStep3ViewA').style.display = 'block';
+            document.getElementById('mbStep3Result').innerHTML = '';
+        }
+
+        function mbConfirmAndAdvance(fromStep, toStep) {
+            mbNextStep(toStep);
         }
 
         async function mbRunStep4() {
