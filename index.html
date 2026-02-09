@@ -1286,8 +1286,8 @@
                     if (r.ok) {
                         authToken = saved;
                         currentUser = user ? JSON.parse(user) : (await r.json());
-                        // Also check JWT for admin flag
-                        try { const p = JSON.parse(atob(saved.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; } catch(e) {}
+                        // Also check JWT for admin + CRM flags
+                        try { const p = JSON.parse(atob(saved.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; currentUser.crm_access = p.crm_access || false; currentUser.crm_role = p.crm_role || 'none'; currentUser.crm_owner_code = p.crm_owner_code || ''; } catch(e) {}
                         document.getElementById('authOverlay').classList.add('hidden');
                         document.getElementById('navUser').textContent = currentUser.name || currentUser.email;
                         if (currentUser.admin) document.getElementById('navAdmin').style.display = 'inline';
@@ -1307,8 +1307,8 @@
         function onAuthSuccess(data) {
             authToken = data.token;
             currentUser = data.user;
-            // Decode JWT to get admin status
-            try { const p = JSON.parse(atob(data.token.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; } catch(e) { currentUser.admin = false; currentUser.role = 'researcher'; }
+            // Decode JWT to get admin status + CRM access
+            try { const p = JSON.parse(atob(data.token.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; currentUser.crm_access = p.crm_access || false; currentUser.crm_role = p.crm_role || 'none'; currentUser.crm_owner_code = p.crm_owner_code || ''; } catch(e) { currentUser.admin = false; currentUser.role = 'researcher'; currentUser.crm_access = false; }
             sessionStorage.setItem('bea_token', authToken);
             sessionStorage.setItem('bea_user', JSON.stringify(currentUser));
             document.getElementById('authOverlay').classList.add('hidden');
@@ -1638,32 +1638,35 @@
         // Role → Tab mapping (which tabs each role can see)
         const ROLE_TABS = {
             researcher: [],                    // standard tabs only
-            sales:      ['context', 'leads'],  // + Ausgangslage + CRM
+            sales:      ['context'],           // + Ausgangslage (CRM via crm_access)
             operations: ['context'],           // + Ausgangslage
-            admin:      ['context', 'leads']   // + everything (admin tab handled separately)
+            admin:      ['context']            // + everything (admin+CRM tabs handled separately)
         };
 
         function applyUserTabs() {
             const email = (currentUser?.email || '').toLowerCase();
             const isAdmin = currentUser?.admin || false;
             const role = currentUser?.role || 'researcher';
-            console.log('applyUserTabs - email:', email, 'admin:', isAdmin, 'role:', role);
+            const isFehrAdvice = email.endsWith('@fehradvice.com');
+            const hasCrmAccess = currentUser?.crm_access || false;
+            console.log('applyUserTabs - email:', email, 'admin:', isAdmin, 'role:', role, 'crm:', hasCrmAccess);
 
             // Admin tab (only for admins)
             const adminEl = document.getElementById('navAdmin');
             if (adminEl) adminEl.style.display = isAdmin ? 'inline' : 'none';
 
-            // Role-based extra tabs
-            const visibleTabs = isAdmin ? ['context', 'leads'] : (ROLE_TABS[role] || []);
-            const allExtraTabs = ['context', 'leads'];
-            for (const tab of allExtraTabs) {
-                const elId = 'nav' + tab.charAt(0).toUpperCase() + tab.slice(1);
-                const el = document.getElementById(elId);
-                if (el) {
-                    el.style.display = visibleTabs.includes(tab) ? 'inline' : 'none';
-                    console.log('Tab', elId, visibleTabs.includes(tab) ? 'SHOWN' : 'hidden');
-                }
+            // CRM tab: only for @fehradvice.com with explicit crm_access
+            const crmEl = document.getElementById('navLeads');
+            if (crmEl) {
+                const showCrm = isFehrAdvice && hasCrmAccess;
+                crmEl.style.display = showCrm ? 'inline' : 'none';
+                console.log('CRM tab', showCrm ? 'SHOWN' : 'hidden', '(FA:', isFehrAdvice, 'access:', hasCrmAccess + ')');
             }
+
+            // Context/Ausgangslage tab: role-based
+            const ctxEl = document.getElementById('navContext');
+            const visibleTabs = isAdmin ? ['context'] : (ROLE_TABS[role] || []);
+            if (ctxEl) ctxEl.style.display = visibleTabs.includes('context') ? 'inline' : 'none';
         }
 
         // ── Kontext / Ausgangslage ──────────────────────
@@ -2000,7 +2003,7 @@
         // ── Admin Dashboard ──────────────────────────────
         const ROLE_CONFIG = {
             researcher: { label: 'Researcher', color: '#8b9aff', tabs: ['Fragen','Modell-Building','Upload','Dokumente','Profil'] },
-            sales:      { label: 'Sales',      color: '#fbbf24', tabs: ['Fragen','Upload','Ausgangslage','CRM','Profil'] },
+            sales:      { label: 'Sales',      color: '#fbbf24', tabs: ['Fragen','Upload','Ausgangslage','Profil'] },
             operations: { label: 'Operations', color: '#34d399', tabs: ['Fragen','Upload','Ausgangslage','Profil'] },
             admin:      { label: 'Admin',      color: '#f87171', tabs: ['Alle Tabs'] }
         };
@@ -2046,8 +2049,17 @@
                             ).join('')}
                         </select>`;
 
-                    // Tab access pills
-                    const tabs = u.is_admin ? ['Alle'] : rc.tabs.filter(t => !['Profil'].includes(t));
+                    // CRM access toggle (only for @fehradvice.com)
+                    const isFa = u.email.toLowerCase().endsWith('@fehradvice.com');
+                    const crmCell = isFa
+                        ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                            <input type="checkbox" ${u.crm_access ? 'checked' : ''} onchange="adminToggleCrm('${u.id}',this.checked)" style="accent-color:#2A7F8E;cursor:pointer">
+                            <span style="font-size:10px;color:${u.crm_access ? '#2A7F8E' : 'rgba(255,255,255,0.25)'}">${u.crm_access ? 'Aktiv' : 'Aus'}</span>
+                          </label>`
+                        : '<span style="font-size:10px;color:rgba(255,255,255,0.15)">–</span>';
+
+                    // Tab access pills (include CRM if access)
+                    const tabs = u.is_admin ? ['Alle'] : [...rc.tabs.filter(t => !['Profil'].includes(t)), ...(u.crm_access && isFa ? ['CRM'] : [])];
                     const tabPills = tabs.map(t =>
                         `<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.35);border:1px solid rgba(255,255,255,0.06)">${t}</span>`
                     ).join(' ');
@@ -2060,6 +2072,7 @@
                     return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
                         <td style="padding:10px 8px"><span style="font-weight:500;color:white">${u.name || '–'}</span><br><span style="font-size:11px;color:var(--text-muted)">${u.email}</span></td>
                         <td style="padding:10px 6px">${roleCell}</td>
+                        <td style="padding:10px 4px">${crmCell}</td>
                         <td style="padding:10px 4px"><div style="display:flex;flex-wrap:wrap;gap:3px">${tabPills}</div></td>
                         <td style="padding:10px 4px;text-align:center">${verifiedBadge}</td>
                         <td style="padding:10px 4px">${statusBadge}</td>
@@ -2072,6 +2085,7 @@
                     <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08)">
                         <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Benutzer</th>
                         <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Rolle</th>
+                        <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">CRM</th>
                         <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Tab-Zugang</th>
                         <th style="text-align:center;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">E-Mail</th>
                         <th style="text-align:left;padding:8px;font-size:11px;color:rgba(255,255,255,0.3);text-transform:uppercase">Status</th>
@@ -2156,6 +2170,18 @@
                 if (!r.ok) { showToast('Fehler beim Setzen der Rolle', 'error'); return; }
                 const rc = ROLE_CONFIG[role] || ROLE_CONFIG.researcher;
                 showToast(`Rolle → ${rc.label} gesetzt`, 'success');
+                loadAdminData();
+            } catch(e) { showToast('Verbindungsfehler', 'error'); }
+        }
+
+        async function adminToggleCrm(userId, enabled) {
+            try {
+                const r = await fetch(`${API}/admin/users/${userId}/crm-access`, {
+                    method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ crm_access: enabled, crm_role: enabled ? 'viewer' : 'none' })
+                });
+                if (!r.ok) { const d = await r.json().catch(()=>({})); showToast(d.detail || 'Fehler', 'error'); loadAdminData(); return; }
+                showToast(enabled ? 'CRM freigeschaltet ✓' : 'CRM deaktiviert', 'success');
                 loadAdminData();
             } catch(e) { showToast('Verbindungsfehler', 'error'); }
         }
