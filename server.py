@@ -2896,6 +2896,100 @@ def _get_customer_folders():
     except:
         return _customer_folders_cache["data"]
 
+@app.put("/api/projects/{slug}")
+async def update_project(slug: str, request: Request, user=Depends(require_auth)):
+    """Update specific fields in a project.yaml on GitHub"""
+    import urllib.request, ssl, yaml, base64
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    body = await request.json()
+    section = body.get("section", "")  # e.g. "scope", "timeline", "team"
+    data = body.get("data", {})
+    if not section or not data:
+        return JSONResponse({"error": "section and data required"}, status_code=400)
+
+    try:
+        file_path = f"data/projects/{slug}/project.yaml"
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/{file_path}"
+        gh = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"}
+
+        # Fetch current
+        req = urllib.request.Request(url, headers=gh)
+        existing = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+        sha = existing["sha"]
+
+        req2 = urllib.request.Request(url, headers={**gh, "Accept": "application/vnd.github.v3.raw"})
+        project = yaml.safe_load(urllib.request.urlopen(req2, context=ctx, timeout=15).read().decode()) or {}
+
+        # Merge data into project at the right section
+        # Support nested sections like "scope", "objective", "team", etc.
+        if section == "objective":
+            project.setdefault("objective", {}).update(data)
+        elif section == "scope":
+            project.setdefault("scope", {}).update(data)
+        elif section == "team":
+            project.setdefault("team", {}).update(data)
+        elif section == "timeline":
+            if isinstance(data, list):
+                project["timeline"] = data
+            else:
+                if isinstance(project.get("timeline"), list):
+                    project["timeline"] = data
+                else:
+                    project.setdefault("timeline", {}).update(data)
+        elif section == "deliverables":
+            project["deliverables"] = data if isinstance(data, list) else data.get("items", [])
+        elif section == "risks":
+            project["risks"] = data if isinstance(data, list) else data.get("items", [])
+        elif section == "kpis":
+            project["kpis"] = data if isinstance(data, list) else data.get("items", [])
+        elif section == "budget":
+            if isinstance(project.get("timeline"), dict):
+                project["timeline"].update(data)
+            else:
+                project.setdefault("budget", {}).update(data)
+        elif section == "sessions":
+            sessions = project.get("sessions", [])
+            if isinstance(data, dict) and data.get("action") == "add":
+                sessions.append(data.get("session", {}))
+            elif isinstance(data, list):
+                sessions = data
+            project["sessions"] = sessions
+        elif section == "ebf_integration":
+            project.setdefault("ebf_integration", {}).update(data)
+        elif section == "fehradvice_scope":
+            project.setdefault("fehradvice_scope", {}).update(data)
+        elif section == "metadata":
+            project.setdefault("metadata", {}).update(data)
+        else:
+            project[section] = data
+
+        # Update metadata
+        from datetime import date
+        project.setdefault("metadata", {})["last_updated"] = date.today().isoformat()
+
+        # Add changelog entry
+        changelog = project.get("changelog", [])
+        changelog.append({
+            "date": date.today().isoformat(),
+            "user": user.get("sub", "unknown"),
+            "section": section,
+            "action": "updated"
+        })
+        project["changelog"] = changelog[-20:]  # Keep last 20
+
+        # Push back
+        yaml_content = yaml.dump(project, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        commit_msg = f"update: {slug} – {section} (via BEATRIX)"
+        put_data = json.dumps({"message": commit_msg, "content": base64.b64encode(yaml_content.encode()).decode(), "sha": sha, "branch": "main"}).encode()
+        req3 = urllib.request.Request(url, data=put_data, method="PUT", headers={**gh, "Content-Type": "application/json"})
+        urllib.request.urlopen(req3, context=ctx, timeout=15)
+
+        logger.info(f"Project updated: {slug}/{section} by {user.get('sub','?')}")
+        return {"ok": True, "section": section, "slug": slug}
+    except Exception as e:
+        logger.error(f"Project update error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 @app.post("/api/crm/companies")
 async def crm_create_company(request: Request, user=Depends(require_auth)):
     db = get_db()
