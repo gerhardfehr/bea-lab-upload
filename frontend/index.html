@@ -2540,7 +2540,7 @@
             try {
                 const resp = await fetch(`${API}/projects`, { headers: H() });
                 const projects = resp.ok ? await resp.json() : [];
-                const active = projects.filter(p => p.status === 'active').length;
+                const active = projects.filter(p => p.status === 'active' || p.status === 'aktiv').length;
                 const planning = projects.filter(p => p.status === 'planning').length;
                 const completed = projects.filter(p => p.status === 'completed').length;
                 document.getElementById('prjCountActive').textContent = active;
@@ -2554,8 +2554,8 @@
                     return;
                 }
 
-                const statusColors = {active:'#34d399',planning:'#fbbf24',completed:'rgba(139,170,255,0.5)',on_hold:'rgba(255,255,255,0.2)'};
-                const statusLabels = {active:'Aktiv',planning:'Planung',completed:'Abgeschlossen',on_hold:'On Hold'};
+                const statusColors = {active:'#34d399',aktiv:'#34d399',planning:'#fbbf24',completed:'rgba(139,170,255,0.5)',on_hold:'rgba(255,255,255,0.2)'};
+                const statusLabels = {active:'Aktiv',aktiv:'Aktiv',planning:'Planung',completed:'Abgeschlossen',on_hold:'On Hold'};
                 const typeLabels = {beratung:'Beratung',workshop:'Workshop',studie:'Studie',intervention:'Intervention',keynote:'Keynote',training:'Training',retainer:'Retainer'};
 
                 const rows = projects.map(p => {
