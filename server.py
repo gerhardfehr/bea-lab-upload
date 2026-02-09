@@ -3293,6 +3293,66 @@ async def crm_sync_github(user=Depends(require_auth)):
         raise HTTPException(500, f"Sync failed: {str(e)}")
     finally: db.close()
 
+# ── BEATRIX Memory (GitHub-backed) ──────────────────
+@app.get("/api/memory")
+async def get_memory(user=Depends(require_auth)):
+    """Read BEATRIX extended memory from GitHub"""
+    import urllib.request, ssl, yaml
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    try:
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/data/beatrix/memory.yaml"
+        req = urllib.request.Request(url, headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3.raw", "User-Agent": "BEATRIXLab"})
+        content = urllib.request.urlopen(req, context=ctx, timeout=15).read().decode()
+        data = yaml.safe_load(content) or {}
+        return data
+    except Exception as e:
+        logger.error(f"Memory read error: {e}")
+        return {"error": str(e)}
+
+@app.post("/api/memory/add")
+async def add_memory(request: Request, user=Depends(require_auth)):
+    """Add a learning or decision to BEATRIX memory on GitHub"""
+    import urllib.request, ssl, yaml, base64
+    from datetime import date
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    body = await request.json()
+    entry_type = body.get("type", "learning")  # learning or decision
+    topic = body.get("topic", "").strip()
+    content = body.get("content", "").strip()
+    if not topic or not content:
+        return JSONResponse({"error": "topic and content required"}, status_code=400)
+    try:
+        # Fetch current memory
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/data/beatrix/memory.yaml"
+        req = urllib.request.Request(url, headers={"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"})
+        existing = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+        sha = existing["sha"]
+        raw_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/beatrix/memory.yaml"
+        req2 = urllib.request.Request(raw_url, headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3.raw", "User-Agent": "BEATRIXLab"})
+        data = yaml.safe_load(urllib.request.urlopen(req2, context=ctx, timeout=15).read().decode()) or {}
+        today = date.today().isoformat()
+        if entry_type == "decision":
+            decisions = data.get("decisions", [])
+            new_id = f"D{len(decisions)+1:03d}"
+            decisions.append({"id": new_id, "topic": topic, "decision": content, "date": today})
+            data["decisions"] = decisions
+        else:
+            learnings = data.get("learnings", [])
+            new_id = f"L{len(learnings)+1:03d}"
+            learnings.append({"id": new_id, "topic": topic, "lesson": content, "date": today})
+            data["learnings"] = learnings
+        data["metadata"]["last_updated"] = today
+        # Push back
+        yaml_content = yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        put_data = json.dumps({"message": f"memory: {entry_type} {new_id} – {topic}", "content": base64.b64encode(yaml_content.encode()).decode(), "sha": sha, "branch": "main"}).encode()
+        req3 = urllib.request.Request(url, data=put_data, method="PUT", headers={"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab"})
+        urllib.request.urlopen(req3, context=ctx, timeout=15)
+        logger.info(f"Memory added: {new_id} by {user['email']}")
+        return {"ok": True, "id": new_id, "type": entry_type}
+    except Exception as e:
+        logger.error(f"Memory add error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 # ── Legacy Leads API (kept for backward compat) ──────
 @app.get("/api/leads")
 async def get_leads(user=Depends(require_auth)):
