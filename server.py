@@ -257,6 +257,19 @@ def get_db():
                         created_by VARCHAR(320),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    # Feedback table
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS feedback (
+                        id VARCHAR PRIMARY KEY,
+                        type VARCHAR(20) DEFAULT 'bug',
+                        comment TEXT,
+                        screenshot TEXT,
+                        page VARCHAR(100),
+                        url VARCHAR(1000),
+                        viewport VARCHAR(50),
+                        user_agent VARCHAR(500),
+                        status VARCHAR(20) DEFAULT 'neu',
+                        created_by VARCHAR(320),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -2186,4 +2199,65 @@ async def delete_context(ctx_id: str, user=Depends(require_auth)):
     except Exception as e:
         db.rollback()
         raise HTTPException(500, str(e))
+    finally: db.close()
+
+# ── Feedback API ────────────────────────────────────
+@app.post("/api/feedback")
+async def create_feedback(request: Request, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        import uuid
+        data = await request.json()
+        fb_id = str(uuid.uuid4())[:8]
+        db.execute(text("""INSERT INTO feedback (id, type, comment, screenshot, page, url, viewport, user_agent, created_by)
+            VALUES (:id, :type, :comment, :screenshot, :page, :url, :viewport, :ua, :created_by)"""),
+            {"id": fb_id, "type": data.get("type","bug"), "comment": data.get("comment",""),
+             "screenshot": data.get("screenshot",""), "page": data.get("page",""),
+             "url": data.get("url",""), "viewport": data.get("viewport",""),
+             "ua": data.get("userAgent",""), "created_by": user["sub"]})
+        db.commit()
+        logger.info(f"Feedback from {user['sub']}: [{data.get('type')}] {data.get('comment','')[:60]}")
+        return {"id": fb_id, "status": "created"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Feedback error: {e}")
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.get("/api/feedback")
+async def get_feedback(user=Depends(require_auth)):
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        rows = db.execute(text("SELECT id, type, comment, page, viewport, user_agent, status, created_by, created_at FROM feedback ORDER BY created_at DESC")).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except Exception as e:
+        logger.error(f"Feedback list error: {e}")
+        return []
+    finally: db.close()
+
+@app.get("/api/feedback/{fb_id}/screenshot")
+async def get_feedback_screenshot(fb_id: str, user=Depends(require_auth)):
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        row = db.execute(text("SELECT screenshot FROM feedback WHERE id = :id"), {"id": fb_id}).fetchone()
+        if not row: raise HTTPException(404, "Not found")
+        return {"screenshot": row[0]}
+    finally: db.close()
+
+@app.put("/api/feedback/{fb_id}")
+async def update_feedback(fb_id: str, request: Request, user=Depends(require_auth)):
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        data = await request.json()
+        status = data.get("status", "neu")
+        db.execute(text("UPDATE feedback SET status = :status WHERE id = :id"), {"id": fb_id, "status": status})
+        db.commit()
+        return {"status": "updated"}
     finally: db.close()
