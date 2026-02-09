@@ -2543,6 +2543,159 @@ async def crm_get_companies_enriched(user=Depends(require_auth)):
         return []
     finally: db.close()
 
+# ── PROJECT ENDPOINTS ──
+
+@app.get("/api/projects")
+async def get_projects(user=Depends(require_auth)):
+    """List all projects from GitHub data/projects/*/project.yaml"""
+    import urllib.request, ssl, yaml
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    try:
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects"
+        req = urllib.request.Request(url, headers={"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"})
+        items = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+        projects = []
+        for item in items:
+            if item["type"] != "dir":
+                continue
+            # Fetch project.yaml
+            try:
+                pyaml_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{item['name']}/project.yaml"
+                req2 = urllib.request.Request(pyaml_url, headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3.raw", "User-Agent": "BEATRIXLab"})
+                content = urllib.request.urlopen(req2, context=ctx, timeout=15).read().decode()
+                data = yaml.safe_load(content) or {}
+                meta = data.get("metadata", {})
+                client = data.get("client", {})
+                project = data.get("project", {})
+                timeline = data.get("timeline", {})
+                team = data.get("team", {})
+                projects.append({
+                    "project_id": meta.get("project_id", ""),
+                    "project_code": meta.get("project_code", item["name"]),
+                    "slug": item["name"],
+                    "name": project.get("name", meta.get("name", item["name"])),
+                    "type": project.get("type", ""),
+                    "status": meta.get("status", "planning"),
+                    "customer_code": client.get("customer_code", client.get("short_name", "")),
+                    "customer_name": client.get("name", client.get("short_name", "")),
+                    "start_date": timeline.get("start_date", ""),
+                    "end_date": timeline.get("end_date", ""),
+                    "budget_chf": timeline.get("budget_chf", timeline.get("budget_eur")),
+                    "fa_owner": team.get("fa_owner", meta.get("created_by", "")),
+                    "fa_team": team.get("fa_team", []),
+                    "created": meta.get("created", ""),
+                    "last_updated": meta.get("last_updated", ""),
+                    "github_path": f"data/projects/{item['name']}/project.yaml"
+                })
+            except Exception as e2:
+                logger.warning(f"Could not read project {item['name']}: {e2}")
+                continue
+        projects.sort(key=lambda x: (0 if x["status"]=="active" else 1 if x["status"]=="planning" else 2, x.get("start_date","") or ""))
+        return projects
+    except Exception as e:
+        logger.error(f"Get projects error: {e}")
+        return []
+
+@app.post("/api/projects")
+async def create_project(request: Request, user=Depends(require_auth)):
+    """Create a new project: push project.yaml to GitHub"""
+    import urllib.request, ssl, yaml
+    from datetime import date
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    body = await request.json()
+
+    customer_code = body.get("customer_code", "").strip()
+    name = body.get("name", "").strip()
+    if not customer_code or not name:
+        return JSONResponse({"error": "customer_code and name required"}, status_code=400)
+
+    slug = f"{customer_code}-{name}".lower()
+    slug = "".join(c if c.isalnum() or c == '-' else '-' for c in slug)
+    slug = "-".join(part for part in slug.split("-") if part)[:60]
+    project_id = f"PRJ-{slug.upper()[:30]}"
+    today = date.today().isoformat()
+
+    # Build project.yaml
+    project_yaml = {
+        "metadata": {
+            "project_id": project_id,
+            "project_code": slug,
+            "status": "planning",
+            "created": today,
+            "created_by": user["email"],
+            "last_updated": today,
+            "version": "1.0"
+        },
+        "client": {
+            "customer_code": customer_code,
+            "name": body.get("customer_name", customer_code),
+        },
+        "project": {
+            "name": name,
+            "type": body.get("type", "beratung"),
+            "description": body.get("description", ""),
+            "objectives": [],
+        },
+        "timeline": {
+            "start_date": body.get("start_date", today),
+            "end_date": body.get("end_date", ""),
+            "budget_chf": body.get("budget_chf"),
+            "billing_type": body.get("billing_type", "fixed"),
+        },
+        "team": {
+            "fa_owner": body.get("fa_owner", "GF"),
+            "fa_team": body.get("fa_team", []),
+            "client_contacts": [],
+        },
+        "ebf_integration": {
+            "bcm_models": [],
+            "psi_dimensions": [],
+            "behavioral_objectives": [],
+        },
+        "deliverables": [],
+        "resources": [],
+        "changelog": [{
+            "date": today,
+            "author": user["email"],
+            "action": "Projekt eröffnet via BEATRIX"
+        }]
+    }
+
+    # Enrich client name from companies cache
+    try:
+        # Quick fetch customer-registry to get full name
+        reg_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/sales/customer-registry.yaml"
+        req = urllib.request.Request(reg_url, headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3.raw", "User-Agent": "BEATRIXLab"})
+        reg_data = yaml.safe_load(urllib.request.urlopen(req, context=ctx, timeout=15).read().decode()) or {}
+        for cust in reg_data.get("customers", []):
+            if cust.get("code", "").upper() == customer_code.upper():
+                project_yaml["client"]["name"] = cust.get("name", customer_code)
+                project_yaml["client"]["industry"] = cust.get("industry", "")
+                project_yaml["client"]["country"] = cust.get("country", "")
+                break
+    except:
+        pass
+
+    # Push to GitHub
+    try:
+        yaml_content = yaml.dump(project_yaml, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        import base64
+        file_path = f"data/projects/{slug}/project.yaml"
+        put_url = f"https://api.github.com/repos/{GH_REPO}/contents/{file_path}"
+        put_data = json.dumps({
+            "message": f"Projekt eröffnet: {name} ({customer_code})",
+            "content": base64.b64encode(yaml_content.encode()).decode(),
+            "branch": "main"
+        }).encode()
+        req = urllib.request.Request(put_url, data=put_data, method="PUT",
+            headers={"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab"})
+        result = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+        logger.info(f"Project created: {slug} by {user['email']}")
+        return {"ok": True, "project_id": project_id, "slug": slug, "github_path": file_path, "sha": result.get("content", {}).get("sha", "")}
+    except Exception as e:
+        logger.error(f"Create project GitHub error: {e}")
+        return JSONResponse({"error": f"GitHub push failed: {str(e)}"}, status_code=500)
+
 # Cache customer folders list
 _customer_folders_cache = {"data": [], "ts": 0}
 def _get_customer_folders():
