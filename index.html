@@ -1287,7 +1287,7 @@
                         authToken = saved;
                         currentUser = user ? JSON.parse(user) : (await r.json());
                         // Also check JWT for admin + CRM flags
-                        try { const p = JSON.parse(atob(saved.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; currentUser.crm_access = p.crm_access || false; currentUser.crm_role = p.crm_role || 'none'; currentUser.crm_owner_code = p.crm_owner_code || ''; } catch(e) {}
+                        try { const p = JSON.parse(atob(saved.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; currentUser.crm_access = p.crm_access || false; currentUser.crm_role = p.crm_role || 'none'; currentUser.crm_owner_code = p.crm_owner_code || ''; currentUser.lead_management = p.lead_management || false; } catch(e) {}
                         document.getElementById('authOverlay').classList.add('hidden');
                         document.getElementById('navUser').textContent = currentUser.name || currentUser.email;
                         if (currentUser.admin) document.getElementById('navAdmin').style.display = 'inline';
@@ -1308,7 +1308,7 @@
             authToken = data.token;
             currentUser = data.user;
             // Decode JWT to get admin status + CRM access
-            try { const p = JSON.parse(atob(data.token.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; currentUser.crm_access = p.crm_access || false; currentUser.crm_role = p.crm_role || 'none'; currentUser.crm_owner_code = p.crm_owner_code || ''; } catch(e) { currentUser.admin = false; currentUser.role = 'researcher'; currentUser.crm_access = false; }
+            try { const p = JSON.parse(atob(data.token.split('.')[1])); currentUser.admin = p.admin || false; currentUser.role = p.role || 'researcher'; currentUser.crm_access = p.crm_access || false; currentUser.crm_role = p.crm_role || 'none'; currentUser.crm_owner_code = p.crm_owner_code || ''; currentUser.lead_management = p.lead_management || false; } catch(e) { currentUser.admin = false; currentUser.role = 'researcher'; currentUser.crm_access = false; }
             sessionStorage.setItem('bea_token', authToken);
             sessionStorage.setItem('bea_user', JSON.stringify(currentUser));
             document.getElementById('authOverlay').classList.add('hidden');
@@ -1637,10 +1637,12 @@
         // ── Role-Based Tab Visibility ──────────────────
         // Role → Tab mapping (which tabs each role can see)
         const ROLE_TABS = {
-            researcher: [],                    // standard tabs only
-            sales:      ['context'],           // + Ausgangslage (CRM via crm_access)
-            operations: ['context'],           // + Ausgangslage
-            admin:      ['context']            // + everything (admin+CRM tabs handled separately)
+            researcher:        [],             // standard tabs only
+            sales:             ['context'],    // + Ausgangslage (CRM via crm_access)
+            operations:        ['context'],    // + Ausgangslage
+            senior_management: ['context'],    // + Ausgangslage (CRM auto-enabled)
+            partner:           ['context'],    // + Ausgangslage (CRM auto-enabled)
+            admin:             ['context']     // + everything (admin+CRM tabs handled separately)
         };
 
         function applyUserTabs() {
@@ -2002,11 +2004,15 @@
 
         // ── Admin Dashboard ──────────────────────────────
         const ROLE_CONFIG = {
-            researcher: { label: 'Researcher', color: '#8b9aff', tabs: ['Fragen','Modell-Building','Upload','Dokumente','Profil'] },
-            sales:      { label: 'Sales',      color: '#fbbf24', tabs: ['Fragen','Upload','Ausgangslage','Profil'] },
-            operations: { label: 'Operations', color: '#34d399', tabs: ['Fragen','Upload','Ausgangslage','Profil'] },
-            admin:      { label: 'Admin',      color: '#f87171', tabs: ['Alle Tabs'] }
+            researcher:        { label: 'Researcher',   color: '#8b9aff', tabs: ['Fragen','Modell-Building','Upload','Dokumente','Profil'] },
+            sales:             { label: 'Sales',        color: '#fbbf24', tabs: ['Fragen','Upload','Ausgangslage','Profil'] },
+            operations:        { label: 'Operations',   color: '#34d399', tabs: ['Fragen','Upload','Ausgangslage','Profil'] },
+            senior_management: { label: 'Senior Mgmt',  color: '#f59e0b', tabs: ['Fragen','Modell-Building','Upload','Dokumente','Ausgangslage','Profil'] },
+            partner:           { label: 'Partner',      color: '#ef4444', tabs: ['Fragen','Modell-Building','Upload','Dokumente','Ausgangslage','Profil'] },
+            admin:             { label: 'Admin',        color: '#f87171', tabs: ['Alle Tabs'] }
         };
+        // Owner codes from YAML team_registry
+        const CRM_OWNER_CODES = ['','OWN-GF','OWN-EB','OWN-MdL','OWN-AJ','OWN-MR','OWN-MFA','OWN-MF'];
 
         async function loadAdminData() {
             if (!currentUser || !currentUser.admin) return;
@@ -2049,13 +2055,26 @@
                             ).join('')}
                         </select>`;
 
-                    // CRM access toggle (only for @fehradvice.com)
+                    // CRM access controls (only for @fehradvice.com)
                     const isFa = u.email.toLowerCase().endsWith('@fehradvice.com');
+                    const isSenior = ['senior_management','partner'].includes(u.role);
                     const crmCell = isFa
-                        ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                            <input type="checkbox" ${u.crm_access ? 'checked' : ''} onchange="adminToggleCrm('${u.id}',this.checked)" style="accent-color:#2A7F8E;cursor:pointer">
-                            <span style="font-size:10px;color:${u.crm_access ? '#2A7F8E' : 'rgba(255,255,255,0.25)'}">${u.crm_access ? 'Aktiv' : 'Aus'}</span>
-                          </label>`
+                        ? `<div style="display:flex;flex-direction:column;gap:4px">
+                            <label style="display:flex;align-items:center;gap:5px;cursor:pointer" title="CRM-Zugang">
+                                <input type="checkbox" ${u.crm_access ? 'checked' : ''} onchange="adminToggleCrm('${u.id}',{crm_access:this.checked})" style="accent-color:#2A7F8E;cursor:pointer">
+                                <span style="font-size:10px;color:${u.crm_access ? '#2A7F8E' : 'rgba(255,255,255,0.25)'}">CRM</span>
+                            </label>
+                            ${u.crm_access ? `<label style="display:flex;align-items:center;gap:5px;cursor:pointer" title="Lead-Management (eigene Leads)">
+                                <input type="checkbox" ${u.lead_management ? 'checked' : ''} onchange="adminToggleCrm('${u.id}',{lead_management:this.checked})" style="accent-color:#E8A33D;cursor:pointer">
+                                <span style="font-size:10px;color:${u.lead_management ? '#E8A33D' : 'rgba(255,255,255,0.25)'}">Leads</span>
+                            </label>
+                            <select onchange="adminToggleCrm('${u.id}',{crm_owner_code:this.value})" style="font-size:9px;padding:2px 4px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.08);border-radius:4px;cursor:pointer">
+                                ${CRM_OWNER_CODES.map(c => `<option value="${c}" ${c===(u.crm_owner_code||'') ? 'selected' : ''} style="color:#000">${c || '– kein Owner –'}</option>`).join('')}
+                            </select>
+                            <select onchange="adminToggleCrm('${u.id}',{crm_role:this.value})" style="font-size:9px;padding:2px 4px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.08);border-radius:4px;cursor:pointer">
+                                ${['none','viewer','manager','admin'].map(r => `<option value="${r}" ${r===(u.crm_role||'none') ? 'selected' : ''} style="color:#000">${r==='none'?'– keine Rolle –':r==='viewer'?'Viewer (eigene)':r==='manager'?'Manager (alle)':'Admin'}</option>`).join('')}
+                            </select>` : ''}
+                          </div>`
                         : '<span style="font-size:10px;color:rgba(255,255,255,0.15)">–</span>';
 
                     // Tab access pills (include CRM if access)
@@ -2063,6 +2082,15 @@
                     const tabPills = tabs.map(t =>
                         `<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.35);border:1px solid rgba(255,255,255,0.06)">${t}</span>`
                     ).join(' ');
+
+                    // CRM access toggle (only for @fehradvice.com)
+                    const isFa = u.email.toLowerCase().endsWith('@fehradvice.com');
+                    const crmCell = isFa
+                        ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                            <input type="checkbox" ${u.crm_access ? 'checked' : ''} onchange="adminToggleCrm('${u.id}',{crm_access:this.checked})" style="accent-color:#2A7F8E;cursor:pointer">
+                            <span style="font-size:10px;color:${u.crm_access ? '#2A7F8E' : 'rgba(255,255,255,0.25)'}">${u.crm_access ? 'Aktiv' : 'Aus'}</span>
+                           </label>`
+                        : '<span style="font-size:10px;color:rgba(255,255,255,0.15)">–</span>';
 
                     const toggleBtn = u.is_active
                         ? `<button class="btn-toggle deactivate" onclick="toggleUserActive('${u.id}','${u.email}')">Deaktivieren</button>`
@@ -2174,14 +2202,19 @@
             } catch(e) { showToast('Verbindungsfehler', 'error'); }
         }
 
-        async function adminToggleCrm(userId, enabled) {
+        async function adminToggleCrm(userId, data) {
             try {
                 const r = await fetch(`${API}/admin/users/${userId}/crm-access`, {
                     method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ crm_access: enabled, crm_role: enabled ? 'viewer' : 'none' })
+                    body: JSON.stringify(data)
                 });
                 if (!r.ok) { const d = await r.json().catch(()=>({})); showToast(d.detail || 'Fehler', 'error'); loadAdminData(); return; }
-                showToast(enabled ? 'CRM freigeschaltet ✓' : 'CRM deaktiviert', 'success');
+                const label = data.crm_access !== undefined ? (data.crm_access ? 'CRM freigeschaltet ✓' : 'CRM deaktiviert')
+                    : data.lead_management !== undefined ? (data.lead_management ? 'Lead-Mgmt aktiviert ✓' : 'Lead-Mgmt deaktiviert')
+                    : data.crm_owner_code !== undefined ? `Owner: ${data.crm_owner_code || '–'}`
+                    : data.crm_role !== undefined ? `CRM-Rolle: ${data.crm_role}`
+                    : 'Aktualisiert ✓';
+                showToast(label, 'success');
                 loadAdminData();
             } catch(e) { showToast('Verbindungsfehler', 'error'); }
         }
