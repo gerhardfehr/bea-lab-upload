@@ -1946,6 +1946,11 @@
         const DOMAIN_COLORS = { REL:'#a78bfa', FIN:'#34d399', HLT:'#f87171', ENV:'#60a5fa', POL:'#fbbf24', ORG:'#f472b6', EDU:'#38bdf8', OTH:'#94a3b8' };
 
         function mbSelectMode(el, mode) {
+            // Double-tap = Workflow starten
+            if (el.classList.contains('selected') && mbState.mode === mode) {
+                mbStartWorkflow();
+                return;
+            }
             document.querySelectorAll('.mb-mode-card').forEach(c => c.classList.remove('selected'));
             el.classList.add('selected');
             mbState.mode = mode;
@@ -2531,6 +2536,12 @@ Antworte NUR als JSON Array:
         }
 
         function mbSelectDepth(depth, el) {
+            // Double-tap = Report generieren
+            if (el.classList.contains('depth-active') && mbState.reportDepth === depth) {
+                const btn = document.getElementById('mbComputeBtn');
+                if (btn && !btn.disabled) btn.click();
+                return;
+            }
             mbState.reportDepth = depth;
             document.querySelectorAll('#mbDepthChoice > div').forEach(d => {
                 d.classList.remove('depth-active');
@@ -2621,9 +2632,17 @@ Antworte NUR als JSON Array:
 
         function mbSelect(el, value, silent) {
             const panel = el.closest('.mb-panel');
+            const stepId = panel.id;
+
+            // Double-tap same choice = weiter
+            if (el.classList.contains('selected') && mbState.selections[stepId] === value) {
+                const btn = panel.querySelector('.mb-btn-primary');
+                if (btn && !btn.disabled) btn.click();
+                return;
+            }
+
             panel.querySelectorAll('.mb-choice').forEach(c => c.classList.remove('selected'));
             el.classList.add('selected');
-            const stepId = panel.id;
             mbState.selections[stepId] = value;
             const btn = panel.querySelector('.mb-btn-primary');
             if (btn) btn.disabled = false;
