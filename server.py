@@ -1859,6 +1859,137 @@ Frage: {question}"""
 # Relevance threshold: minimum score to use fast path
 FAST_PATH_THRESHOLD = 15
 
+# ── PROJECT CHAT: Natural language project creation ──
+
+PROJECT_CHAT_SYSTEM = """Du bist BEATRIX, die Projekt-Assistentin von FehrAdvice & Partners AG.
+Der User möchte ein Projekt eröffnen oder ein bestehendes Projekt ergänzen – per natürlicher Sprache statt Formularfelder.
+
+Deine Aufgabe: Extrahiere strukturierte Projektdaten aus dem Gespräch.
+
+VERFÜGBARE FELDER:
+- customer_code: Kundencode (z.B. "ubs", "lukb", "erste-bank", "alpla")
+- name: Projektname (kurz, prägnant)
+- type: beratung | workshop | studie | intervention | keynote | training | retainer
+- project_category: mandat (bezahlt) | lead (Akquise) | probono (unentgeltlich)
+- description: Kurzbeschreibung / Ziele
+- start_date: YYYY-MM-DD
+- end_date: YYYY-MM-DD
+- budget_chf: Zahl (nur bei mandat)
+- billing_type: fixed | time_material | retainer
+- fa_owner: Kürzel des Projektleiters (GF=Gerhard Fehr, AF=Andrea Fehr, etc.)
+- fa_team: Liste von Team-Mitgliedern
+
+VERFÜGBARE KUNDEN (Auswahl):
+ubs, erste-bank, lukb, alpla, a1-telekom, raiffeisen, zkb, gkb, valiant, julius-baer,
+vontobel, migros-bank, postfinance, css, helsana, swica, sanitas, kpt, concordia,
+groupe-mutuel, assura, atupri, visana, bmw, orf, srg, ringier-medien-schweiz,
+lindt-copacking, porr, neon, revolut, peek-cloppenburg, philoro, sob, spo, bfe,
+economiesuisse, prio-swiss, bekb, localsearch, zindel-united, plusminus, awe-sg
+
+REGELN:
+1. Antworte IMMER mit einem JSON-Block in ```json ... ``` Tags
+2. Das JSON hat diese Struktur:
+{
+  "status": "complete" | "need_info",
+  "project": { ...alle erkannten Felder... },
+  "missing": ["liste", "fehlender", "pflichtfelder"],
+  "message": "Deine natürliche Antwort an den User",
+  "confidence": 0.0-1.0
+}
+3. Pflichtfelder: customer_code, name, project_category
+4. Bei "need_info": Frage freundlich und konkret nach den fehlenden Feldern
+5. Bei "complete": Fasse zusammen was du verstanden hast, confidence >= 0.8
+6. Wenn der User ein bestehendes Projekt ergänzen will (z.B. "füg Budget hinzu"), setze "action": "update" statt "create"
+7. Erkenne Kunden auch bei ungefährer Nennung ("UBS" → "ubs", "Luzerner KB" → "lukb", "Erste" → "erste-bank")
+8. Setze sinnvolle Defaults: type="beratung", billing="fixed", fa_owner="GF", start_date=heute
+9. Antworte auf Deutsch, kurz und professionell
+10. Wenn der User Änderungen an einem Vorschlag macht, übernimm sie in das aktualisierte JSON"""
+
+@app.post("/api/chat/project-intent")
+async def chat_project_intent(request: Request, user=Depends(require_auth)):
+    """Use Claude to extract project data from natural language."""
+    import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    body = await request.json()
+    message = body.get("message", "").strip()
+    history = body.get("history", [])  # Previous messages in this project-chat
+    current_draft = body.get("current_draft", {})  # Current project draft
+
+    if not message:
+        return JSONResponse({"error": "message required"}, status_code=400)
+    if not ANTHROPIC_API_KEY:
+        return JSONResponse({"error": "Claude API nicht konfiguriert"}, status_code=501)
+
+    # Build messages array with conversation history
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    messages = []
+
+    # Add context about current draft if exists
+    context_note = ""
+    if current_draft:
+        context_note = f"\n\nAKTUELLER ENTWURF (vom User bereits bestätigt):\n```json\n{json.dumps(current_draft, ensure_ascii=False, indent=2)}\n```\nDer User möchte diesen Entwurf anpassen."
+
+    # Add conversation history
+    for h in history[-10:]:  # Last 10 messages
+        messages.append({"role": h["role"], "content": h["content"]})
+
+    # Add current message
+    messages.append({"role": "user", "content": message})
+
+    system = PROJECT_CHAT_SYSTEM + f"\n\nHeute ist: {today}" + context_note
+
+    try:
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 2000,
+            "system": system,
+            "messages": messages
+        }).encode()
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+                "User-Agent": "BEATRIXLab/3.19"
+            })
+        resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=30).read())
+        answer = resp["content"][0]["text"]
+
+        # Extract JSON from response
+        import re
+        json_match = re.search(r'```json\s*(.*?)\s*```', answer, re.DOTALL)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(1))
+                return {
+                    "ok": True,
+                    "status": parsed.get("status", "need_info"),
+                    "project": parsed.get("project", {}),
+                    "missing": parsed.get("missing", []),
+                    "message": parsed.get("message", ""),
+                    "confidence": parsed.get("confidence", 0),
+                    "action": parsed.get("action", "create"),
+                    "raw": answer
+                }
+            except json.JSONDecodeError:
+                pass
+
+        # Fallback: return raw answer
+        return {
+            "ok": True,
+            "status": "need_info",
+            "project": {},
+            "missing": [],
+            "message": answer,
+            "confidence": 0,
+            "action": "create"
+        }
+    except Exception as e:
+        logger.error(f"Project intent error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest, user=Depends(require_auth)):
     """SSE streaming endpoint – streams Claude tokens to frontend in real-time."""
