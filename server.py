@@ -2610,6 +2610,7 @@ async def get_projects(user=Depends(require_auth)):
                     "name": prj_name,
                     "type": project.get("type", ""),
                     "status": meta.get("status", "planning").lower(),
+                    "project_category": meta.get("project_category", ""),
                     "customer_code": client.get("customer_code", client.get("short_name", "")),
                     "customer_name": cust_name,
                     "start_date": tl_start,
