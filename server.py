@@ -2673,6 +2673,10 @@ async def chat_intent(request: Request, user=Depends(require_auth)):
 
     # ── Step 2: Handle knowledge/general via existing KB path ──
     if intent in ("knowledge", "general"):
+        # 🔍 Fact-check user claims even for knowledge/general messages
+        try:
+            fact_check_user_claims(message, user["sub"], customer_code=entities.get("customer", ""))
+        except Exception: pass
         return {
             "ok": True,
             "intent": intent,
