@@ -1721,16 +1721,8 @@
         }
 
         function formatMessage(text) {
-            // Simple markdown-like formatting
-            let html = text
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/`(.+?)`/g, '<code>$1</code>')
-                .replace(/\n\n/g, '</p><p>')
-                .replace(/\n- /g, '</p><li>')
-                .replace(/\n(\d+)\. /g, '</p><li>')
-                .replace(/\n/g, '<br>');
-            return '<p>' + html + '</p>';
+            // Use full markdown renderer
+            return mbRenderMd(text);
         }
 
         function appendMessage(role, content, sources) {
@@ -1997,18 +1989,103 @@ Antworte NUR als JSON Array:
 
         // ── Universal Streaming + Progressive Reveal ──────────
         function mbRenderMd(text) {
-            // Simple markdown → HTML
+            // Full markdown → HTML renderer
+            const lines = text.split('\n');
+            let html = '';
+            let inTable = false;
+            let tableRows = [];
+            let inList = false;
+
+            function flushTable() {
+                if (!tableRows.length) return '';
+                let t = '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">';
+                tableRows.forEach((row, ri) => {
+                    // Skip separator rows (|---|---|)
+                    if (/^\|[\s\-:]+\|/.test(row) && row.replace(/[\s\-:|]/g, '') === '') return;
+                    const cells = row.split('|').filter((c, i, a) => i > 0 && i < a.length - 1);
+                    const isHeader = ri === 0;
+                    t += '<tr>';
+                    cells.forEach(cell => {
+                        const tag = isHeader ? 'th' : 'td';
+                        const style = isHeader
+                            ? 'padding:8px 10px;text-align:left;font-weight:600;color:var(--accent);border-bottom:2px solid rgba(139,170,255,0.2);font-size:12px;text-transform:uppercase;letter-spacing:0.3px'
+                            : 'padding:8px 10px;text-align:left;color:rgba(255,255,255,0.8);border-bottom:1px solid rgba(255,255,255,0.05);vertical-align:top;line-height:1.5';
+                        const content = cell.trim().replace(/\*\*(.*?)\*\*/g, '<strong style="color:white">$1</strong>');
+                        t += `<${tag} style="${style}">${content}</${tag}>`;
+                    });
+                    t += '</tr>';
+                });
+                t += '</table>';
+                tableRows = [];
+                inTable = false;
+                return t;
+            }
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+
+                // Table detection
+                if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+                    if (!inTable) inTable = true;
+                    tableRows.push(line);
+                    continue;
+                } else if (inTable) {
+                    html += flushTable();
+                }
+
+                // Horizontal rule
+                if (/^---+$/.test(line.trim())) {
+                    html += '<hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:20px 0">';
+                    continue;
+                }
+
+                // Headers
+                if (line.startsWith('### ')) {
+                    html += `<h4 style="color:var(--accent);font-size:14px;font-weight:700;margin:20px 0 8px;letter-spacing:0.3px">${line.slice(4)}</h4>`;
+                    continue;
+                }
+                if (line.startsWith('## ')) {
+                    html += `<div style="font-size:16px;font-weight:700;color:white;margin:24px 0 10px;padding-bottom:6px;border-bottom:1px solid rgba(139,170,255,0.15)">${line.slice(3)}</div>`;
+                    continue;
+                }
+                if (line.startsWith('# ')) {
+                    html += `<div style="font-size:20px;font-weight:700;color:white;margin:8px 0 12px">${line.slice(2)}</div>`;
+                    continue;
+                }
+
+                // List items
+                if (/^[-*] /.test(line.trim())) {
+                    const content = line.trim().replace(/^[-*] /, '');
+                    html += `<div style="display:flex;gap:8px;padding:3px 0 3px 4px"><span style="color:var(--accent);flex-shrink:0">•</span><span>${inlineMd(content)}</span></div>`;
+                    continue;
+                }
+                if (/^\d+\. /.test(line.trim())) {
+                    const m = line.trim().match(/^(\d+)\. (.*)/);
+                    html += `<div style="display:flex;gap:8px;padding:3px 0 3px 4px"><span style="color:var(--accent);flex-shrink:0;font-weight:600;min-width:18px">${m[1]}.</span><span>${inlineMd(m[2])}</span></div>`;
+                    continue;
+                }
+
+                // Empty line = paragraph break
+                if (line.trim() === '') {
+                    html += '<div style="height:8px"></div>';
+                    continue;
+                }
+
+                // Normal paragraph
+                html += `<div style="padding:2px 0;line-height:1.7">${inlineMd(line)}</div>`;
+            }
+
+            // Flush remaining table
+            if (inTable) html += flushTable();
+
+            return html;
+        }
+
+        function inlineMd(text) {
             return text
-                .replace(/### (.*)/g, '<h4 style="color:var(--accent);font-size:14px;font-weight:700;margin:16px 0 6px;letter-spacing:0.3px">$1</h4>')
-                .replace(/## (.*)/g, '<h3 style="color:white;font-size:16px;font-weight:700;margin:20px 0 8px">$1</h3>')
-                .replace(/# (.*)/g, '<h2 style="color:white;font-size:18px;font-weight:700;margin:20px 0 10px">$1</h2>')
                 .replace(/\*\*(.*?)\*\*/g, '<strong style="color:rgba(255,255,255,0.95)">$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/`(.*?)`/g, '<code style="background:rgba(139,170,255,0.1);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--accent)">$1</code>')
-                .replace(/^- (.*)/gm, '<div style="padding-left:16px;margin:3px 0">• $1</div>')
-                .replace(/^(\d+)\. (.*)/gm, '<div style="padding-left:16px;margin:3px 0">$1. $2</div>')
-                .replace(/\n\n/g, '<br><br>')
-                .replace(/\n/g, '<br>');
+                .replace(/\*(.*?)\*/g, '<em style="color:rgba(255,255,255,0.7)">$1</em>')
+                .replace(/`(.*?)`/g, '<code style="background:rgba(139,170,255,0.1);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--accent)">$1</code>');
         }
 
         async function mbStreamChat(prompt, targetEl, opts = {}) {
