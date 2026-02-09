@@ -1189,6 +1189,41 @@ def sync_user_profile_to_github(user_email: str):
         except Exception as e:
             logger.warning(f"Calibration detail push failed: {e}")
 
+        # ── 9) Push beliefs & biases details to GitHub ──
+        try:
+            recent_beliefs = db.execute(sql_text("""
+                SELECT belief_text, belief_category, bias_type, bias_source,
+                       informed_score, reasoning_type, evidence_basis, customer_code, created_at
+                FROM belief_analyses WHERE user_email=:e
+                ORDER BY created_at DESC LIMIT 50
+            """), {"e": user_email}).fetchall()
+
+            if recent_beliefs:
+                beliefs_data = {
+                    "last_updated": now.isoformat(),
+                    "user": user_email,
+                    "beliefs_and_biases": [
+                        {
+                            "text": r[0][:300],
+                            "category": r[1],
+                            "bias_type": r[2],
+                            "source": r[3],
+                            "informed_score": round(float(r[4] or 0.5), 2),
+                            "reasoning": r[5],
+                            "evidence_basis": r[6],
+                            "customer": r[7],
+                            "date": r[8].isoformat() if r[8] else None,
+                        }
+                        for r in recent_beliefs
+                    ]
+                }
+                bel_yaml = yaml.dump(beliefs_data, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                bel_path = f"data/team/{user_slug}/beliefs.yaml"
+                gh_put_file(GH_CONTEXT_REPO, bel_path, bel_yaml,
+                    f"🧠 Beliefs update: {identity['name']} – {len(recent_beliefs)} items")
+        except Exception as e:
+            logger.warning(f"Beliefs detail push failed: {e}")
+
         # ── 9) Push belief/bias details to GitHub ──
         try:
             recent_beliefs = db.execute(sql_text("""
