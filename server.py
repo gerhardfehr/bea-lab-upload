@@ -364,6 +364,15 @@ def get_db():
                         status VARCHAR(20) DEFAULT 'neu',
                         created_by VARCHAR(320),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS project_edits (
+                        id SERIAL PRIMARY KEY,
+                        slug VARCHAR(200) NOT NULL,
+                        section VARCHAR(100) NOT NULL,
+                        data JSONB NOT NULL,
+                        edited_by VARCHAR(320),
+                        synced_to_github BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(slug, section))"""))
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -2624,7 +2633,7 @@ async def get_projects(user=Depends(require_auth)):
 
 @app.post("/api/projects")
 async def create_project(request: Request, user=Depends(require_auth)):
-    """Create a new project: push project.yaml to GitHub"""
+    """Create a new project with unique atomic Projektkürzel"""
     try:
         import urllib.request, ssl, yaml
         ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
@@ -2632,35 +2641,101 @@ async def create_project(request: Request, user=Depends(require_auth)):
 
         customer_code = body.get("customer_code", "").strip()
         name = body.get("name", "").strip()
+        project_category = body.get("project_category", "mandat")  # mandat / lead / probono
         if not customer_code or not name:
             return JSONResponse({"error": "customer_code and name required"}, status_code=400)
+        if project_category not in ("mandat", "lead", "probono"):
+            return JSONResponse({"error": "project_category must be mandat, lead, or probono"}, status_code=400)
 
-        slug = f"{customer_code}-{name}".lower()
-        slug = "".join(c if c.isalnum() or c == '-' else '-' for c in slug)
-        slug = "-".join(part for part in slug.split("-") if part)[:60]
-        project_id = f"PRJ-{slug.upper()[:30]}"
+        gh = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"}
         today = datetime.utcnow().strftime("%Y-%m-%d")
+        yymm = datetime.utcnow().strftime("%y%m")  # e.g. "2602"
 
-        # Check if project already exists
-        check_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{slug}"
+        # ── Step 1: Build client prefix (3-5 chars) ──
+        prefix = customer_code.upper().replace("-", "")[:5]
+        if len(prefix) < 2:
+            prefix = name.upper().replace(" ", "")[:4]
+
+        # ── Step 2: Scan ALL existing project codes to ensure uniqueness ──
+        existing_codes = set()
+        existing_slugs = set()
         try:
-            check_req = urllib.request.Request(check_url, headers={"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"})
-            urllib.request.urlopen(check_req, context=ctx, timeout=10)
-            return JSONResponse({"error": f"Projekt '{slug}' existiert bereits auf GitHub"}, status_code=409)
-        except urllib.error.HTTPError as he:
-            if he.code != 404:
-                logger.warning(f"GitHub check error: {he}")
-        except:
-            pass
+            list_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects"
+            req = urllib.request.Request(list_url, headers=gh)
+            items = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+            for item in items:
+                if item.get("type") == "dir":
+                    existing_slugs.add(item["name"].lower())
+                    # Read each project.yaml for its project_code
+                    try:
+                        purl = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{item['name']}/project.yaml"
+                        req2 = urllib.request.Request(purl, headers={**gh, "Accept": "application/vnd.github.v3.raw"})
+                        pdata = yaml.safe_load(urllib.request.urlopen(req2, context=ctx, timeout=10).read().decode()) or {}
+                        meta = pdata.get("metadata", {})
+                        if meta.get("project_code"):
+                            existing_codes.add(meta["project_code"].upper())
+                        if meta.get("project_id"):
+                            existing_codes.add(meta["project_id"].upper())
+                    except:
+                        pass
+        except Exception as scan_err:
+            logger.warning(f"Could not scan existing projects: {scan_err}")
 
-        # Build project.yaml
+        # ── Step 3: Generate unique Projektkürzel ──
+        # Format: {PREFIX}-{YYMM}{LETTER}  e.g. LUKB-2602A, ERS-2602A
+        # Falls A vergeben → B, C, ... bis Z
+        project_code = None
+        for letter_idx in range(26):
+            letter = chr(65 + letter_idx)  # A, B, C...
+            candidate = f"{prefix}-{yymm}{letter}"
+            if candidate.upper() not in existing_codes:
+                project_code = candidate
+                break
+        if not project_code:
+            # Fallback: add number
+            for n in range(1, 100):
+                candidate = f"{prefix}-{yymm}-{n:02d}"
+                if candidate.upper() not in existing_codes:
+                    project_code = candidate
+                    break
+        if not project_code:
+            return JSONResponse({"error": "Konnte kein eindeutiges Projektkürzel generieren"}, status_code=500)
+
+        # ── Step 4: Generate slug (folder name) ──
+        slug_base = f"{customer_code}-{name}".lower()
+        slug = "".join(c if c.isalnum() or c == '-' else '-' for c in slug_base)
+        slug = "-".join(part for part in slug.split("-") if part)[:60]
+        # Ensure slug is unique
+        if slug in existing_slugs:
+            for n in range(2, 100):
+                candidate_slug = f"{slug}-{n}"
+                if candidate_slug not in existing_slugs:
+                    slug = candidate_slug
+                    break
+
+        # ── Step 5: Category labels ──
+        category_labels = {
+            "mandat": "Bezahltes Mandatsprojekt",
+            "lead": "Lead-Projekt (Akquise)",
+            "probono": "Pro-Bono-Projekt"
+        }
+        category_icons = {
+            "mandat": "💼",
+            "lead": "🎯",
+            "probono": "🤝"
+        }
+
+        # ── Step 6: Build project.yaml ──
         project_yaml = {
             "metadata": {
-                "project_id": project_id,
-                "project_code": slug,
+                "project_code": project_code,
+                "project_id": f"PRJ-{project_code}",
+                "slug": slug,
                 "status": "planning",
+                "project_category": project_category,
+                "project_category_label": category_labels.get(project_category, project_category),
                 "created": today,
-                "created_by": user.get("sub", user.get("email","")),
+                "created_by": user.get("sub", user.get("email", "")),
                 "last_updated": today,
                 "version": "1.0"
             },
@@ -2694,15 +2769,15 @@ async def create_project(request: Request, user=Depends(require_auth)):
             "resources": [],
             "changelog": [{
                 "date": today,
-                "author": user.get("sub", user.get("email","")),
-                "action": "Projekt eröffnet via BEATRIX"
+                "author": user.get("sub", user.get("email", "")),
+                "action": f"Projekt eröffnet via BEATRIX ({category_labels.get(project_category, '')})"
             }]
         }
 
         # Enrich client name from companies cache
         try:
             reg_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/sales/customer-registry.yaml"
-            req = urllib.request.Request(reg_url, headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3.raw", "User-Agent": "BEATRIXLab"})
+            req = urllib.request.Request(reg_url, headers={**gh, "Accept": "application/vnd.github.v3.raw"})
             reg_data = yaml.safe_load(urllib.request.urlopen(req, context=ctx, timeout=15).read().decode()) or {}
             for cust in reg_data.get("customers", []):
                 if cust.get("code", "").upper() == customer_code.upper():
@@ -2718,15 +2793,23 @@ async def create_project(request: Request, user=Depends(require_auth)):
         file_path = f"data/projects/{slug}/project.yaml"
         put_url = f"https://api.github.com/repos/{GH_REPO}/contents/{file_path}"
         put_data = json.dumps({
-            "message": f"Projekt eröffnet: {name} ({customer_code})",
+            "message": f"Projekt eröffnet: {project_code} – {name} ({customer_code}) [{project_category}]",
             "content": base64.b64encode(yaml_content.encode()).decode(),
             "branch": "main"
         }).encode()
         req = urllib.request.Request(put_url, data=put_data, method="PUT",
-            headers={"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab"})
+            headers={**gh, "Content-Type": "application/json"})
         result = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
-        logger.info(f"Project created: {slug} by {user['email']}")
-        return {"ok": True, "project_id": project_id, "slug": slug, "github_path": file_path, "sha": result.get("content", {}).get("sha", "")}
+        logger.info(f"Project created: {project_code} ({slug}) by {user.get('email','?')} [{project_category}]")
+        return {
+            "ok": True,
+            "project_code": project_code,
+            "project_id": f"PRJ-{project_code}",
+            "slug": slug,
+            "project_category": project_category,
+            "github_path": file_path,
+            "sha": result.get("content", {}).get("sha", "")
+        }
     except Exception as e:
         logger.error(f"Create project error: {e}")
         import traceback; traceback.print_exc()
@@ -2872,6 +2955,36 @@ async def get_project_landing(slug: str, user=Depends(require_auth)):
     except Exception as e:
         logger.warning(f"Landing: other projects error: {e}")
 
+    # ── Merge DB edits (project_edits table) ──
+    try:
+        db = get_db()
+        edits = db.execute(text("SELECT section, data FROM project_edits WHERE slug = :s"), {"s": slug}).fetchall()
+        if edits:
+            project_data = result.get("project", {})
+            for row in edits:
+                section_name = row[0]
+                section_data = row[1] if isinstance(row[1], (dict, list)) else json.loads(row[1])
+                # Merge into project_data
+                if section_name in ("objective", "scope", "team", "ebf_integration", "fehradvice_scope", "metadata", "budget"):
+                    project_data.setdefault(section_name, {}).update(section_data)
+                elif section_name in ("deliverables", "risks", "kpis"):
+                    project_data[section_name] = section_data if isinstance(section_data, list) else section_data.get("items", [])
+                elif section_name == "timeline":
+                    project_data["timeline"] = section_data
+                elif section_name == "sessions":
+                    if isinstance(section_data, dict) and section_data.get("action") == "add":
+                        sessions = project_data.get("sessions", [])
+                        sessions.append(section_data.get("session", {}))
+                        project_data["sessions"] = sessions
+                    elif isinstance(section_data, list):
+                        project_data["sessions"] = section_data
+                else:
+                    project_data[section_name] = section_data
+            result["project"] = project_data
+            result["has_local_edits"] = True
+    except Exception as db_err:
+        logger.warning(f"Landing: DB merge error: {db_err}")
+
     return result
 
 # Cache customer folders list
@@ -2898,97 +3011,131 @@ def _get_customer_folders():
 
 @app.put("/api/projects/{slug}")
 async def update_project(slug: str, request: Request, user=Depends(require_auth)):
-    """Update specific fields in a project.yaml on GitHub"""
-    import urllib.request, ssl, yaml, base64
-    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    """Update project: save to PostgreSQL immediately, sync to GitHub in background"""
     body = await request.json()
-    section = body.get("section", "")  # e.g. "scope", "timeline", "team"
+    section = body.get("section", "")
     data = body.get("data", {})
     if not section or not data:
         return JSONResponse({"error": "section and data required"}, status_code=400)
 
+    db = get_db()
     try:
-        file_path = f"data/projects/{slug}/project.yaml"
-        url = f"https://api.github.com/repos/{GH_REPO}/contents/{file_path}"
-        gh = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"}
+        # 1. Save to PostgreSQL immediately (always reliable)
+        db.execute(text("""
+            INSERT INTO project_edits (slug, section, data, edited_by, synced_to_github)
+            VALUES (:slug, :section, :data, :user, FALSE)
+            ON CONFLICT (slug, section) DO UPDATE SET
+                data = :data, edited_by = :user, synced_to_github = FALSE,
+                created_at = CURRENT_TIMESTAMP
+        """), {"slug": slug, "section": section, "data": json.dumps(data), "user": user.get("sub","unknown")})
+        db.commit()
+        logger.info(f"Project edit saved to DB: {slug}/{section} by {user.get('sub','?')}")
 
-        # Fetch current
-        req = urllib.request.Request(url, headers=gh)
-        existing = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
-        sha = existing["sha"]
+        # 2. Try GitHub sync (non-blocking, may fail)
+        github_synced = False
+        try:
+            github_synced = _sync_project_to_github(slug, section, data, user)
+        except Exception as gh_err:
+            logger.warning(f"GitHub sync failed (will retry later): {gh_err}")
 
-        req2 = urllib.request.Request(url, headers={**gh, "Accept": "application/vnd.github.v3.raw"})
-        project = yaml.safe_load(urllib.request.urlopen(req2, context=ctx, timeout=15).read().decode()) or {}
-
-        # Merge data into project at the right section
-        # Support nested sections like "scope", "objective", "team", etc.
-        if section == "objective":
-            project.setdefault("objective", {}).update(data)
-        elif section == "scope":
-            project.setdefault("scope", {}).update(data)
-        elif section == "team":
-            project.setdefault("team", {}).update(data)
-        elif section == "timeline":
-            if isinstance(data, list):
-                project["timeline"] = data
-            else:
-                if isinstance(project.get("timeline"), list):
-                    project["timeline"] = data
-                else:
-                    project.setdefault("timeline", {}).update(data)
-        elif section == "deliverables":
-            project["deliverables"] = data if isinstance(data, list) else data.get("items", [])
-        elif section == "risks":
-            project["risks"] = data if isinstance(data, list) else data.get("items", [])
-        elif section == "kpis":
-            project["kpis"] = data if isinstance(data, list) else data.get("items", [])
-        elif section == "budget":
-            if isinstance(project.get("timeline"), dict):
-                project["timeline"].update(data)
-            else:
-                project.setdefault("budget", {}).update(data)
-        elif section == "sessions":
-            sessions = project.get("sessions", [])
-            if isinstance(data, dict) and data.get("action") == "add":
-                sessions.append(data.get("session", {}))
-            elif isinstance(data, list):
-                sessions = data
-            project["sessions"] = sessions
-        elif section == "ebf_integration":
-            project.setdefault("ebf_integration", {}).update(data)
-        elif section == "fehradvice_scope":
-            project.setdefault("fehradvice_scope", {}).update(data)
-        elif section == "metadata":
-            project.setdefault("metadata", {}).update(data)
-        else:
-            project[section] = data
-
-        # Update metadata
-        from datetime import date
-        project.setdefault("metadata", {})["last_updated"] = date.today().isoformat()
-
-        # Add changelog entry
-        changelog = project.get("changelog", [])
-        changelog.append({
-            "date": date.today().isoformat(),
-            "user": user.get("sub", "unknown"),
-            "section": section,
-            "action": "updated"
-        })
-        project["changelog"] = changelog[-20:]  # Keep last 20
-
-        # Push back
-        yaml_content = yaml.dump(project, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        commit_msg = f"update: {slug} – {section} (via BEATRIX)"
-        put_data = json.dumps({"message": commit_msg, "content": base64.b64encode(yaml_content.encode()).decode(), "sha": sha, "branch": "main"}).encode()
-        req3 = urllib.request.Request(url, data=put_data, method="PUT", headers={**gh, "Content-Type": "application/json"})
-        urllib.request.urlopen(req3, context=ctx, timeout=15)
-
-        logger.info(f"Project updated: {slug}/{section} by {user.get('sub','?')}")
-        return {"ok": True, "section": section, "slug": slug}
+        return {"ok": True, "section": section, "slug": slug, "github_synced": github_synced}
     except Exception as e:
         logger.error(f"Project update error: {e}")
+        db.rollback()
         return JSONResponse({"error": str(e)}, status_code=500)
+
+def _sync_project_to_github(slug, section, data, user):
+    """Try to sync project edit to GitHub. Returns True if successful."""
+    import urllib.request, ssl, yaml, base64
+    from datetime import date
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    file_path = f"data/projects/{slug}/project.yaml"
+    url = f"https://api.github.com/repos/{GH_REPO}/contents/{file_path}"
+    gh = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"}
+
+    # Fetch current
+    req = urllib.request.Request(url, headers=gh)
+    existing = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+    sha = existing["sha"]
+
+    req2 = urllib.request.Request(url, headers={**gh, "Accept": "application/vnd.github.v3.raw"})
+    project = yaml.safe_load(urllib.request.urlopen(req2, context=ctx, timeout=15).read().decode()) or {}
+
+    # Merge
+    if section == "objective":
+        project.setdefault("objective", {}).update(data)
+    elif section == "scope":
+        project.setdefault("scope", {}).update(data)
+    elif section == "team":
+        project.setdefault("team", {}).update(data)
+    elif section == "timeline":
+        project["timeline"] = data
+    elif section == "deliverables":
+        project["deliverables"] = data if isinstance(data, list) else data.get("items", [])
+    elif section == "risks":
+        project["risks"] = data if isinstance(data, list) else data.get("items", [])
+    elif section == "kpis":
+        project["kpis"] = data if isinstance(data, list) else data.get("items", [])
+    elif section == "budget":
+        if isinstance(project.get("timeline"), dict):
+            project["timeline"].update(data)
+        else:
+            project.setdefault("budget", {}).update(data)
+    elif section == "sessions":
+        sessions = project.get("sessions", [])
+        if isinstance(data, dict) and data.get("action") == "add":
+            sessions.append(data.get("session", {}))
+        elif isinstance(data, list):
+            sessions = data
+        project["sessions"] = sessions
+    elif section == "ebf_integration":
+        project.setdefault("ebf_integration", {}).update(data)
+    elif section == "fehradvice_scope":
+        project.setdefault("fehradvice_scope", {}).update(data)
+    elif section == "metadata":
+        project.setdefault("metadata", {}).update(data)
+    else:
+        project[section] = data
+
+    project.setdefault("metadata", {})["last_updated"] = date.today().isoformat()
+
+    # Push
+    yaml_content = yaml.dump(project, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    commit_msg = f"update: {slug} – {section} (via BEATRIX)"
+    put_data = json.dumps({"message": commit_msg, "content": base64.b64encode(yaml_content.encode()).decode(), "sha": sha, "branch": "main"}).encode()
+    req3 = urllib.request.Request(url, data=put_data, method="PUT", headers={**gh, "Content-Type": "application/json"})
+    urllib.request.urlopen(req3, context=ctx, timeout=15)
+
+    # Mark as synced in DB
+    try:
+        db = get_db()
+        db.execute(text("UPDATE project_edits SET synced_to_github = TRUE WHERE slug = :s AND section = :sec"), {"s": slug, "sec": section})
+        db.commit()
+    except: pass
+
+    return True
+
+@app.post("/api/projects/{slug}/sync")
+async def sync_project_to_github(slug: str, user=Depends(require_auth)):
+    """Retry syncing unsynced edits to GitHub"""
+    db = get_db()
+    edits = db.execute(text("SELECT section, data FROM project_edits WHERE slug = :s AND synced_to_github = FALSE"), {"s": slug}).fetchall()
+    if not edits:
+        return {"ok": True, "message": "Alles synchronisiert"}
+    
+    synced = []
+    failed = []
+    for row in edits:
+        section = row[0]
+        data = row[1] if isinstance(row[1], (dict, list)) else json.loads(row[1])
+        try:
+            _sync_project_to_github(slug, section, data, user)
+            synced.append(section)
+        except Exception as e:
+            failed.append({"section": section, "error": str(e)})
+    
+    return {"ok": True, "synced": synced, "failed": failed}
 
 @app.post("/api/crm/companies")
 async def crm_create_company(request: Request, user=Depends(require_auth)):
