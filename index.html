@@ -999,7 +999,7 @@
         <div class="container">
             <div class="section-header">
                 <h2>CRM</h2>
-                <p>Pipeline, Kontakte und Lead-Management.</p>
+                <p>Pipeline, Kontakte und Lead-Management. <span id="crmDateInfo" style="color:rgba(255,255,255,0.3)"></span></p>
             </div>
 
             <!-- KPI Cards -->
@@ -1806,6 +1806,8 @@
         ];
         const CRM_PIPELINE = ['prospect', 'qualified', 'proposal', 'negotiation', 'won', 'active'];
 
+        let crmLastSync = null;
+
         async function crmLoad() {
             try {
                 const [dealsR, statsR] = await Promise.all([
@@ -1818,6 +1820,13 @@
                 crmRenderView();
                 const hint = document.getElementById('crmSyncHint');
                 if (hint) hint.style.display = crmDeals.length ? 'none' : 'block';
+                // Date info
+                const di = document.getElementById('crmDateInfo');
+                if (di) {
+                    const today = new Date().toLocaleDateString('de-CH', {day:'2-digit', month:'long', year:'numeric'});
+                    const syncInfo = crmLastSync ? ` · Letzter Sync: ${crmLastSync.toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit'})}` : '';
+                    di.textContent = `Stand: ${today}${syncInfo}`;
+                }
             } catch(e) { console.error('CRM load:', e); crmDeals = []; crmRenderView(); }
         }
 
@@ -1986,7 +1995,7 @@
             try {
                 const r = await fetch(`${API}/crm/sync-github`, { method:'POST', headers:H() });
                 const data = await r.json();
-                if (r.ok) { showToast(`Sync: ${data.stats.deals} Deals, ${data.stats.companies} Firmen ✓`, 'success'); crmLoad(); }
+                if (r.ok) { crmLastSync = new Date(); showToast(`Sync: ${data.stats.deals} Leads, ${data.stats.companies} Firmen ✓`, 'success'); crmLoad(); }
                 else throw new Error(data.detail||'failed');
             } catch(e) { showToast('Sync fehlgeschlagen: '+e.message, 'error'); }
             btn.disabled=false; btn.textContent='🔄 Synchronisieren';
