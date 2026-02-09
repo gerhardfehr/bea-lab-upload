@@ -280,6 +280,21 @@ def get_db():
                         is_quantitative BOOLEAN DEFAULT FALSE,
                         user_certainty VARCHAR(20) DEFAULT 'stated',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    # Belief & Bias Analysis table
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS belief_analyses (
+                        id VARCHAR PRIMARY KEY,
+                        user_email VARCHAR(320) NOT NULL,
+                        chat_doc_id VARCHAR,
+                        belief_text TEXT NOT NULL,
+                        belief_category VARCHAR(50),
+                        bias_type VARCHAR(50),
+                        bias_source VARCHAR(20) DEFAULT 'user',
+                        informed_score FLOAT DEFAULT 0.5,
+                        reasoning_type VARCHAR(30) DEFAULT 'mixed',
+                        evidence_basis VARCHAR(30) DEFAULT 'none',
+                        customer_code VARCHAR(50),
+                        context TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     # Auto-enable CRM for FehrAdvice admins (Senior Management) – runs every startup
                     conn.execute(text("""UPDATE users SET crm_access = TRUE, crm_role = 'admin' 
                         WHERE is_admin = TRUE AND email LIKE '%%@fehradvice.com'"""))
@@ -1060,12 +1075,69 @@ def sync_user_profile_to_github(user_email: str):
             logger.warning(f"Activity stats query failed: {e}")
             db.rollback()
 
-        # ── 5) Build complete profile YAML ──
+        # ── 5) Belief & Bias Profile ──
+        belief_profile = {}
+        try:
+            b_total = db.execute(sql_text(
+                "SELECT COUNT(*) FROM belief_analyses WHERE user_email=:e"
+            ), {"e": user_email}).scalar() or 0
+            if b_total > 0:
+                avg_inf = db.execute(sql_text(
+                    "SELECT AVG(informed_score) FROM belief_analyses WHERE user_email=:e AND bias_source='user'"
+                ), {"e": user_email}).scalar()
+                avg_inf = float(avg_inf or 0.5)
+
+                user_bias_count = db.execute(sql_text(
+                    "SELECT COUNT(*) FROM belief_analyses WHERE user_email=:e AND bias_source='user' AND belief_category='bias'"
+                ), {"e": user_email}).scalar() or 0
+                beatrix_bias_count = db.execute(sql_text(
+                    "SELECT COUNT(*) FROM belief_analyses WHERE user_email=:e AND bias_source='beatrix'"
+                ), {"e": user_email}).scalar() or 0
+                belief_count = b_total - user_bias_count - beatrix_bias_count
+
+                top_biases = db.execute(sql_text("""
+                    SELECT bias_type, COUNT(*) FROM belief_analyses
+                    WHERE user_email=:e AND bias_type IS NOT NULL
+                    GROUP BY bias_type ORDER BY COUNT(*) DESC LIMIT 8
+                """), {"e": user_email}).fetchall()
+
+                reasoning_dist = db.execute(sql_text("""
+                    SELECT reasoning_type, COUNT(*) FROM belief_analyses
+                    WHERE user_email=:e AND bias_source='user' GROUP BY reasoning_type
+                """), {"e": user_email}).fetchall()
+
+                evidence_dist = db.execute(sql_text("""
+                    SELECT evidence_basis, COUNT(*) FROM belief_analyses
+                    WHERE user_email=:e AND bias_source='user' AND belief_category != 'bias'
+                    GROUP BY evidence_basis
+                """), {"e": user_email}).fetchall()
+
+                belief_profile = {
+                    "total_items": b_total,
+                    "beliefs_extracted": belief_count,
+                    "user_biases_detected": user_bias_count,
+                    "beatrix_biases_detected": beatrix_bias_count,
+                    "avg_informed_score": round(avg_inf, 2),
+                    "reasoning_label": (
+                        "Evidenzbasiert" if avg_inf >= 0.7
+                        else "Gemischt" if avg_inf >= 0.4
+                        else "Motiviert"
+                    ),
+                    "top_biases": [{"type": b[0], "count": b[1]} for b in top_biases],
+                    "reasoning_distribution": {r[0]: r[1] for r in reasoning_dist},
+                    "evidence_basis": {e[0]: e[1] for e in evidence_dist},
+                }
+        except Exception as e:
+            logger.warning(f"Belief profile query failed: {e}")
+            db.rollback()
+
+        # ── 6) Build complete profile YAML ──
         profile = {
-            "# BEATRIX User Profile": "Auto-generated from chat interactions and fact-checks",
+            "# BEATRIX User Profile": "Auto-generated from chat interactions, fact-checks, and bias analysis",
             "last_updated": now.isoformat(),
             "identity": identity,
             "knowledge_calibration": calibration,
+            "belief_analysis": belief_profile,
             "behavioral_profile": behavioral,
             "activity": activity,
         }
@@ -1117,10 +1189,277 @@ def sync_user_profile_to_github(user_email: str):
         except Exception as e:
             logger.warning(f"Calibration detail push failed: {e}")
 
+        # ── 9) Push belief/bias details to GitHub ──
+        try:
+            recent_beliefs = db.execute(sql_text("""
+                SELECT belief_text, belief_category, bias_type, bias_source,
+                       informed_score, reasoning_type, evidence_basis, customer_code, context, created_at
+                FROM belief_analyses WHERE user_email=:e
+                ORDER BY created_at DESC LIMIT 50
+            """), {"e": user_email}).fetchall()
+
+            if recent_beliefs:
+                beliefs_data = {
+                    "last_updated": now.isoformat(),
+                    "user": user_email,
+                    "summary": belief_profile if belief_profile else {},
+                    "items": [
+                        {
+                            "text": r[0][:300],
+                            "category": r[1],
+                            "bias_type": r[2],
+                            "source": r[3],
+                            "informed_score": round(float(r[4] or 0.5), 2),
+                            "reasoning": r[5],
+                            "evidence_basis": r[6],
+                            "customer": r[7],
+                            "context": (r[8] or "")[:200],
+                            "date": r[9].isoformat() if r[9] else None,
+                        }
+                        for r in recent_beliefs
+                    ]
+                }
+                bel_yaml = yaml.dump(beliefs_data, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                bel_path = f"data/team/{user_slug}/beliefs.yaml"
+                gh_put_file(GH_CONTEXT_REPO, bel_path, bel_yaml,
+                    f"🧠 Belief update: {identity['name']} – {len(recent_beliefs)} items, informed={belief_profile.get('avg_informed_score','?')}")
+        except Exception as e:
+            logger.warning(f"Belief detail push failed: {e}")
+
     except Exception as e:
         logger.error(f"sync_user_profile_to_github failed: {e}")
     finally:
         db.close()
+
+# ── BIAS DETECTION ENGINE: Beliefs & Motivated Reasoning ──
+
+BIAS_DETECTION_SYSTEM = """Du bist ein Experte fuer Behavioral Economics und kognitive Verzerrungen.
+Analysiere den DIALOG (User-Nachricht + BEATRIX-Antwort) und extrahiere:
+
+1. BELIEFS des Users – was glaubt/nimmt die Person an (explizit und implizit)?
+2. BIASES des Users – welche kognitiven Verzerrungen zeigen sich?
+3. BIASES von BEATRIX – wo koennte die KI-Antwort selbst verzerrt sein?
+4. INFORMED vs. MOTIVATED Score (1.0 = rein evidenzbasiert/rational, 0.0 = rein motiviert/wunschgetrieben)
+
+BIAS-TYPEN die du erkennen sollst:
+- confirmation_bias: Sucht nur bestaetigenede Evidenz
+- anchoring: Fixiert auf erste Zahl/Information
+- availability_heuristic: Uebergewichtet leicht verfuegbare Beispiele
+- overconfidence: Ueberschaetzt eigenes Wissen/Praezision
+- status_quo_bias: Bevorzugt bestehende Loesung ohne Evidenz
+- framing_effect: Schlussfolgerung haengt von Formulierung ab
+- sunk_cost: Bewertet vergangene Investitionen statt Zukunftsnutzen
+- halo_effect: Uebertraegt positiven Eindruck auf unverbundene Bereiche
+- dunning_kruger: Kompetenzueberschaetzung bei geringem Wissen
+- groupthink: Unkritische Uebernahme von Gruppenmeinung
+- narrative_fallacy: Konstruiert kausale Geschichte aus Korrelation
+- base_rate_neglect: Ignoriert Grundwahrscheinlichkeiten
+- survivorship_bias: Beruecksichtigt nur erfolgreiche Faelle
+- self_serving: Attribution von Erfolg auf sich, Misserfolg auf andere
+- optimism_bias: Systematische Ueberschaetzung positiver Outcomes
+- beatrix_anchoring: BEATRIX verankert auf KB-Daten ohne Kontext
+- beatrix_confirmation: BEATRIX bestaetigt User unkritisch
+- beatrix_knowledge_gap: BEATRIX antwortet trotz fehlender Evidenz
+
+REASONING-TYPEN:
+- informed: Basiert auf Daten, Evidenz, strukturierter Analyse
+- motivated: Getrieben von Wuenschen, Identitaet, Selbstbild
+- mixed: Teils evidenzbasiert, teils motiviert
+- exploratory: Offene Suche ohne vorgefasste Meinung
+
+EVIDENCE-BASIS:
+- empirical: Beruft sich auf Daten/Studien
+- experiential: Basiert auf eigener Erfahrung
+- theoretical: Basiert auf Modell/Theorie
+- anecdotal: Einzelbeispiel als Beweis
+- none: Keine Evidenzbasis erkennbar
+
+Antworte NUR mit JSON (keine Backticks, kein Markdown):
+{
+  "beliefs": [
+    {
+      "text": "Die Kundenzufriedenheit ist der wichtigste KPI",
+      "category": "business_assumption",
+      "implicit": false,
+      "informed_score": 0.6,
+      "reasoning_type": "mixed",
+      "evidence_basis": "experiential",
+      "bias_type": null
+    }
+  ],
+  "user_biases": [
+    {
+      "bias_type": "anchoring",
+      "description": "Fixiert auf 72% als Baseline ohne zu hinterfragen",
+      "severity": 0.4,
+      "belief_ref": "Die Zufriedenheit liegt bei 72%"
+    }
+  ],
+  "beatrix_biases": [
+    {
+      "bias_type": "beatrix_confirmation",
+      "description": "BEATRIX bestaetigt die 72% ohne eigene Quelle zu nennen",
+      "severity": 0.3
+    }
+  ],
+  "overall_informed_score": 0.65,
+  "reasoning_pattern": "Der User kombiniert Daten mit Annahmen. Staerke bei quantitativen Aussagen, Schwaeche bei kausalen Schlussfolgerungen."
+}
+
+Wenn der Dialog trivial ist (Begruessung, einfache Frage ohne Beliefs): {"beliefs":[], "user_biases":[], "beatrix_biases":[], "overall_informed_score": null, "reasoning_pattern": null}
+Maximal 5 Beliefs und 3 Biases pro Seite."""
+
+def analyze_beliefs_and_biases(user_message: str, beatrix_response: str, user_email: str,
+                                chat_doc_id: str = None, customer_code: str = None):
+    """Analyze a chat exchange for beliefs, biases (user + BEATRIX), and reasoning quality.
+    Stores results in belief_analyses table and syncs to user profile."""
+    import urllib.request, ssl, re
+
+    if not ANTHROPIC_API_KEY:
+        return []
+    # Skip short/trivial messages
+    if not user_message or len(user_message.strip()) < 30:
+        return []
+    if not beatrix_response or len(beatrix_response.strip()) < 30:
+        return []
+
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    # ── Step 1: Analyze dialog with Claude ──
+    dialog = f"USER-NACHRICHT:\n{user_message.strip()[:3000]}\n\nBEATRIX-ANTWORT:\n{beatrix_response.strip()[:3000]}"
+    try:
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 2000,
+            "system": BIAS_DETECTION_SYSTEM,
+            "messages": [{"role": "user", "content": dialog}]
+        }).encode()
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+                "User-Agent": "BEATRIXLab/3.20-bias"
+            })
+        resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=45).read())
+        answer = resp["content"][0]["text"]
+
+        try:
+            parsed = json.loads(answer.strip())
+        except:
+            json_match = re.search(r'\{.*\}', answer, re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+            else:
+                return []
+
+        beliefs = parsed.get("beliefs", [])
+        user_biases = parsed.get("user_biases", [])
+        beatrix_biases = parsed.get("beatrix_biases", [])
+        overall_score = parsed.get("overall_informed_score")
+        reasoning_pattern = parsed.get("reasoning_pattern")
+
+        if not beliefs and not user_biases and not beatrix_biases:
+            return []
+
+        total_items = len(beliefs) + len(user_biases) + len(beatrix_biases)
+        logger.info(f"🧠 Bias analysis: {len(beliefs)} beliefs, {len(user_biases)} user biases, "
+                     f"{len(beatrix_biases)} BEATRIX biases, informed={overall_score}")
+
+    except Exception as e:
+        logger.warning(f"Bias analysis extraction failed: {e}")
+        return []
+
+    # ── Step 2: Store in DB ──
+    from sqlalchemy import text as sql_text
+    db = get_db()
+    results = []
+    try:
+        # Store user beliefs
+        for belief in beliefs[:5]:
+            try:
+                bid = str(uuid.uuid4())
+                db.execute(sql_text("""
+                    INSERT INTO belief_analyses (id, user_email, chat_doc_id, belief_text,
+                        belief_category, bias_type, bias_source, informed_score,
+                        reasoning_type, evidence_basis, customer_code, context)
+                    VALUES (:id, :email, :doc_id, :text, :cat, :bias, 'user',
+                        :score, :reasoning, :evidence, :customer, :context)
+                """), {
+                    "id": bid, "email": user_email, "doc_id": chat_doc_id,
+                    "text": belief.get("text", "")[:1000],
+                    "cat": belief.get("category", "")[:50],
+                    "bias": belief.get("bias_type") or None,
+                    "score": belief.get("informed_score", 0.5),
+                    "reasoning": belief.get("reasoning_type", "mixed")[:30],
+                    "evidence": belief.get("evidence_basis", "none")[:30],
+                    "customer": customer_code or "",
+                    "context": reasoning_pattern or ""
+                })
+                results.append({"type": "belief", "text": belief.get("text", ""),
+                               "informed_score": belief.get("informed_score", 0.5)})
+            except Exception as e:
+                logger.warning(f"Store belief failed: {e}")
+                db.rollback()
+
+        # Store user biases
+        for bias in user_biases[:3]:
+            try:
+                bid = str(uuid.uuid4())
+                db.execute(sql_text("""
+                    INSERT INTO belief_analyses (id, user_email, chat_doc_id, belief_text,
+                        belief_category, bias_type, bias_source, informed_score,
+                        reasoning_type, evidence_basis, customer_code, context)
+                    VALUES (:id, :email, :doc_id, :text, 'bias', :bias, 'user',
+                        :score, 'motivated', 'none', :customer, :desc)
+                """), {
+                    "id": bid, "email": user_email, "doc_id": chat_doc_id,
+                    "text": bias.get("belief_ref", bias.get("description", ""))[:1000],
+                    "bias": bias.get("bias_type", "unknown")[:50],
+                    "score": 1.0 - bias.get("severity", 0.5),  # Invert: high severity = low informed
+                    "customer": customer_code or "",
+                    "desc": bias.get("description", "")[:500]
+                })
+                results.append({"type": "user_bias", "bias": bias.get("bias_type"),
+                               "severity": bias.get("severity", 0.5)})
+            except Exception as e:
+                logger.warning(f"Store user bias failed: {e}")
+                db.rollback()
+
+        # Store BEATRIX biases (self-critique)
+        for bias in beatrix_biases[:3]:
+            try:
+                bid = str(uuid.uuid4())
+                db.execute(sql_text("""
+                    INSERT INTO belief_analyses (id, user_email, chat_doc_id, belief_text,
+                        belief_category, bias_type, bias_source, informed_score,
+                        reasoning_type, evidence_basis, customer_code, context)
+                    VALUES (:id, :email, :doc_id, :text, 'bias', :bias, 'beatrix',
+                        :score, 'motivated', 'none', :customer, :desc)
+                """), {
+                    "id": bid, "email": user_email, "doc_id": chat_doc_id,
+                    "text": bias.get("description", "")[:1000],
+                    "bias": bias.get("bias_type", "unknown")[:50],
+                    "score": 1.0 - bias.get("severity", 0.5),
+                    "customer": customer_code or "",
+                    "desc": bias.get("description", "")[:500]
+                })
+                results.append({"type": "beatrix_bias", "bias": bias.get("bias_type"),
+                               "severity": bias.get("severity", 0.5)})
+            except Exception as e:
+                logger.warning(f"Store beatrix bias failed: {e}")
+                db.rollback()
+
+        db.commit()
+        logger.info(f"🧠 Stored {len(results)} belief/bias items for {user_email.split('@')[0]}")
+
+    except Exception as e:
+        logger.error(f"Bias analysis storage failed: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+    return results
 
 def vector_search(db, query: str, limit: int = 8) -> list:
     """Semantic search. Tries pgvector, falls back to JSON + Python cosine similarity."""
@@ -2325,6 +2664,103 @@ async def admin_knowledge_checks(user=Depends(require_auth), email: str = None, 
         ]
     finally: db.close()
 
+@app.get("/api/admin/belief-analysis")
+async def admin_belief_analysis(user=Depends(require_auth)):
+    """Belief & Bias Dashboard – shows team reasoning patterns and cognitive biases."""
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    from sqlalchemy import text as sql_text
+    db = get_db()
+    try:
+        total = db.execute(sql_text("SELECT COUNT(*) FROM belief_analyses")).scalar() or 0
+        if total == 0:
+            return {"total": 0, "users": [], "summary": "Noch keine Belief-Analysen. Werden automatisch bei Chat-Interaktionen erfasst."}
+
+        # Per-user belief profile
+        user_stats = db.execute(sql_text("""
+            SELECT user_email,
+                   COUNT(*) as total,
+                   AVG(informed_score) as avg_informed,
+                   SUM(CASE WHEN bias_source='user' AND belief_category='bias' THEN 1 ELSE 0 END) as user_biases,
+                   SUM(CASE WHEN bias_source='beatrix' THEN 1 ELSE 0 END) as beatrix_biases,
+                   SUM(CASE WHEN bias_source='user' AND belief_category != 'bias' THEN 1 ELSE 0 END) as beliefs
+            FROM belief_analyses GROUP BY user_email ORDER BY total DESC
+        """)).fetchall()
+
+        users = []
+        for r in user_stats:
+            # Top bias types for this user
+            bias_types = db.execute(sql_text("""
+                SELECT bias_type, COUNT(*) as cnt FROM belief_analyses
+                WHERE user_email=:e AND bias_type IS NOT NULL
+                GROUP BY bias_type ORDER BY cnt DESC LIMIT 5
+            """), {"e": r[0]}).fetchall()
+
+            # Reasoning distribution
+            reasoning = db.execute(sql_text("""
+                SELECT reasoning_type, COUNT(*) FROM belief_analyses
+                WHERE user_email=:e AND bias_source='user' GROUP BY reasoning_type
+            """), {"e": r[0]}).fetchall()
+
+            # Evidence basis distribution
+            evidence = db.execute(sql_text("""
+                SELECT evidence_basis, COUNT(*) FROM belief_analyses
+                WHERE user_email=:e AND bias_source='user' AND belief_category != 'bias'
+                GROUP BY evidence_basis
+            """), {"e": r[0]}).fetchall()
+
+            avg_informed = float(r[2] or 0.5)
+            users.append({
+                "email": r[0],
+                "name": r[0].split("@")[0].replace(".", " ").title(),
+                "total_items": r[1],
+                "beliefs": r[5] or 0,
+                "user_biases": r[3] or 0,
+                "beatrix_biases": r[4] or 0,
+                "avg_informed_score": round(avg_informed, 2),
+                "reasoning_label": (
+                    "Evidenzbasiert" if avg_informed >= 0.7
+                    else "Gemischt" if avg_informed >= 0.4
+                    else "Motiviert"
+                ),
+                "top_biases": [{"type": b[0], "count": b[1]} for b in bias_types],
+                "reasoning_distribution": {r2[0]: r2[1] for r2 in reasoning},
+                "evidence_basis": {e[0]: e[1] for e in evidence},
+            })
+
+        # Global bias frequency
+        global_biases = db.execute(sql_text("""
+            SELECT bias_type, bias_source, COUNT(*) FROM belief_analyses
+            WHERE bias_type IS NOT NULL GROUP BY bias_type, bias_source ORDER BY COUNT(*) DESC LIMIT 15
+        """)).fetchall()
+
+        return {
+            "total": total,
+            "users": users,
+            "global_biases": [{"type": b[0], "source": b[1], "count": b[2]} for b in global_biases]
+        }
+    finally: db.close()
+
+@app.get("/api/admin/beliefs")
+async def admin_beliefs(user=Depends(require_auth), email: str = None, source: str = None, limit: int = 50):
+    """Recent belief/bias items, optionally filtered."""
+    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+    from sqlalchemy import text as sql_text
+    db = get_db()
+    try:
+        q = "SELECT id, user_email, belief_text, belief_category, bias_type, bias_source, informed_score, reasoning_type, evidence_basis, customer_code, created_at FROM belief_analyses WHERE 1=1"
+        params = {"lim": limit}
+        if email: q += " AND user_email=:email"; params["email"] = email
+        if source: q += " AND bias_source=:source"; params["source"] = source
+        q += " ORDER BY created_at DESC LIMIT :lim"
+        rows = db.execute(sql_text(q), params).fetchall()
+        return [{
+            "id": r[0], "user": r[1], "text": r[2][:200], "category": r[3],
+            "bias_type": r[4], "source": r[5], "informed_score": round(float(r[6] or 0.5), 2),
+            "reasoning": r[7], "evidence": r[8], "customer": r[9],
+            "created_at": r[10].isoformat() if r[10] else None
+        } for r in rows]
+    finally: db.close()
+
 @app.get("/api/user/knowledge-profile")
 async def user_knowledge_profile(user=Depends(require_auth)):
     """Own knowledge profile – shows the user their calibration data (self-awareness tool)."""
@@ -2379,6 +2815,50 @@ async def user_knowledge_profile(user=Depends(require_auth)):
             LIMIT 5
         """), {"e": email}).fetchall()
 
+        # ── Belief & Bias data ──
+        belief_stats = {"total": 0, "avg_informed_score": None, "reasoning_label": None,
+                        "top_biases": [], "recent_beliefs": []}
+        try:
+            b_total = db.execute(sql_text(
+                "SELECT COUNT(*) FROM belief_analyses WHERE user_email=:e"
+            ), {"e": email}).scalar() or 0
+            if b_total > 0:
+                avg_inf = db.execute(sql_text(
+                    "SELECT AVG(informed_score) FROM belief_analyses WHERE user_email=:e AND bias_source='user'"
+                ), {"e": email}).scalar()
+                avg_inf = float(avg_inf or 0.5)
+
+                top_biases = db.execute(sql_text("""
+                    SELECT bias_type, COUNT(*) FROM belief_analyses
+                    WHERE user_email=:e AND bias_type IS NOT NULL
+                    GROUP BY bias_type ORDER BY COUNT(*) DESC LIMIT 5
+                """), {"e": email}).fetchall()
+
+                recent_b = db.execute(sql_text("""
+                    SELECT belief_text, belief_category, bias_type, bias_source,
+                           informed_score, reasoning_type, evidence_basis, created_at
+                    FROM belief_analyses WHERE user_email=:e ORDER BY created_at DESC LIMIT 10
+                """), {"e": email}).fetchall()
+
+                belief_stats = {
+                    "total": b_total,
+                    "avg_informed_score": round(avg_inf, 2),
+                    "reasoning_label": (
+                        "Evidenzbasiert" if avg_inf >= 0.7
+                        else "Gemischt" if avg_inf >= 0.4
+                        else "Motiviert"
+                    ),
+                    "top_biases": [{"type": b[0], "count": b[1]} for b in top_biases],
+                    "recent_beliefs": [{
+                        "text": r[0][:150], "category": r[1], "bias": r[2],
+                        "source": r[3], "informed_score": round(float(r[4] or 0.5), 2),
+                        "reasoning": r[5], "evidence": r[6],
+                        "created_at": r[7].isoformat() if r[7] else None
+                    } for r in recent_b]
+                }
+        except Exception:
+            db.rollback()
+
         return {
             "total_claims": total,
             "verified": verified or 0,
@@ -2394,7 +2874,8 @@ async def user_knowledge_profile(user=Depends(require_auth)):
                 {"claim": r[0][:150], "status": r[1], "topic": r[2], "customer": r[3],
                  "confidence": round(float(r[4] or 0), 2), "created_at": r[5].isoformat() if r[5] else None}
                 for r in recent
-            ]
+            ],
+            "belief_analysis": belief_stats
         }
     finally: db.close()
 
@@ -2989,6 +3470,11 @@ async def chat_intent(request: Request, user=Depends(require_auth)):
                     fact_check_user_claims(message, user["sub"], chat_doc_id=doc_id,
                                            customer_code=resp_data.get("customer_code", ""))
                 except Exception: pass
+                # 🧠 Bias & Belief analysis (background)
+                try:
+                    analyze_beliefs_and_biases(message, resp_message, user["sub"],
+                        chat_doc_id=doc_id, customer_code=resp_data.get("customer_code", ""))
+                except Exception: pass
             except Exception: pass
 
             return {
@@ -3193,6 +3679,10 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
                     try:
                         fact_check_user_claims(question, user["sub"], chat_doc_id=doc_id)
                     except Exception: pass
+                    # 🧠 Bias & Belief analysis (background)
+                    try:
+                        analyze_beliefs_and_biases(question, complete_text, user["sub"], chat_doc_id=doc_id)
+                    except Exception: pass
                 except Exception as e:
                     logger.warning(f"Chat KB auto-save failed (stream): {e}")
 
@@ -3260,6 +3750,10 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
                     # 🔍 Fact-check user claims (background)
                     try:
                         fact_check_user_claims(question, user["sub"], chat_doc_id=doc_id)
+                    except Exception: pass
+                    # 🧠 Bias & Belief analysis (background)
+                    try:
+                        analyze_beliefs_and_biases(question, answer, user["sub"], chat_doc_id=doc_id)
                     except Exception: pass
                 except Exception: pass
                 return {
