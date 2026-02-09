@@ -2165,14 +2165,10 @@
 - Unternehmen: ${company}
 - Expertise: ${expertise}
 
-Jede Problemstellung soll:
-1. Zum Interessensgebiet des Users passen
-2. Ein reales, aktuelles Verhaltensphänomen beschreiben
-3. Mit dem BCM modellierbar sein
-4. Unterschiedliche Domains abdecken
+Jede Problemstellung soll ein reales Verhaltensphänomen beschreiben, das mit dem BCM modellierbar ist.
 
 Antworte NUR als JSON Array:
-[{"icon":"emoji","title":"Kurztitel max 4 Worte","question":"Die vollständige Problemstellung als Frage, 1-2 Sätze","domain":"REL/FIN/HLT/ENV/POL/ORG/EDU/OTH","type":"Behavior Change/Decision Architecture/Comparative Analysis/Strategy"}]` })
+[{"icon":"emoji","title":"Kurztitel max 4 Worte","phenomenon":"Beobachtbares Verhalten, 1 Satz mit Zahlen/Fakten","paradox":"Warum ist das überraschend/problematisch, 1 Satz","question":"Konkrete Forschungsfrage, 1 Satz","domain":"REL/FIN/HLT/ENV/POL/ORG/EDU/OTH"}]` })
                 });
                 const data = await resp.json();
 
@@ -2187,43 +2183,47 @@ Antworte NUR als JSON Array:
                 // 3. Fallback if generation failed
                 if (!questions || questions.length < 3) {
                     questions = [
-                        { icon: '🏢', title: 'Strategie & Verhalten', question: `Wie beeinflusst Behavioral Economics die strategische Entscheidungsfindung in Beratungsunternehmen wie ${company || 'FehrAdvice'}?`, domain: 'ORG', type: 'Strategy' },
-                        { icon: '🧠', title: 'Decision Architecture', question: 'Wie kann Choice Architecture eingesetzt werden, um die Akzeptanz von Veränderungsprozessen in Organisationen zu erhöhen?', domain: 'ORG', type: 'Decision Architecture' },
-                        { icon: '💰', title: 'Finanzentscheidungen', question: 'Warum weichen Anlageentscheidungen von Privatinvestoren systematisch von rationalen Benchmarks ab, und wie kann Decision Architecture das korrigieren?', domain: 'FIN', type: 'Behavior Change' }
+                        { icon: '🏢', title: 'Strategie & Verhalten', phenomenon: `Über 70% der strategischen Initiativen in Beratungsunternehmen wie ${company || 'FehrAdvice'} stoßen auf interne Verhaltenswiderstände.`, paradox: 'Selbst Mitarbeiter, die den Wandel befürworten, fallen in alte Routinen zurück.', question: 'Welche BCM-Hebel können die Umsetzungsrate strategischer Entscheidungen nachhaltig steigern?', domain: 'ORG' },
+                        { icon: '🧠', title: 'Decision Architecture', phenomenon: 'Change-Prozesse in Organisationen erreichen typischerweise nur 30% der geplanten Akzeptanzrate.', paradox: 'Mehr Kommunikation und Incentives führen paradoxerweise zu stärkerem Widerstand.', question: 'Wie kann Choice Architecture die Akzeptanz von Veränderungsprozessen in Organisationen erhöhen?', domain: 'ORG' },
+                        { icon: '💰', title: 'Finanzentscheidungen', phenomenon: 'Privatinvestoren erzielen im Schnitt 2-4% weniger Rendite als passive Markt-Benchmarks.', paradox: 'Trotz verfügbarer ETF-Strategien handeln 80% aktiv und systematisch schlechter.', question: 'Wie kann Decision Architecture die rationalen Anlageentscheidungen von Privatinvestoren korrigieren?', domain: 'FIN' }
                     ];
                 }
 
                 // 4. Render personalized choices as clean tap cards
-                container.innerHTML = questions.slice(0, 3).map((q, i) => `
-                    <div onclick="mbSelectProblem(this, '${q.question.replace(/'/g, "\\'")}')"
+                // Store questions globally for structured selection
+                window._mbQuestions = questions.slice(0, 3);
+                container.innerHTML = window._mbQuestions.map((q, i) => `
+                    <div onclick="mbSelectProblemStructured(${i})"
                          style="padding:16px 18px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);cursor:pointer;transition:all 0.2s;background:rgba(255,255,255,0.02)"
                          onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(139,170,255,0.06)'"
                          onmouseout="this.style.borderColor='rgba(255,255,255,0.08)';this.style.background='rgba(255,255,255,0.02)'">
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
                             <span style="font-size:18px">${q.icon || '📋'}</span>
                             <span style="font-weight:600;color:white;font-size:15px">${q.title}</span>
                             <span style="margin-left:auto;font-size:11px;color:var(--accent);opacity:0.6">${q.domain}</span>
                         </div>
-                        <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5">${q.question}</div>
+                        <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.5">${q.phenomenon || q.question || ''}</div>
                     </div>
                 `).join('');
 
             } catch(e) {
                 console.error('Load questions error:', e);
-                container.innerHTML = [
-                    { icon: '🧠', title: 'Behavioral Strategy', q: 'Wie beeinflusst Behavioral Economics strategische Entscheidungen in Organisationen?' },
-                    { icon: '🏗️', title: 'Change & Architecture', q: 'Wie kann Decision Architecture die Akzeptanz von Change-Prozessen erhöhen?' },
-                    { icon: '💰', title: 'Investment Biases', q: 'Warum weichen Anlageentscheidungen systematisch von rationalen Benchmarks ab?' }
-                ].map(item => `
-                    <div onclick="mbSelectProblem(this, '${item.q.replace(/'/g, "\\'")}')"
+                window._mbQuestions = [
+                    { icon: '🧠', title: 'Behavioral Strategy', phenomenon: 'Über 60% der strategischen Initiativen in Organisationen scheitern an Verhaltensbarrieren.', paradox: 'Selbst wenn alle Stakeholder zustimmen, blockiert Status-Quo-Bias die Umsetzung.', question: 'Wie kann Behavioral Economics die Implementierungsrate strategischer Entscheidungen verbessern?', domain: 'ORG' },
+                    { icon: '🏗️', title: 'Change & Architecture', phenomenon: 'Change-Prozesse erreichen typischerweise nur 30% der geplanten Akzeptanzrate.', paradox: 'Mehr Information und Kommunikation führt paradoxerweise zu mehr Widerstand.', question: 'Wie kann Decision Architecture die Akzeptanz von Veränderungsprozessen erhöhen?', domain: 'ORG' },
+                    { icon: '💰', title: 'Investment Biases', phenomenon: 'Privatanleger erzielen im Schnitt 2-4% weniger Rendite als Markt-Benchmarks.', paradox: 'Trotz verfügbarer passiver Strategien handeln 80% aktiv und verlieren.', question: 'Welche BCM-Hebel können systematische Anlage-Verzerrungen korrigieren?', domain: 'FIN' }
+                ];
+                container.innerHTML = window._mbQuestions.map((q, i) => `
+                    <div onclick="mbSelectProblemStructured(${i})"
                          style="padding:16px 18px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);cursor:pointer;transition:all 0.2s;background:rgba(255,255,255,0.02)"
                          onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(139,170,255,0.06)'"
                          onmouseout="this.style.borderColor='rgba(255,255,255,0.08)';this.style.background='rgba(255,255,255,0.02)'">
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-                            <span style="font-size:18px">${item.icon}</span>
-                            <span style="font-weight:600;color:white;font-size:15px">${item.title}</span>
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                            <span style="font-size:18px">${q.icon}</span>
+                            <span style="font-weight:600;color:white;font-size:15px">${q.title}</span>
+                            <span style="margin-left:auto;font-size:11px;color:var(--accent);opacity:0.6">${q.domain}</span>
                         </div>
-                        <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5">${item.q}</div>
+                        <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.5">${q.phenomenon}</div>
                     </div>
                 `).join('');
             }
@@ -2720,13 +2720,76 @@ Antworte NUR als JSON Array:
             mbNextStep(toStep);
         }
 
-        function mbSelectProblem(el, question) {
-            mbState.selectedProblem = question;
-            // Switch to analysis view
+        function mbRenderProblemCard(data) {
+            // data: { icon, title, phenomenon, paradox, question, domain, generated }
+            const labels = { phenomenon: 'Phänomen', paradox: 'Paradox', question: 'Forschungsfrage' };
+            const icons = { phenomenon: '🔍', paradox: '⚡', question: '🎯' };
+            const colors = { phenomenon: 'rgba(255,255,255,0.7)', paradox: 'rgba(251,191,36,0.8)', question: 'rgba(139,170,255,0.9)' };
+
+            let rows = '';
+            for (const key of ['phenomenon', 'paradox', 'question']) {
+                if (data[key]) {
+                    rows += `
+                    <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;${key !== 'question' ? 'border-bottom:1px solid rgba(255,255,255,0.04)' : ''}">
+                        <div style="flex-shrink:0;width:20px;text-align:center;font-size:13px;padding-top:1px">${icons[key]}</div>
+                        <div>
+                            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:rgba(255,255,255,0.3);margin-bottom:3px">${labels[key]}</div>
+                            <div style="font-size:13px;color:${colors[key]};line-height:1.55">${data[key]}</div>
+                        </div>
+                    </div>`;
+                }
+            }
+
+            return `
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+                    <span style="font-size:20px">${data.icon || '📋'}</span>
+                    <span style="font-weight:600;color:white;font-size:15px">${data.title || ''}</span>
+                    <span style="margin-left:auto;font-size:11px;color:var(--accent);opacity:0.5">${data.domain || ''}</span>
+                </div>
+                ${rows}
+                ${data.generated ? '<div style="margin-top:8px;font-size:10px;color:rgba(255,255,255,0.25)">🤖 Von BEATRIX generiert</div>' : ''}
+            `;
+        }
+
+        // Parse a flat question string into structured components
+        function mbParseQuestion(text) {
+            // Try to split by sentence-ending patterns (? or .)
+            const sentences = text.match(/[^.?!]+[.?!]+/g) || [text];
+            if (sentences.length >= 3) {
+                return { phenomenon: sentences[0].trim(), paradox: sentences[1].trim(), question: sentences.slice(2).join(' ').trim() };
+            } else if (sentences.length === 2) {
+                return { phenomenon: sentences[0].trim(), question: sentences[1].trim() };
+            }
+            return { question: text };
+        }
+
+        function mbSelectProblemStructured(idx) {
+            const q = (typeof idx === 'number') ? window._mbQuestions[idx] : idx;
+            if (!q) return;
+            const fullQ = [q.phenomenon, q.paradox, q.question].filter(Boolean).join(' ');
+            mbState.selectedProblem = fullQ;
+
             document.getElementById('mbStep0ViewA').style.display = 'none';
             document.getElementById('mbStep0ViewB').style.display = 'block';
-            document.getElementById('mbStep0SelectedQ').textContent = question;
-            // Auto-trigger analysis
+            document.getElementById('mbStep0SelectedQ').innerHTML = mbRenderProblemCard(q);
+            mbProcessStep0();
+        }
+
+        function mbSelectProblem(el, question) {
+            mbState.selectedProblem = question;
+            // Get structured data from the card if available
+            const titleEl = el.querySelector('[style*="font-weight:600"]');
+            const icon = el.querySelector('[style*="font-size:18px"]');
+            const domainEl = el.querySelector('[style*="opacity:0.6"]');
+
+            const parsed = mbParseQuestion(question);
+            parsed.icon = icon ? icon.textContent : '📋';
+            parsed.title = titleEl ? titleEl.textContent : '';
+            parsed.domain = domainEl ? domainEl.textContent : '';
+
+            document.getElementById('mbStep0ViewA').style.display = 'none';
+            document.getElementById('mbStep0ViewB').style.display = 'block';
+            document.getElementById('mbStep0SelectedQ').innerHTML = mbRenderProblemCard(parsed);
             mbProcessStep0();
         }
 
@@ -2763,27 +2826,31 @@ Antworte NUR als JSON Array:
                 const resp = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
-                    body: JSON.stringify({ question: `Generiere eine Problemstellung für den EEE Model-Building Workflow (Modus: ${mbState.mode || 'gefuehrt'}).
-Antworte NUR als JSON: {"icon":"emoji","title":"Kurztitel 3-4 Worte","question":"Vollständige Problemstellung als Frage, 2-3 Sätze mit konkreten Zahlen/Fakten","domain":"REL/FIN/HLT/ENV/POL/ORG/EDU/OTH"}` })
+                    body: JSON.stringify({ question: `Generiere eine Problemstellung für den EEE Model-Building Workflow.
+Antworte NUR als JSON:
+{
+  "icon": "passendes emoji",
+  "title": "Kurztitel 3-4 Worte",
+  "phenomenon": "Das beobachtbare Verhalten in 1 Satz (was passiert konkret, mit Zahlen/Fakten)",
+  "paradox": "Die Spannung/das Paradox in 1 Satz (warum ist es überraschend oder problematisch)",
+  "question": "Die konkrete Forschungsfrage in 1 Satz (was wollen wir herausfinden)",
+  "domain": "REL/FIN/HLT/ENV/POL/ORG/EDU/OTH"
+}` })
                 });
                 const data = await resp.json();
                 let parsed = null;
                 if (data.answer) {
                     try { const m = data.answer.match(/\{[\s\S]*\}/); if(m) parsed = JSON.parse(m[0]); } catch(e){}
                 }
-                if (!parsed) parsed = { icon: '🔬', title: 'Behavioral Analysis', question: data.answer || 'Generierte Problemstellung', domain: 'OTH' };
+                if (!parsed) parsed = { icon: '🔬', title: 'Behavioral Analysis', phenomenon: data.answer || '', paradox: '', question: '', domain: 'OTH' };
+
+                // Compose full question for state
+                const fullQ = [parsed.phenomenon, parsed.paradox, parsed.question].filter(Boolean).join(' ');
+                mbState.selectedProblem = fullQ;
 
                 // Show as structured card
-                document.getElementById('mbStep0SelectedQ').innerHTML = `
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                        <span style="font-size:20px">${parsed.icon}</span>
-                        <span style="font-weight:600;color:white;font-size:16px">${parsed.title}</span>
-                        <span style="margin-left:auto;font-size:11px;color:var(--accent);opacity:0.6">${parsed.domain}</span>
-                    </div>
-                    <div style="font-size:14px;color:rgba(255,255,255,0.8);line-height:1.6">${parsed.question}</div>
-                    <div style="margin-top:10px;font-size:11px;color:rgba(255,255,255,0.3)">🤖 Von BEATRIX generiert</div>`;
+                document.getElementById('mbStep0SelectedQ').innerHTML = mbRenderProblemCard(parsed);
 
-                mbState.selectedProblem = parsed.question;
                 // Auto-trigger analysis
                 mbProcessStep0();
 
@@ -2922,7 +2989,10 @@ Antworte NUR als JSON: {"icon":"emoji","title":"Kurztitel 3-4 Worte","question":
             if (document.getElementById('mbStep0ViewA').style.display !== 'none') {
                 document.getElementById('mbStep0ViewA').style.display = 'none';
                 document.getElementById('mbStep0ViewB').style.display = 'block';
-                document.getElementById('mbStep0SelectedQ').textContent = selectedQ;
+                const parsed = mbParseQuestion(selectedQ);
+                parsed.icon = '✏️';
+                parsed.title = 'Eigene Problemstellung';
+                document.getElementById('mbStep0SelectedQ').innerHTML = mbRenderProblemCard(parsed);
             }
 
             const btn = document.getElementById('mbStep0Btn');
