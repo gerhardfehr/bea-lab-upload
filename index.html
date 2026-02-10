@@ -60,9 +60,23 @@
         .nav-brand { display:flex; align-items:center; gap:14px; text-decoration:none; }
         .nav-logo-img { height:34px; width:auto; border-radius:6px; }
         .nav-title { font-size:16px; font-weight:700; color:var(--white); letter-spacing:1.5px; text-transform:uppercase; }
-        .nav-links { display:flex; align-items:center; gap:8px; }
+        .nav-links { display:flex; align-items:center; gap:4px; }
         .nav-link { padding:8px 16px; font-size:13px; font-weight:500; color:var(--text-secondary); text-decoration:none; border-radius:var(--radius-sm); transition:var(--transition); }
         .nav-link:hover, .nav-link.active { color:var(--white); background:var(--navy-mid); }
+        /* ── Nav Dropdowns ── */
+        .nav-dropdown { position:relative; }
+        .nav-dropdown-trigger { padding:8px 16px; font-size:13px; font-weight:500; color:var(--text-secondary); border-radius:var(--radius-sm); transition:var(--transition); cursor:pointer; display:flex; align-items:center; gap:6px; background:none; border:none; font-family:inherit; }
+        .nav-dropdown-trigger:hover, .nav-dropdown-trigger.active { color:var(--white); background:var(--navy-mid); }
+        .nav-dropdown-trigger svg { width:10px; height:10px; opacity:0.5; transition:transform 0.2s; }
+        .nav-dropdown.open .nav-dropdown-trigger svg { transform:rotate(180deg); }
+        .nav-dropdown-menu { display:none; position:absolute; top:calc(100% + 6px); left:0; min-width:200px; background:var(--navy-mid); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 12px 32px rgba(0,0,0,0.4); padding:6px; z-index:200; }
+        .nav-dropdown.open .nav-dropdown-menu { display:block; }
+        .nav-dropdown-item { display:flex; align-items:center; gap:10px; padding:10px 14px; font-size:13px; font-weight:500; color:var(--text-secondary); text-decoration:none; border-radius:var(--radius-sm); transition:var(--transition); cursor:pointer; white-space:nowrap; }
+        .nav-dropdown-item:hover { color:var(--white); background:rgba(255,255,255,0.06); }
+        .nav-dropdown-item.active { color:var(--white); background:rgba(255,255,255,0.08); }
+        .nav-dropdown-item svg { width:15px; height:15px; opacity:0.5; flex-shrink:0; }
+        .nav-dropdown-item:hover svg { opacity:0.8; }
+        .nav-dropdown-divider { height:1px; background:var(--border); margin:4px 6px; }
         .nav-right { display:flex; align-items:center; gap:12px; }
         .nav-status { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:500; color:var(--success); padding:5px 12px; background:var(--success-bg); border-radius:20px; }
         .nav-status .dot { width:6px; height:6px; border-radius:50%; background:var(--success); animation:pulse 2s infinite; }
@@ -395,13 +409,39 @@
         .mb-mode-time { font-size:11px; color:var(--accent-light); margin-bottom:6px; }
         .mb-mode-desc { font-size:11px; color:var(--text-muted); line-height:1.4; }
 
+        .nav-hamburger { display:none; width:36px; height:36px; align-items:center; justify-content:center; background:none; border:1px solid var(--border); border-radius:8px; cursor:pointer; color:var(--text-secondary); transition:var(--transition); }
+        .nav-hamburger:hover { border-color:var(--border-light); color:var(--white); }
+        .nav-hamburger svg { width:18px; height:18px; }
         @media (max-width:768px) { .mb-choices { grid-template-columns:1fr; } .mb-mode-cards { grid-template-columns:1fr 1fr; } }
         @media (max-width:768px) { .profile-grid { grid-template-columns:1fr; } .profile-row { grid-template-columns:1fr; } }
         @media (max-width:640px) {
-            .nav { padding:0 16px; } .nav-links { display:none; } .hero { padding:48px 16px 40px; } .hero h1 { font-size:28px; }
+            .nav { padding:0 10px; flex-wrap:wrap; height:auto; min-height:48px; }
+            .nav-brand { gap:8px; }
+            .nav-brand .nav-title { font-size:15px; }
+            .nav-brand .nav-logo-img { width:28px; height:28px; }
+            .nav-links { display:none; width:100%; order:3; flex-direction:column; padding:8px 0 12px; border-top:1px solid var(--border); }
+            .nav-links.mobile-open { display:flex; }
+            .nav-links .nav-link { padding:12px 16px; font-size:14px; border-radius:8px; }
+            .nav-links .nav-dropdown { width:100%; }
+            .nav-links .nav-dropdown-trigger { width:100%; padding:12px 16px; font-size:14px; justify-content:flex-start; }
+            .nav-links .nav-dropdown-menu { position:static; background:rgba(15,30,55,0.6); border:none; box-shadow:none; margin:0; padding:0 0 0 20px; border-radius:0; }
+            .nav-links .nav-dropdown-item { padding:10px 16px; font-size:13px; }
+            .nav-links .nav-dropdown.open .nav-dropdown-menu { display:flex; flex-direction:column; }
+            .nav-right { order:2; gap:4px; margin-left:auto; }
+            .nav-right .nav-status { display:none; }
+            .nav-right .nav-logout { display:none; }
+            .nav-right #appVersion { display:none; }
+            .nav-right .nav-user { font-size:11px; padding:4px 10px; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            .nav-right .admin-link { padding:4px; }
+            .nav-right .admin-link svg { width:13px; height:13px; }
+            .nav-hamburger { display:flex; order:1; margin-left:auto; margin-right:4px; width:32px; height:32px; }
+            .hero { padding:48px 16px 40px; } .hero h1 { font-size:28px; }
             .hero-stats { gap:20px; } .container { padding:24px 16px 60px; } .db-selector { grid-template-columns:1fr; }
             .input-row { grid-template-columns:1fr; } .upload-zone { padding:36px 20px; } .actions { flex-direction:column; gap:12px; }
             .auth-card { padding:36px 24px; } .auth-title { font-size:24px; }
+            #caPsiCards { grid-template-columns:repeat(2,1fr) !important; }
+            .mb-mode-cards { grid-template-columns:1fr !important; }
+            .mb-choices { grid-template-columns:1fr !important; }
         }
     </style>
 </head>
@@ -479,22 +519,68 @@
     <!-- ═══════ MAIN APP ═══════ -->
     <nav class="nav">
         <a href="#" class="nav-brand" onclick="showSection('hero')"><img src="/logo.jpeg" alt="BEATRIX" class="nav-logo-img"><span class="nav-title">BEATRIX</span></a>
+        <button class="nav-hamburger" id="navHamburger" onclick="toggleMobileNav()" aria-label="Menu">
+            <svg id="hamburgerIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
         <div class="nav-links">
-            <a href="#" class="nav-link active" data-section="chat" onclick="showSection('chat',this)">Fragen</a>
-            <a href="#" class="nav-link" data-section="model" onclick="showSection('model',this)">Modell-Building</a>
-            <a href="#" class="nav-link" data-section="upload" onclick="showSection('upload',this)">Upload</a>
-            <a href="#" class="nav-link" data-section="documents" onclick="showSection('documents',this)">Dokumente</a>
-            <a href="#" class="nav-link" data-section="profile" onclick="showSection('profile',this)">Profil</a>
-            <a href="#" class="nav-link" data-section="context" id="navContext" onclick="showSection('context',this)" style="display:none">Ausgangslage</a>
-            <a href="#" class="nav-link" data-section="leads" id="navLeads" onclick="showSection('leads',this)" style="display:none">CRM</a>
-            <a href="#" class="nav-link" data-section="companies" id="navCompanies" onclick="showSection('companies',this)" style="display:none">Firmen</a>
-            <a href="#" class="nav-link" data-section="projects" id="navProjects" onclick="showSection('projects',this)" style="display:none">Projekte</a>
-            <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none">Admin</a>
+            <a href="#" class="nav-link active" data-section="chat" onclick="showSection('chat',this)">💬 Fragen</a>
+            <div class="nav-dropdown" id="navDropBehavioral">
+                <button class="nav-dropdown-trigger" onclick="toggleDropdown('navDropBehavioral')">
+                    🧠 Behavioral Design <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-dropdown-menu">
+                    <a class="nav-dropdown-item" data-section="model" onclick="navDropClick('model',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                        Modell-Building
+                    </a>
+                    <a class="nav-dropdown-item" id="navDropContext" data-section="context" onclick="navDropClick('context',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        Kontext-Analyse
+                    </a>
+                </div>
+            </div>
+            <div class="nav-dropdown" id="navDropWissen">
+                <button class="nav-dropdown-trigger" onclick="toggleDropdown('navDropWissen')">
+                    📚 Wissen <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-dropdown-menu">
+                    <a class="nav-dropdown-item" data-section="upload" onclick="navDropClick('upload',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload
+                    </a>
+                    <a class="nav-dropdown-item" data-section="documents" onclick="navDropClick('documents',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Dokumente
+                    </a>
+                </div>
+            </div>
+            <div class="nav-dropdown" id="navDropBusiness" style="display:none">
+                <button class="nav-dropdown-trigger" onclick="toggleDropdown('navDropBusiness')">
+                    📊 Business <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-dropdown-menu">
+                    <a class="nav-dropdown-item" id="navDropLeads" data-section="leads" onclick="navDropClick('leads',this)" style="display:none">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        CRM
+                    </a>
+                    <a class="nav-dropdown-item" id="navDropCompanies" data-section="companies" onclick="navDropClick('companies',this)" style="display:none">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                        Firmen
+                    </a>
+                    <a class="nav-dropdown-item" id="navDropProjects" data-section="projects" onclick="navDropClick('projects',this)" style="display:none">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                        Projekte
+                    </a>
+                </div>
+            </div>
         </div>
         <div class="nav-right">
             <div class="nav-status"><span class="dot"></span> Online</div>
             <span style="font-size:10px;color:rgba(255,255,255,0.15);margin-left:4px" id="appVersion">v3.17</span>
-            <span class="nav-user" id="navUser" onclick="showSection('profile',document.querySelector('[data-section=profile]'))" title="Profil"></span>
+            <a href="#" class="nav-link admin-link" data-section="admin" id="navAdmin" onclick="showSection('admin',this)" style="display:none" title="Admin">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </a>
+            <span class="nav-user" id="navUser" onclick="showSection('profile')" title="Profil"></span>
             <button class="nav-logout" onclick="doLogout()">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 Abmelden
@@ -950,72 +1036,305 @@
     <!-- ═══════ AUSGANGSLAGE / KONTEXT SECTION ═══════ -->
     <section class="section" id="context-section">
         <div class="container">
-            <div class="section-header">
-                <h2>Ausgangslage</h2>
-                <p>Kontext und Rahmenbedingungen für Projekte und Mandate erfassen.</p>
-            </div>
-
-            <!-- Context Cards Grid -->
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Aktive Kontexte</div>
-                    <div id="ctxKpiActive" style="font-size:28px;font-weight:700;color:white;margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">erfasst</div>
+            <div class="mb-header">
+                <div>
+                    <h2>Kontext-Analyse</h2>
+                    <p>8 Ψ-Dimensionen × 5-Ebenen-Hierarchie — weil ohne Kontext jede Antwort falsch ist</p>
                 </div>
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Laufende Mandate</div>
-                    <div id="ctxKpiActive2" style="font-size:28px;font-weight:700;color:#34d399;margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(52,211,153,0.7)">aktiv</div>
-                </div>
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Zuletzt aktualisiert</div>
-                    <div id="ctxKpiLast" style="font-size:16px;font-weight:700;color:var(--accent-light);margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">letztes Update</div>
+                <div style="display:flex;gap:8px">
+                    <button class="mb-btn mb-btn-secondary" onclick="caShowHistory()" id="caHistoryBtn">📋 Bisherige Analysen</button>
                 </div>
             </div>
 
-            <!-- New Context Button -->
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:600;color:white">Kontexte <span id="ctxCount" style="font-size:12px;color:rgba(255,255,255,0.4)"></span></div>
-                <button class="mb-btn mb-btn-primary" onclick="ctxShowAdd()" style="font-size:12px;padding:6px 14px">+ Neuer Kontext</button>
+            <!-- PROGRESS BAR -->
+            <div class="mb-progress" id="caProgress" style="display:none">
+                <div class="mb-step-dot active" data-castep="0"><div class="mb-step-num">1</div><div class="mb-step-label">Thema</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="1"><div class="mb-step-num">2</div><div class="mb-step-label">MACRO</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="2"><div class="mb-step-num">3</div><div class="mb-step-label">MESO</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="3"><div class="mb-step-num">4</div><div class="mb-step-label">MICRO</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="4"><div class="mb-step-num">5</div><div class="mb-step-label">Ψ-Profil</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="5"><div class="mb-step-num">6</div><div class="mb-step-label">Ergebnis</div></div>
             </div>
 
-            <!-- Add Context Form (hidden) -->
-            <div id="ctxAddForm" style="display:none;padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
-                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px">Neuer Kontext / Ausgangslage</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                    <input class="mb-input" id="ctxClient" placeholder="Kunde / Mandant" style="font-size:13px;padding:8px 12px">
-                    <input class="mb-input" id="ctxProject" placeholder="Projekt / Mandat" style="font-size:13px;padding:8px 12px">
-                    <select class="mb-input" id="ctxDomain" style="font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
-                        <option value="">Domain wählen...</option>
-                        <option value="FIN">Finanzen</option>
-                        <option value="HLT">Gesundheit</option>
-                        <option value="POL">Politik</option>
-                        <option value="ORG">Organisation</option>
-                        <option value="EDU">Bildung</option>
-                        <option value="ENV">Umwelt / Energie</option>
-                        <option value="REL">Beziehungen</option>
-                        <option value="OTH">Andere</option>
-                    </select>
-                    <select class="mb-input" id="ctxStatus" style="font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
-                        <option value="aktiv">Aktiv</option>
-                        <option value="planung">In Planung</option>
-                        <option value="abgeschlossen">Abgeschlossen</option>
-                        <option value="pausiert">Pausiert</option>
-                    </select>
+            <!-- ═══ START: Mode Selection ═══ -->
+            <div class="mb-panel active" id="caStart">
+                <div class="mb-step-title">Neue Kontextanalyse starten</div>
+                <div class="mb-step-desc">Die Kontextanalyse identifiziert die 8 Ψ-Dimensionen für dein Verhalten oder deine Fragestellung. Jeder Kontext verändert alle Parameter — λ, β, γ, θ sind Funktionen von Ψ, nicht Konstanten.</div>
+
+                <div class="mb-mode-cards">
+                    <div class="mb-mode-card" onclick="caSelectMode(this,'schnell')">
+                        <div class="mb-mode-icon">⚡</div>
+                        <div class="mb-mode-name">Schnell</div>
+                        <div class="mb-mode-time">~5 Minuten</div>
+                        <div class="mb-mode-desc">Frage eingeben → BEATRIX analysiert alle 5 Ebenen automatisch</div>
+                    </div>
+                    <div class="mb-mode-card" onclick="caSelectMode(this,'gefuehrt')">
+                        <div class="mb-mode-icon">🎯</div>
+                        <div class="mb-mode-name">Geführt</div>
+                        <div class="mb-mode-time">~15 Minuten</div>
+                        <div class="mb-mode-desc">Schritt für Schritt durch MACRO → MESO → MICRO mit 3+1 Optionen</div>
+                    </div>
+                    <div class="mb-mode-card" onclick="caSelectMode(this,'projekt')">
+                        <div class="mb-mode-icon">📊</div>
+                        <div class="mb-mode-name">Projekt</div>
+                        <div class="mb-mode-time">~10 Minuten</div>
+                        <div class="mb-mode-desc">Für einen bestehenden Kunden/Projekt aus der Datenbank</div>
+                    </div>
+                    <div class="mb-mode-card" onclick="caSelectMode(this,'vergleich')">
+                        <div class="mb-mode-icon">🔄</div>
+                        <div class="mb-mode-name">Vergleich</div>
+                        <div class="mb-mode-time">~20 Minuten</div>
+                        <div class="mb-mode-desc">Zwei Kontexte vergleichen — wie ändern sich Parameter von A → B?</div>
+                    </div>
                 </div>
-                <textarea class="mb-input" id="ctxSituation" placeholder="Ausgangslage: Was ist die aktuelle Situation des Kunden? Welches Problem soll gelöst werden?" style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:80px;width:100%;box-sizing:border-box"></textarea>
-                <textarea class="mb-input" id="ctxGoal" placeholder="Ziel: Was soll erreicht werden? Welches Verhalten soll verändert werden?" style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:60px;width:100%;box-sizing:border-box"></textarea>
-                <textarea class="mb-input" id="ctxConstraints" placeholder="Rahmenbedingungen: Budget, Zeitrahmen, Stakeholder, Einschränkungen..." style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:60px;width:100%;box-sizing:border-box"></textarea>
-                <div style="display:flex;gap:8px;margin-top:12px">
-                    <button class="mb-btn mb-btn-primary" onclick="ctxSave()" style="font-size:12px;padding:6px 14px">Speichern</button>
-                    <button class="mb-btn mb-btn-back" onclick="document.getElementById('ctxAddForm').style.display='none'" style="font-size:12px;padding:6px 14px">Abbrechen</button>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-primary" id="caStartBtn" disabled onclick="caStartWorkflow()">Analyse starten →</button>
                 </div>
             </div>
 
-            <!-- Context List -->
-            <div id="ctxTable" style="display:flex;flex-direction:column;gap:10px">
-                <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Kontexte werden geladen...</div>
+            <!-- ═══ STEP 0: Thema/Frage ═══ -->
+            <div class="mb-panel" id="caStep0">
+                <div class="mb-step-title">Was willst du analysieren?</div>
+                <div class="mb-step-desc">Beschreibe das Verhalten, die Entscheidung oder die Fragestellung. BEATRIX identifiziert daraus die relevanten Ψ-Dimensionen.</div>
+
+                <div id="caStep0Suggestions" style="display:flex;flex-direction:column;gap:10px;margin:20px 0">
+                    <div style="text-align:center;padding:30px;color:rgba(255,255,255,0.5)">
+                        <div style="font-size:24px;margin-bottom:8px">⏳</div>
+                        Lade kontextbasierte Vorschläge...
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:10px;margin-top:8px">
+                    <div class="mb-choice" style="flex:1;border:1px dashed rgba(139,170,255,0.25)" onclick="caShowCustomInput()">
+                        <div class="mb-choice-icon" style="font-size:16px">✏️</div>
+                        <div class="mb-choice-title">Eigene Frage eingeben</div>
+                    </div>
+                </div>
+
+                <div id="caCustomInput" style="display:none;margin-top:16px">
+                    <textarea class="mb-input mb-textarea" id="caQuestion" placeholder="z.B. 'Warum wechseln Schweizer Bankkunden so selten ihren Anbieter?' oder 'Wie kann die BFE Hausbesitzer zu Heizungssanierung motivieren?'" style="min-height:80px"></textarea>
+                    <div style="margin-top:10px">
+                        <button class="mb-btn mb-btn-primary" onclick="caProcessStep0()">Analysieren →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 1: MACRO ═══ -->
+            <div class="mb-panel" id="caStep1">
+                <div id="caStep1ViewA">
+                    <div class="mb-step-title">MACRO-Kontext</div>
+                    <div class="mb-step-desc">Land, Markt und institutioneller Rahmen — definiert Ψ_I (Regeln), Ψ_K (Kultur) und Ψ_E (Ressourcen).</div>
+                    <div class="mb-choices" id="caStep1Choices">
+                        <div class="mb-choice" onclick="caSelect(this,'ch')">
+                            <div class="mb-choice-num">1</div>
+                            <div class="mb-choice-icon">🇨🇭</div>
+                            <div class="mb-choice-title">Schweiz</div>
+                            <div class="mb-choice-desc">Ψ_I: Direkte Demokratie, Subsidiarität. Ψ_K: Konsens, Mehrsprachigkeit. Ψ_E: Hohes BIP.</div>
+                            <div class="mb-choice-meta">GGG Default: DACH-CH</div>
+                        </div>
+                        <div class="mb-choice" onclick="caSelect(this,'at')">
+                            <div class="mb-choice-num">2</div>
+                            <div class="mb-choice-icon">🇦🇹</div>
+                            <div class="mb-choice-title">Österreich</div>
+                            <div class="mb-choice-desc">Ψ_I: Sozialpartnerschaft, EU-Recht. Ψ_K: Gemeinschaft, Tradition. Ψ_E: Hohes BIP.</div>
+                            <div class="mb-choice-meta">GGG Default: DACH-AT</div>
+                        </div>
+                        <div class="mb-choice" onclick="caSelect(this,'de')">
+                            <div class="mb-choice-num">3</div>
+                            <div class="mb-choice-icon">🇩🇪</div>
+                            <div class="mb-choice-title">Deutschland</div>
+                            <div class="mb-choice-desc">Ψ_I: Föderalismus, EU-Recht. Ψ_K: Ordnung, Sicherheit. Ψ_E: Größte EU-Volkswirtschaft.</div>
+                            <div class="mb-choice-meta">GGG Default: DACH-DE</div>
+                        </div>
+                        <div class="mb-choice custom-choice" onclick="caSelect(this,'custom_macro')">
+                            <div class="mb-choice-num">✎</div>
+                            <div class="mb-choice-icon">🌍</div>
+                            <div class="mb-choice-title">Anderer Kontext</div>
+                            <div class="mb-choice-desc">Definiere Land, Markt und institutionellen Rahmen frei.</div>
+                            <div class="mb-choice-meta">→ Custom Ψ_I, Ψ_K, Ψ_E</div>
+                        </div>
+                    </div>
+                    <div id="caCustomMacro" style="display:none;margin-bottom:16px">
+                        <input class="mb-input" id="caMacroCustom" placeholder="Land/Region und institutioneller Rahmen beschreiben..." style="width:100%;box-sizing:border-box">
+                    </div>
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="caBack(0)">← Zurück</button>
+                        <button class="mb-btn mb-btn-primary" id="caStep1Btn" disabled onclick="caNextStep(1)">Weiter →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 2: MESO ═══ -->
+            <div class="mb-panel" id="caStep2">
+                <div class="mb-step-title">MESO-Kontext</div>
+                <div class="mb-step-desc">Branche, Organisation und Marktumfeld — definiert Ψ_M (Tools/Markt) und verfeinert Ψ_I, Ψ_E.</div>
+                <div class="mb-choices" id="caStep2Choices">
+                    <div class="mb-choice" onclick="caSelect(this,'finance')">
+                        <div class="mb-choice-num">1</div>
+                        <div class="mb-choice-icon">🏦</div>
+                        <div class="mb-choice-title">Finanzdienstleistung</div>
+                        <div class="mb-choice-desc">Reguliert, hohes Vertrauen erforderlich, lange Entscheidungszyklen.</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelect(this,'health')">
+                        <div class="mb-choice-num">2</div>
+                        <div class="mb-choice-icon">🏥</div>
+                        <div class="mb-choice-title">Gesundheit</div>
+                        <div class="mb-choice-desc">Asymmetrische Information, hohe Emotionalität, Expert-Laie-Dynamik.</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelect(this,'public')">
+                        <div class="mb-choice-num">3</div>
+                        <div class="mb-choice-icon">🏛️</div>
+                        <div class="mb-choice-title">Öffentlicher Sektor</div>
+                        <div class="mb-choice-desc">Politische Rahmenbedingungen, Bürger als Zielgruppe, Gemeinwohl.</div>
+                    </div>
+                    <div class="mb-choice custom-choice" onclick="caSelect(this,'custom_meso')">
+                        <div class="mb-choice-num">✎</div>
+                        <div class="mb-choice-icon">🏢</div>
+                        <div class="mb-choice-title">Andere Branche</div>
+                        <div class="mb-choice-desc">Industrie, Energie, Bildung, Technologie, Retail...</div>
+                    </div>
+                </div>
+                <div id="caCustomMeso" style="display:none;margin-bottom:16px">
+                    <input class="mb-input" id="caMesoCustom" placeholder="Branche, Unternehmensgrösse und Marktumfeld beschreiben..." style="width:100%;box-sizing:border-box">
+                </div>
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="caBack(1)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="caStep2Btn" disabled onclick="caNextStep(2)">Weiter →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 3: MICRO ═══ -->
+            <div class="mb-panel" id="caStep3">
+                <div class="mb-step-title">MICRO-Kontext</div>
+                <div class="mb-step-desc">Konkrete Situation, Setting und Zeitpunkt — definiert Ψ_S (Sozial), Ψ_C (Kognitiv), Ψ_T (Zeit), Ψ_F (Ort).</div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">📍 Ψ_F — Wo?</div>
+                        <select class="mb-input" id="caMicroWhere" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            <option value="">Setting wählen...</option>
+                            <option value="home">Zuhause</option>
+                            <option value="workplace">Arbeitsplatz</option>
+                            <option value="store">Geschäft / Einkauf</option>
+                            <option value="online">Online / Digital</option>
+                            <option value="public">Öffentlicher Raum</option>
+                            <option value="healthcare">Gesundheitseinrichtung</option>
+                        </select>
+                    </div>
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">👥 Ψ_S — Wer ist dabei?</div>
+                        <select class="mb-input" id="caMicroSocial" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            <option value="">Soziale Situation...</option>
+                            <option value="solo">Allein (solo)</option>
+                            <option value="dyadic">Zu zweit (Berater, Partner)</option>
+                            <option value="small_group">Kleine Gruppe (Team, Familie)</option>
+                            <option value="large_group">Grosse Gruppe (Organisation, Öffentlichkeit)</option>
+                            <option value="anonymous">Anonym (Menge, Online)</option>
+                        </select>
+                    </div>
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">⏰ Ψ_T — Zeitdruck?</div>
+                        <select class="mb-input" id="caMicroTime" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            <option value="">Temporaler Kontext...</option>
+                            <option value="urgent">Hoher Zeitdruck (Sekunden/Minuten)</option>
+                            <option value="moderate">Moderater Zeitdruck (Tage/Wochen)</option>
+                            <option value="relaxed">Kein Zeitdruck (Monate/Jahre)</option>
+                            <option value="recurring">Wiederkehrend (Routine)</option>
+                        </select>
+                    </div>
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">🧠 Ψ_C — Kognitiver Zustand?</div>
+                        <select class="mb-input" id="caMicroCognitive" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            <option value="">Kognitiver Zustand...</option>
+                            <option value="analytical">Analytisch (System 2 aktiv)</option>
+                            <option value="intuitive">Intuitiv (System 1 dominant)</option>
+                            <option value="stressed">Gestresst / Cognitive Load hoch</option>
+                            <option value="fatigued">Ermüdet / Decision Fatigue</option>
+                            <option value="motivated">Motiviert / Engagiert</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:16px">
+                    <textarea class="mb-input mb-textarea" id="caMicroNotes" placeholder="Optionale Details: Spezifische Umstände, Trigger, besondere Rahmenbedingungen..." style="min-height:60px;width:100%;box-sizing:border-box;font-size:13px"></textarea>
+                </div>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="caBack(2)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="caStep3Btn" disabled onclick="caAnalyze()">🔍 Ψ-Profil berechnen →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 4: Ψ-Profil ═══ -->
+            <div class="mb-panel" id="caStep4">
+                <div class="mb-step-title">Ψ-Profil wird berechnet...</div>
+                <div class="mb-step-desc">BEATRIX analysiert die 8 Ψ-Dimensionen basierend auf deinen Angaben und der BCM2-Kontextdatenbank.</div>
+
+                <div id="caAnalysisProgress" style="padding:40px;text-align:center">
+                    <div class="spinner" style="margin:0 auto 16px"></div>
+                    <div style="font-size:14px;color:rgba(255,255,255,0.6)" id="caAnalysisStatus">Kontextdatenbank wird geladen...</div>
+                </div>
+
+                <div id="caAnalysisResult" style="display:none">
+                    <!-- Allgemeine Perspektive: Big Picture -->
+                    <div id="caPerspectiveBox" style="padding:20px 24px;background:linear-gradient(135deg,rgba(27,54,93,0.4),rgba(27,54,93,0.15));border:1px solid rgba(139,170,255,0.2);border-radius:var(--radius);margin-bottom:20px">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                            <span style="font-size:20px">🔭</span>
+                            <div style="font-size:15px;font-weight:700;color:var(--white)">Allgemeine Perspektive</div>
+                        </div>
+                        <div id="caPerspectiveText" style="font-size:14px;color:rgba(255,255,255,0.88);line-height:1.85"></div>
+                    </div>
+
+                    <!-- Ψ Dimension Cards -->
+                    <div id="caPsiCards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px"></div>
+
+                    <!-- Context Story: Plain Language Translation -->
+                    <div id="caStoryBox" style="padding:20px;background:linear-gradient(135deg,rgba(42,127,142,0.08),rgba(232,163,61,0.05));border:1px solid rgba(42,127,142,0.25);border-radius:var(--radius);margin-bottom:16px">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+                            <span style="font-size:20px">🌍</span>
+                            <div style="font-size:15px;font-weight:700;color:var(--white)">Was bedeutet das konkret?</div>
+                        </div>
+                        <div id="caStoryText" style="font-size:14px;color:rgba(255,255,255,0.85);line-height:1.8;margin-bottom:16px"></div>
+                        <div id="caStoryDims" style="display:flex;flex-direction:column;gap:8px"></div>
+                    </div>
+
+                    <!-- Parameter Implications -->
+                    <div id="caParamBox" style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px">
+                        <div style="font-size:14px;font-weight:600;color:var(--white);margin-bottom:10px">📐 Parameter-Implikationen</div>
+                        <div id="caParams" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.7"></div>
+                    </div>
+
+                    <!-- AI Analysis -->
+                    <div id="caInsightBox" style="padding:16px;background:rgba(139,170,255,0.05);border:1px solid rgba(139,170,255,0.15);border-radius:var(--radius);margin-bottom:16px">
+                        <div style="font-size:14px;font-weight:600;color:var(--accent-light);margin-bottom:10px">💡 Kontext-Synthese</div>
+                        <div id="caInsight" style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.7"></div>
+                    </div>
+
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="caBack(3)">← Zurück</button>
+                        <button class="mb-btn mb-btn-secondary" id="caSaveBtn" onclick="caSaveAndUse()">💾 Speichern</button>
+                        <button class="mb-btn mb-btn-secondary" id="caDeepenBtn" onclick="caDeepen()" style="display:none;background:rgba(255,170,0,0.15);border-color:rgba(255,170,0,0.4);color:#ffaa00">🔍 Kontext vertiefen</button>
+                        <button class="mb-btn mb-btn-primary" onclick="caUseInChat()">💬 Im Chat verwenden →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ HISTORY: Bisherige Analysen ═══ -->
+            <div class="mb-panel" id="caHistory">
+                <div class="mb-step-title">Bisherige Kontextanalysen</div>
+                <div class="mb-step-desc">Gespeicherte Ψ-Profile aus früheren Analysen.</div>
+                <div id="caHistoryList" style="display:flex;flex-direction:column;gap:10px">
+                    <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Wird geladen...</div>
+                </div>
+                <div class="mb-actions" style="margin-top:16px">
+                    <button class="mb-btn mb-btn-back" onclick="caGoToStart()">← Neue Analyse</button>
+                </div>
             </div>
         </div>
     </section>
@@ -2047,13 +2366,22 @@
 
         // ── App Logic ───────────────────────────────────
         function showSection(name,el) {
-            if(el){document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));el.classList.add('active');}
+            // Close any open dropdowns + mobile nav
+            document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            closeMobileNav();
+            // Clear all active states
+            document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
+            document.querySelectorAll('.nav-dropdown-trigger').forEach(t=>t.classList.remove('active'));
+            document.querySelectorAll('.nav-dropdown-item').forEach(i=>i.classList.remove('active'));
+            // Set active state
+            if(el && el.classList.contains('nav-link')) el.classList.add('active');
+            // Show section
             document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
             const sec=document.getElementById(name+'-section'); if(sec) sec.classList.add('active');
             document.getElementById('hero-section').style.display = (name==='upload') ? '' : 'none';
             if(name==='documents') loadDocuments();
             if(name==='admin') loadAdminData();
-            if(name==='context') ctxLoad();
+            if(name==='context') caInit();
             if(name==='leads') crmLoad();
             if(name==='companies') crmLoadCompanies();
             if(name==='projects') prjLoad();
@@ -2061,6 +2389,63 @@
             if(name==='chat') { loadChatHistory(); document.getElementById('chatInput').focus(); }
             if(name==='model') { if (!mbUserProfile) mbLoadUserProfile().then(() => mbApplyDefault('start')); }
         }
+
+        function toggleMobileNav() {
+            const links = document.querySelector('.nav-links');
+            const isOpen = links.classList.toggle('mobile-open');
+            const icon = document.getElementById('hamburgerIcon');
+            if (isOpen) {
+                icon.innerHTML = '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>';
+            } else {
+                icon.innerHTML = '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>';
+            }
+        }
+
+        function closeMobileNav() {
+            const links = document.querySelector('.nav-links');
+            if (links) links.classList.remove('mobile-open');
+            const icon = document.getElementById('hamburgerIcon');
+            if (icon) icon.innerHTML = '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>';
+        }
+
+        function toggleDropdown(id) {
+            const dd = document.getElementById(id);
+            const wasOpen = dd.classList.contains('open');
+            document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            if (!wasOpen) dd.classList.add('open');
+        }
+
+        function navDropClick(section, itemEl) {
+            // Close dropdown + mobile nav
+            document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            closeMobileNav();
+            // Clear all actives
+            document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
+            document.querySelectorAll('.nav-dropdown-trigger').forEach(t=>t.classList.remove('active'));
+            document.querySelectorAll('.nav-dropdown-item').forEach(i=>i.classList.remove('active'));
+            // Mark dropdown item + parent trigger as active
+            if(itemEl) itemEl.classList.add('active');
+            const parentTrigger = itemEl?.closest('.nav-dropdown')?.querySelector('.nav-dropdown-trigger');
+            if(parentTrigger) parentTrigger.classList.add('active');
+            // Show the section
+            document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+            const sec=document.getElementById(section+'-section'); if(sec) sec.classList.add('active');
+            document.getElementById('hero-section').style.display = (section==='upload') ? '' : 'none';
+            if(section==='documents') loadDocuments();
+            if(section==='admin') loadAdminData();
+            if(section==='context') caInit();
+            if(section==='leads') crmLoad();
+            if(section==='companies') crmLoadCompanies();
+            if(section==='projects') prjLoad();
+            if(section==='profile') loadProfile();
+        }
+
+        // Close dropdowns on outside click
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.nav-dropdown')) {
+                document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            }
+        });
         function switchTab(tab,el) { currentTab=tab; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); document.getElementById('file-section').classList.toggle('active',tab==='file'); document.getElementById('text-section').classList.toggle('active',tab==='text'); updateCount(); }
         function selectDB(el) { document.querySelectorAll('.db-option').forEach(o=>o.classList.remove('selected')); el.classList.add('selected'); selectedDB=el.dataset.db; }
 
@@ -2124,148 +2509,697 @@
             const hasCrmAccess = currentUser?.crm_access || false;
             console.log('applyUserTabs - email:', email, 'admin:', isAdmin, 'role:', role, 'crm:', hasCrmAccess);
 
-            // Admin tab (only for admins)
+            // Admin gear icon (only for admins)
             const adminEl = document.getElementById('navAdmin');
             if (adminEl) adminEl.style.display = isAdmin ? 'inline' : 'none';
 
-            // CRM tab: only for @fehradvice.com with explicit crm_access
-            const crmEl = document.getElementById('navLeads');
-            if (crmEl) {
-                const showCrm = isFehrAdvice && hasCrmAccess;
-                crmEl.style.display = showCrm ? 'inline' : 'none';
-                console.log('CRM tab', showCrm ? 'SHOWN' : 'hidden', '(FA:', isFehrAdvice, 'access:', hasCrmAccess + ')');
-                // Firmen tab: same visibility as CRM
-                const compEl = document.getElementById('navCompanies');
-                if (compEl) compEl.style.display = showCrm ? 'inline' : 'none';
-                // Projekte tab: same visibility as CRM
-                const projEl = document.getElementById('navProjects');
-                if (projEl) projEl.style.display = showCrm ? 'inline' : 'none';
+            // Kontext-Analyse is always visible (core EBF workflow under Behavioral Design)
+            // No role restriction needed
+
+            // Business dropdown items (CRM, Firmen, Projekte)
+            const showCrm = isFehrAdvice && hasCrmAccess;
+            const leadsEl = document.getElementById('navDropLeads');
+            if (leadsEl) leadsEl.style.display = showCrm ? 'flex' : 'none';
+            const compEl = document.getElementById('navDropCompanies');
+            if (compEl) compEl.style.display = showCrm ? 'flex' : 'none';
+            const projEl = document.getElementById('navDropProjects');
+            if (projEl) projEl.style.display = showCrm ? 'flex' : 'none';
+
+            // Show/hide entire Business dropdown based on whether any CRM item is visible
+            const businessDrop = document.getElementById('navDropBusiness');
+            if (businessDrop) {
+                businessDrop.style.display = showCrm ? 'flex' : 'none';
             }
 
-            // Context/Ausgangslage tab: role-based
-            const ctxEl = document.getElementById('navContext');
-            const visibleTabs = isAdmin ? ['context'] : (ROLE_TABS[role] || []);
-            if (ctxEl) ctxEl.style.display = visibleTabs.includes('context') ? 'inline' : 'none';
+            console.log('Nav: CRM=' + showCrm, 'Admin=' + isAdmin);
         }
 
         // ── Kontext / Ausgangslage ──────────────────────
-        let ctxData = [];
+        // Kontext-Analyse state managed by caState and caHistoryData
 
-        function ctxShowAdd() {
-            const f = document.getElementById('ctxAddForm');
-            f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        // ── KONTEXT-ANALYSE WORKFLOW ──────────────────────────
+        const caState = { mode: null, step: -1, question: '', macro: null, meso: null, micro: {}, result: null, lineageId: null, currentVersionId: null, customerCode: null, projectSlug: null };
+        let caHistoryData = [];
+
+        const PSI_DIMS = [
+            { key: 'psi_i', icon: '📋', label: 'Ψ_I Regeln', desc: 'Gesetze, Defaults, Vorschriften' },
+            { key: 'psi_s', icon: '👥', label: 'Ψ_S Sozial', desc: 'Soziale Normen, Peer Effects' },
+            { key: 'psi_c', icon: '🧠', label: 'Ψ_C Kognitiv', desc: 'Attention, Cognitive Load' },
+            { key: 'psi_k', icon: '🌍', label: 'Ψ_K Kultur', desc: 'Werte, Traditionen, Identität' },
+            { key: 'psi_e', icon: '💰', label: 'Ψ_E Ressourcen', desc: 'Budget, Zeit, Energie' },
+            { key: 'psi_t', icon: '⏰', label: 'Ψ_T Zeit', desc: 'Zeitdruck, Lebensphase' },
+            { key: 'psi_m', icon: '🔧', label: 'Ψ_M Tools', desc: 'Technologie, Infrastruktur' },
+            { key: 'psi_f', icon: '📍', label: 'Ψ_F Ort', desc: 'Physisches Setting' }
+        ];
+
+        function caInit() {
+            // Load suggestions based on user profile
+            caLoadSuggestions();
         }
 
-        async function ctxLoad() {
+        function caSelectMode(el, mode) {
+            if (el.classList.contains('selected') && caState.mode === mode) {
+                caStartWorkflow(); return;
+            }
+            document.querySelectorAll('#caStart .mb-mode-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            caState.mode = mode;
+            document.getElementById('caStartBtn').disabled = false;
+        }
+
+        function caStartWorkflow() {
+            if (!caState.mode) return;
+            caState.step = 0;
+            caShowPanel('caStep0');
+            document.getElementById('caProgress').style.display = 'flex';
+            caUpdateProgress(0);
+            if (caState.mode === 'schnell') {
+                caShowCustomInput(); // Jump to text input for schnell mode
+            }
+        }
+
+        function caShowPanel(id) {
+            document.querySelectorAll('#context-section .mb-panel').forEach(p => p.classList.remove('active'));
+            const el = document.getElementById(id);
+            if (el) el.classList.add('active');
+        }
+
+        function caUpdateProgress(step) {
+            document.querySelectorAll('#caProgress .mb-step-dot').forEach((dot, i) => {
+                dot.classList.remove('active', 'completed');
+                if (i < step) dot.classList.add('completed');
+                if (i === step) dot.classList.add('active');
+            });
+            document.querySelectorAll('#caProgress .mb-step-line').forEach((line, i) => {
+                line.classList.toggle('completed', i < step);
+            });
+        }
+
+        function caGoToStart() {
+            caState.step = -1;
+            caState.mode = null;
+            caState.lineageId = null;
+            caState.currentVersionId = null;
+            document.querySelectorAll('#caStart .mb-mode-card').forEach(c => c.classList.remove('selected'));
+            document.getElementById('caStartBtn').disabled = true;
+            document.getElementById('caProgress').style.display = 'none';
+            caShowPanel('caStart');
+        }
+
+        function caBack(toStep) {
+            caState.step = toStep;
+            const panels = ['caStep0','caStep1','caStep2','caStep3','caStep4'];
+            caShowPanel(panels[toStep]);
+            caUpdateProgress(toStep);
+        }
+
+        async function caDeepen() {
+            // Auto-save schnell result first (v1)
+            if (!caState.currentVersionId) {
+                await caSaveAndUse();
+            }
+            // Switch to tief mode, keep question + lineage
+            const keepQuestion = caState.question;
+            const keepLineage = caState.lineageId;
+            caState.mode = 'tief';
+            caState.result = null;
+            caState.step = 1;
+            // Reset context selections
+            caState.macro = null; caState.meso = null; caState.micro = null;
+            // Re-populate question
+            const qEl = document.getElementById('caQuestion');
+            if (qEl) qEl.value = keepQuestion;
+            caState.question = keepQuestion;
+            caState.lineageId = keepLineage;
+            // Navigate to macro context (step 1)
+            document.getElementById('caProgress').style.display = 'flex';
+            caShowPanel('caStep1');
+            caUpdateProgress(1);
+            // Reset step selections
+            document.querySelectorAll('#caStep1 .mb-choice, #caStep2 .mb-choice').forEach(c => c.classList.remove('selected'));
+            document.getElementById('caStep1Btn').disabled = true;
+            document.getElementById('caStep2Btn').disabled = true;
+            showToast('🔍 Jetzt Kontext vertiefen — gleiche Frage, tiefere Analyse', 'info');
+        }
+
+        function caSelect(el, value) {
+            const parent = el.closest('.mb-choices') || el.parentElement;
+            parent.querySelectorAll('.mb-choice').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            // Enable the corresponding next button
+            const step = el.closest('.mb-panel');
+            if (step) {
+                const btn = step.querySelector('.mb-btn-primary');
+                if (btn) btn.disabled = false;
+            }
+            // Store value and toggle custom inputs
+            if (step?.id === 'caStep1') {
+                caState.macro = value;
+                const customEl = document.getElementById('caCustomMacro');
+                if (customEl) customEl.style.display = value === 'custom_macro' ? 'block' : 'none';
+            }
+            if (step?.id === 'caStep2') {
+                caState.meso = value;
+                const customEl = document.getElementById('caCustomMeso');
+                if (customEl) customEl.style.display = value === 'custom_meso' ? 'block' : 'none';
+            }
+        }
+
+        function caShowCustomInput() {
+            document.getElementById('caCustomInput').style.display = 'block';
+            document.getElementById('caQuestion').focus();
+        }
+
+        async function caLoadSuggestions() {
+            const container = document.getElementById('caStep0Suggestions');
+            if (!container) return;
+            // Generate context-relevant suggestions
+            const suggestions = [
+                { icon: '🏦', text: 'Warum wechseln Schweizer so selten den Bankanbieter?', domain: 'FIN' },
+                { icon: '🏥', text: 'Wie können Patienten zu besserer Medikamenten-Adhärenz motiviert werden?', domain: 'HLT' },
+                { icon: '⚡', text: 'Welche Kontextfaktoren beeinflussen die Entscheidung zum Heizungsersatz?', domain: 'ENV' },
+                { icon: '🗳️', text: 'Wie verändert Social Media den politischen Entscheidungskontext?', domain: 'POL' },
+                { icon: '🏢', text: 'Welcher Kontext fördert/hemmt Innovationsverhalten in Organisationen?', domain: 'ORG' },
+            ];
+            container.innerHTML = suggestions.map(s => `
+                <div class="mb-choice" style="padding:14px 16px;display:flex;align-items:center;gap:12px" onclick="caSelectSuggestion(this,'${s.text.replace(/'/g,"\\'")}')">
+                    <div style="font-size:20px;min-width:32px;text-align:center">${s.icon}</div>
+                    <div>
+                        <div style="font-size:13px;color:var(--white);line-height:1.4">${s.text}</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${s.domain}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function caSelectSuggestion(el, text) {
+            caState.question = text;
+            if (caState.mode === 'schnell') {
+                caRunSchnell(text);
+            } else {
+                caState.step = 1;
+                caShowPanel('caStep1');
+                caUpdateProgress(1);
+            }
+        }
+
+        async function caProcessStep0() {
+            const q = document.getElementById('caQuestion').value.trim();
+            if (!q) { showToast('Bitte Frage eingeben', 'error'); return; }
+            caState.question = q;
+            if (caState.mode === 'schnell') {
+                caRunSchnell(q);
+            } else {
+                caState.step = 1;
+                caShowPanel('caStep1');
+                caUpdateProgress(1);
+            }
+        }
+
+        function caNextStep(fromStep) {
+            const next = fromStep + 1;
+            caState.step = next;
+            const panels = ['caStep0','caStep1','caStep2','caStep3','caStep4'];
+            caShowPanel(panels[next]);
+            caUpdateProgress(next);
+        }
+
+        function caUpdateMicroBtn() {
+            const w = document.getElementById('caMicroWhere').value;
+            const s = document.getElementById('caMicroSocial').value;
+            const btn = document.getElementById('caStep3Btn');
+            if (btn) btn.disabled = !(w && s);
+        }
+
+        async function caAnalyze() {
+            // Collect MICRO data
+            caState.micro = {
+                where: document.getElementById('caMicroWhere').value,
+                social: document.getElementById('caMicroSocial').value,
+                time: document.getElementById('caMicroTime').value,
+                cognitive: document.getElementById('caMicroCognitive').value,
+                notes: document.getElementById('caMicroNotes').value.trim()
+            };
+            caState.step = 4;
+            caShowPanel('caStep4');
+            caUpdateProgress(4);
+            // Run AI analysis
+            await caRunAnalysis();
+        }
+
+        async function caRunSchnell(question) {
+            caState.step = 4;
+            caShowPanel('caStep4');
+            document.getElementById('caProgress').style.display = 'flex';
+            caUpdateProgress(4);
+            await caRunAnalysis();
+        }
+
+        async function caRunAnalysis() {
+            const statusEl = document.getElementById('caAnalysisStatus');
+            const progressEl = document.getElementById('caAnalysisProgress');
+            const resultEl = document.getElementById('caAnalysisResult');
+            progressEl.style.display = 'block';
+            resultEl.style.display = 'none';
+
+            const steps = ['Kontextdatenbank wird geladen...', 'MACRO-Ebene analysieren...', 'MESO-Kontext identifizieren...', 'MICRO-Situationsfaktoren extrahieren...', 'Ψ-Dimensionen berechnen...', 'Parameter-Implikationen ableiten...'];
+            for (let i = 0; i < steps.length; i++) {
+                statusEl.textContent = steps[i];
+                await new Promise(r => setTimeout(r, 600));
+            }
+
+            // Call AI for full analysis
+            const prompt = caState.mode === 'schnell'
+                ? `Führe eine vollständige EBF-Kontextanalyse durch für folgende Frage:\n"${caState.question}"\n\nAnalysiere alle 5 Ebenen (MACRO→MESO→MICRO→INDIVIDUAL→META) und alle 8 Ψ-Dimensionen.`
+                : `Führe eine EBF-Kontextanalyse durch:\nFrage: "${caState.question}"\nMACRO: ${caState.macro}${caState.macro==='custom_macro' ? ' ('+document.getElementById('caMacroCustom')?.value+')' : ''}\nMESO: ${caState.meso}${caState.meso==='custom_meso' ? ' ('+document.getElementById('caMesoCustom')?.value+')' : ''}\nMICRO: Ort=${caState.micro.where}, Sozial=${caState.micro.social}, Zeit=${caState.micro.time}, Kognitiv=${caState.micro.cognitive}${caState.micro.notes ? ', Notizen: '+caState.micro.notes : ''}`;
+
+            const sysPrompt = `Du bist BEATRIX Kontext-Analyst. Analysiere mit dem EBF Ψ-Framework.
+
+Antworte EXAKT in diesem JSON-Format (kein Markdown, kein Text davor/danach):
+{
+  "psi_profile": {
+    "psi_i": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz in Alltagssprache: Was bedeutet das für die Person konkret?" },
+    "psi_s": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_c": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_k": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_e": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_t": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_m": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_f": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" }
+  },
+  "context_story": "Ein Absatz (4-6 Sätze) in einfacher Sprache, der die gesamte Situation aus Sicht der betroffenen Person beschreibt. Kein Fachjargon, keine griechischen Buchstaben, keine Zahlenwerte. Schreibe so, als würdest du einem Kunden erklären, in welcher Welt sich die Zielgruppe befindet. Beginne mit 'Die Menschen in diesem Kontext...' oder 'Stell dir vor...'",
+  "allgemeine_perspektive": "Ein Absatz (3-5 Sätze) aus der Vogelperspektive: Was ist das GROSSE BILD dieses Kontexts? Welche Kräfte wirken auf das Verhalten? Was macht diesen Kontext besonders oder herausfordernd? Schreibe wie ein erfahrener Berater, der einem CEO in 30 Sekunden erklärt, warum sich Menschen hier so verhalten wie sie es tun. Kein Jargon, keine Zahlenwerte.",
+  "parameters": {
+    "lambda": { "value": "Zahl", "note": "Erklärung warum dieser Wert im Kontext" },
+    "beta": { "value": "Zahl", "note": "Erklärung" },
+    "theta": { "value": "Zahl", "note": "Erklärung" },
+    "delta": { "value": "Zahl", "note": "Erklärung" }
+  },
+  "synthesis": "2-3 Sätze Zusammenfassung: Was bedeutet dieser Kontext für Verhaltensvorhersagen?",
+  "implications": ["Implikation 1", "Implikation 2", "Implikation 3"],
+  "confidence": "LLMMC Prior | Confidence: 0.0-1.0",
+  "macro_summary": "1 Satz MACRO",
+  "meso_summary": "1 Satz MESO",
+  "micro_summary": "1 Satz MICRO"
+}
+
+WICHTIG für "plain" und "context_story":
+- Schreibe für einen Berater, der den Kontext seinem Kunden erklärt
+- Keine griechischen Buchstaben (λ, β, Ψ)
+- Keine Zahlenwerte oder Scores
+- Konkrete Beispiele aus dem Alltag der Zielgruppe
+- "plain" pro Dimension: Was SPÜRT oder ERLEBT die Person?
+- "context_story": Die Geschichte des Kontexts als zusammenhängende Erzählung
+
+Werte-Skala für Ψ: 0.0 = minimal/absent, 0.5 = moderat, 1.0 = maximal/dominant.
+Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
+
             try {
-                const r = await fetch(`${API}/contexts`, { headers: H() });
-                if (!r.ok) throw new Error('Load failed');
-                ctxData = await r.json();
-                ctxRender();
+                const r = await fetch(`${API}/chat`, {
+                    method: 'POST',
+                    headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: prompt, system_prompt: sysPrompt, context: 'context_analysis' })
+                });
+                if (!r.ok) throw new Error('Analysis failed');
+
+                let text = '';
+                if (r.headers.get('content-type')?.includes('text/event-stream')) {
+                    const reader = r.body.getReader();
+                    const decoder = new TextDecoder();
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        const chunk = decoder.decode(value, { stream: true });
+                        for (const line of chunk.split('\n')) {
+                            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                                try { const d = JSON.parse(line.slice(6)); if (d.content) text += d.content; } catch(e) {}
+                            }
+                        }
+                    }
+                } else {
+                    const data = await r.json();
+                    text = data.response || data.content || JSON.stringify(data);
+                }
+
+                // Parse JSON from response
+                const jsonMatch = text.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    caState.result = JSON.parse(jsonMatch[0]);
+                    caRenderResult();
+                } else {
+                    throw new Error('No JSON in response');
+                }
             } catch(e) {
-                console.error('Context load:', e);
-                ctxData = [];
-                document.getElementById('ctxTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Kontexte erfasst.</div>';
-                ctxRenderKpis();
+                console.error('CA analysis error:', e);
+                // Generate fallback result
+                caState.result = caGenerateFallback();
+                caRenderResult();
             }
         }
 
-        function ctxRender() {
-            const domainColors = { FIN:'#fbbf24', HLT:'#34d399', POL:'#f87171', ORG:'#8b9aff', EDU:'#a78bfa', ENV:'#4ade80', REL:'#fb923c', OTH:'#94a3b8' };
-            const domainLabels = { FIN:'Finanzen', HLT:'Gesundheit', POL:'Politik', ORG:'Organisation', EDU:'Bildung', ENV:'Umwelt', REL:'Beziehungen', OTH:'Andere' };
-            const statusColors = { aktiv:'rgba(52,211,153,0.8)', planung:'rgba(139,170,255,0.8)', abgeschlossen:'rgba(255,255,255,0.3)', pausiert:'rgba(251,191,36,0.8)' };
+        function caGenerateFallback() {
+            return {
+                allgemeine_perspektive: 'Ohne spezifischere Angaben zum Kontext können wir nur ein grobes Bild zeichnen. Jede Verhaltensveränderung hängt davon ab, in welcher Welt sich die Menschen befinden — welche Regeln gelten, wer zuschaut, wie viel Zeit und Geld zur Verfügung steht, und ob die Situation Nachdenken erlaubt oder schnelle Entscheidungen erzwingt. Je mehr wir über den konkreten Kontext wissen, desto präziser können wir vorhersagen, was funktioniert.',
+                psi_profile: {
+                    psi_i: { value: 0.6, label: 'Moderater regulatorischer Rahmen', key_factors: ['Gesetzgebung', 'Defaults'], plain: 'Es gibt klare Regeln und Vorgaben, aber auch Spielraum für eigene Entscheidungen.' },
+                    psi_s: { value: 0.5, label: 'Gemischte soziale Einflüsse', key_factors: ['Peer Effects', 'Normen'], plain: 'Was andere tun, spielt eine Rolle — aber man fühlt sich nicht stark unter Beobachtung.' },
+                    psi_c: { value: 0.4, label: 'Moderate kognitive Belastung', key_factors: ['Komplexität', 'Aufmerksamkeit'], plain: 'Die Entscheidung ist nicht trivial, aber auch nicht überwältigend — man muss sich etwas Zeit nehmen.' },
+                    psi_k: { value: 0.5, label: 'Kultureller Standardkontext', key_factors: ['Werte', 'Tradition'], plain: 'Kulturelle Gewohnheiten und Werte spielen mit, ohne die Entscheidung zu dominieren.' },
+                    psi_e: { value: 0.5, label: 'Durchschnittliche Ressourcen', key_factors: ['Budget', 'Zeit'], plain: 'Geld und Zeit sind vorhanden, aber begrenzt — man wägt ab, was sich lohnt.' },
+                    psi_t: { value: 0.4, label: 'Moderater Zeitdruck', key_factors: ['Deadline', 'Rhythmus'], plain: 'Es besteht kein akuter Zeitdruck, aber die Entscheidung sollte irgendwann fallen.' },
+                    psi_m: { value: 0.5, label: 'Standard-Tooling', key_factors: ['Digital', 'Analog'], plain: 'Die nötigen Werkzeuge und Informationen sind grundsätzlich verfügbar.' },
+                    psi_f: { value: 0.5, label: 'Neutrales Setting', key_factors: ['Ort', 'Zugang'], plain: 'Der Ort der Entscheidung hat keinen starken Einfluss — weder besonders förderlich noch hinderlich.' }
+                },
+                context_story: 'Die Menschen in diesem Kontext bewegen sich in einem relativ stabilen Umfeld. Sie haben grundsätzlich Zugang zu Informationen und Ressourcen, stehen aber vor einer Entscheidung, die nicht ganz einfach ist. Soziale Einflüsse spielen eine Rolle — man schaut durchaus, was andere machen — aber letztlich fühlt sich jeder für seine eigene Entscheidung verantwortlich. Es gibt keinen akuten Handlungsdruck, was dazu führen kann, dass Entscheidungen aufgeschoben werden. Die kulturelle Prägung gibt eine Richtung vor, ohne die Wahl zu erzwingen.',
+                parameters: {
+                    lambda: { value: '2.25', note: 'GGG Default — kein kontextspezifischer Modifier' },
+                    beta: { value: '0.95', note: 'Leicht present-biased im Standardkontext' },
+                    theta: { value: '0.5', note: 'Mittlere Aufmerksamkeit' },
+                    delta: { value: '0.97', note: 'Standard-Diskontierung' }
+                },
+                synthesis: 'Ohne spezifischere Kontextdaten werden GGG-Defaults verwendet. Die Parameter sind LLMMC Priors und sollten mit empirischen Daten kalibriert werden.',
+                implications: ['GGG Defaults aktiv — alle Parameter mit Vorsicht nutzen', 'Kontextspezifische Daten würden die Präzision erhöhen', 'BCM2-Datenbank für empirische Ankerwerte konsultieren'],
+                confidence: 'LLMMC Prior | Confidence: 0.35',
+                macro_summary: 'Standard DACH-Kontext angenommen',
+                meso_summary: 'Branchenkontext nicht spezifiziert',
+                micro_summary: 'Situationsspezifische Faktoren unbekannt'
+            };
+        }
 
-            document.getElementById('ctxCount').textContent = `(${ctxData.length})`;
+        function caRenderResult() {
+            const r = caState.result;
+            if (!r) return;
 
-            if (!ctxData.length) {
-                document.getElementById('ctxTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Kontexte erfasst. Klicke «+ Neuer Kontext» um zu starten.</div>';
-                ctxRenderKpis();
-                return;
+            document.getElementById('caAnalysisProgress').style.display = 'none';
+            document.getElementById('caAnalysisResult').style.display = 'block';
+            document.querySelector('#caStep4 .mb-step-title').textContent = 'Ψ-Profil — Ergebnis';
+            document.querySelector('#caStep4 .mb-step-desc').textContent = caState.question;
+            caUpdateProgress(5);
+
+            // Show "Kontext vertiefen" button only in schnell mode
+            const deepenBtn = document.getElementById('caDeepenBtn');
+            if (deepenBtn) deepenBtn.style.display = caState.mode === 'schnell' ? 'inline-flex' : 'none';
+
+            // 0) Allgemeine Perspektive — Big Picture
+            const perspEl = document.getElementById('caPerspectiveText');
+            if (perspEl) {
+                perspEl.textContent = r.allgemeine_perspektive || '';
+                document.getElementById('caPerspectiveBox').style.display = r.allgemeine_perspektive ? 'block' : 'none';
             }
 
-            document.getElementById('ctxTable').innerHTML = ctxData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at)).map(c => {
-                const dc = domainColors[c.domain] || '#94a3b8';
-                const dl = domainLabels[c.domain] || c.domain;
-                const sc = statusColors[c.status] || '#94a3b8';
-                const date = new Date(c.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: '2-digit' });
+            // Render Ψ cards
+            const cardsEl = document.getElementById('caPsiCards');
+            cardsEl.innerHTML = PSI_DIMS.map(dim => {
+                const data = r.psi_profile?.[dim.key] || { value: 0.5, label: '–', key_factors: [] };
+                const pct = Math.round(data.value * 100);
+                const hue = data.value < 0.3 ? 200 : data.value < 0.7 ? 45 : 140;
                 return `
-                <div style="padding:16px 18px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-                        <span style="font-weight:600;color:white;font-size:15px">${c.client || '–'}</span>
-                        <span style="font-size:13px;color:rgba(255,255,255,0.5)">→ ${c.project || '–'}</span>
-                        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
-                            <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:${dc}18;color:${dc};border:1px solid ${dc}44">${dl}</span>
-                            <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:${sc}18;color:${sc};border:1px solid ${sc}44">${c.status}</span>
-                            <span style="font-size:11px;color:rgba(255,255,255,0.25)">${date}</span>
-                        </span>
+                <div style="padding:14px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                        <span style="font-size:16px">${dim.icon}</span>
+                        <span style="font-size:12px;font-weight:700;color:var(--white)">${dim.label}</span>
                     </div>
-                    ${c.situation ? `<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Ausgangslage</div><div style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.5">${c.situation}</div></div>` : ''}
-                    ${c.goal ? `<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:600;color:rgba(52,211,153,0.6);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Ziel</div><div style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.5">${c.goal}</div></div>` : ''}
-                    ${c.constraints ? `<div><div style="font-size:10px;font-weight:600;color:rgba(251,191,36,0.6);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Rahmenbedingungen</div><div style="font-size:13px;color:rgba(255,255,255,0.5);line-height:1.5">${c.constraints}</div></div>` : ''}
-                    <div style="display:flex;gap:8px;margin-top:10px;border-top:1px solid rgba(255,255,255,0.04);padding-top:10px">
-                        <select onchange="ctxUpdateStatus('${c.id}',this.value)" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer">
-                            ${['aktiv','planung','abgeschlossen','pausiert'].map(s => `<option value="${s}" ${s===c.status?'selected':''}>${s}</option>`).join('')}
-                        </select>
-                        <button onclick="ctxDelete('${c.id}')" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(248,113,113,0.5);border:1px solid rgba(248,113,113,0.15);border-radius:6px;cursor:pointer">Löschen</button>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                        <div style="flex:1;height:6px;background:var(--navy-mid);border-radius:3px;overflow:hidden">
+                            <div style="width:${pct}%;height:100%;background:hsl(${hue},70%,55%);border-radius:3px;transition:width 0.8s ease"></div>
+                        </div>
+                        <span style="font-size:13px;font-weight:700;color:hsl(${hue},70%,65%)">${data.value.toFixed(2)}</span>
                     </div>
+                    <div style="font-size:11px;color:rgba(255,255,255,0.6);line-height:1.4;margin-bottom:4px">${data.label}</div>
+                    <div style="font-size:10px;color:rgba(255,255,255,0.35)">${(data.key_factors||[]).join(' · ')}</div>
                 </div>`;
             }).join('');
 
-            ctxRenderKpis();
+            // ── Context Story Box: Plain Language Translation ──
+            const storyTextEl = document.getElementById('caStoryText');
+            const storyDimsEl = document.getElementById('caStoryDims');
+            const storyBoxEl = document.getElementById('caStoryBox');
+
+            if (r.context_story || PSI_DIMS.some(d => r.psi_profile?.[d.key]?.plain)) {
+                storyBoxEl.style.display = 'block';
+
+                // Main story paragraph
+                storyTextEl.innerHTML = r.context_story
+                    ? `<p style="margin:0">${r.context_story}</p>`
+                    : '';
+
+                // Per-dimension plain-language bullets
+                const dimLines = PSI_DIMS.map(dim => {
+                    const data = r.psi_profile?.[dim.key];
+                    if (!data?.plain) return '';
+                    const hue = data.value < 0.3 ? 200 : data.value < 0.7 ? 45 : 140;
+                    return `
+                    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px">
+                        <span style="font-size:16px;min-width:24px;text-align:center;margin-top:1px">${dim.icon}</span>
+                        <div style="flex:1">
+                            <div style="font-size:12px;font-weight:600;color:hsl(${hue},60%,70%);margin-bottom:2px">${dim.label.replace(/Ψ_[A-Z]\s*/,'')}</div>
+                            <div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.5">${data.plain}</div>
+                        </div>
+                    </div>`;
+                }).filter(Boolean).join('');
+
+                storyDimsEl.innerHTML = dimLines;
+            } else {
+                storyBoxEl.style.display = 'none';
+            }
+
+            // Render parameters
+            const paramsEl = document.getElementById('caParams');
+            const params = r.parameters || {};
+            paramsEl.innerHTML = Object.entries(params).map(([k, v]) =>
+                `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+                    <span style="font-weight:700;color:var(--accent-light);min-width:24px">${k === 'lambda' ? 'λ' : k === 'beta' ? 'β' : k === 'theta' ? 'θ' : k === 'delta' ? 'δ' : k}</span>
+                    <span style="font-weight:600;color:var(--white)">${v.value}</span>
+                    <span style="color:rgba(255,255,255,0.45);font-size:12px">— ${v.note}</span>
+                </div>`
+            ).join('');
+
+            // Render synthesis
+            const insightEl = document.getElementById('caInsight');
+            let html = `<p style="margin-bottom:10px">${r.synthesis || ''}</p>`;
+            if (r.implications?.length) {
+                html += '<div style="margin-top:8px">' + r.implications.map(imp =>
+                    `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px;font-size:12px"><span style="color:var(--accent)">→</span> ${imp}</div>`
+                ).join('') + '</div>';
+            }
+            if (r.confidence) {
+                html += `<div style="margin-top:10px;padding:8px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;font-size:11px;color:rgba(251,191,36,0.8)">⚠️ ${r.confidence}</div>`;
+            }
+            insightEl.innerHTML = html;
         }
 
-        function ctxRenderKpis() {
-            const active = ctxData.filter(c => c.status === 'aktiv');
-            document.getElementById('ctxKpiActive').textContent = ctxData.length;
-            document.getElementById('ctxKpiActive2').textContent = active.length;
-            if (ctxData.length > 0) {
-                const last = new Date(ctxData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at))[0].updated_at || ctxData[0].created_at);
-                document.getElementById('ctxKpiLast').textContent = last.toLocaleDateString('de-CH', { day: '2-digit', month: 'short' });
+        async function caSaveAndUse() {
+            const r = caState.result;
+            if (!r) return;
+            const payload = {
+                question: caState.question,
+                mode: caState.mode,
+                macro_context: caState.macro ? { country: caState.macro, custom: document.getElementById('caMacroCustom')?.value } : null,
+                meso_context: caState.meso ? { industry: caState.meso, custom: document.getElementById('caMesoCustom')?.value } : null,
+                micro_context: caState.micro || null,
+                psi_profile: r.psi_profile,
+                parameters: r.parameters,
+                synthesis: r.synthesis,
+                implications: r.implications,
+                confidence: r.confidence,
+                customer_code: caState.customerCode || null,
+                project_slug: caState.projectSlug || null,
+                lineage_id: caState.lineageId || null
+            };
+            try {
+                // Try new versioned endpoint first
+                let resp = await fetch(`${API}/psi-analyses`, {
+                    method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (resp.ok) {
+                    const result = await resp.json();
+                    showToast(`Ψ-Profil gespeichert: ${result.lineage_id} v${result.version}`, 'success');
+                    caState.lineageId = result.lineage_id;
+                    caState.currentVersionId = result.id;
+                    return;
+                }
+                // Fallback: save to old contexts table
+                const fallback = {
+                    client: 'Ψ-Analyse',
+                    project: caState.question.substring(0, 80),
+                    domain: 'OTH',
+                    status: 'aktiv',
+                    situation: JSON.stringify(r.psi_profile || {}),
+                    goal: r.synthesis || '',
+                    constraints: r.confidence || ''
+                };
+                resp = await fetch(`${API}/contexts`, {
+                    method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(fallback)
+                });
+                if (resp.ok) {
+                    showToast('Ψ-Profil gespeichert (Legacy-Modus)', 'success');
+                } else {
+                    throw new Error('Both endpoints failed');
+                }
+            } catch(e) {
+                console.error('Save error:', e);
+                showToast('Fehler beim Speichern', 'error');
             }
         }
 
-        async function ctxSave() {
-            const ctx = {
-                client: document.getElementById('ctxClient').value.trim(),
-                project: document.getElementById('ctxProject').value.trim(),
-                domain: document.getElementById('ctxDomain').value,
-                status: document.getElementById('ctxStatus').value,
-                situation: document.getElementById('ctxSituation').value.trim(),
-                goal: document.getElementById('ctxGoal').value.trim(),
-                constraints: document.getElementById('ctxConstraints').value.trim()
-            };
-            if (!ctx.client) { showToast('Bitte Kunde angeben', 'error'); return; }
-            try {
-                const r = await fetch(`${API}/contexts`, {
-                    method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify(ctx)
-                });
-                if (!r.ok) throw new Error('Save failed');
-                showToast('Kontext gespeichert', 'success');
-                document.getElementById('ctxAddForm').style.display = 'none';
-                ['ctxClient','ctxProject','ctxSituation','ctxGoal','ctxConstraints'].forEach(id => document.getElementById(id).value = '');
-                ctxLoad();
-            } catch(e) { showToast('Fehler beim Speichern', 'error'); }
+        function caUseInChat() {
+            const r = caState.result;
+            if (!r) return;
+            // Build context string for chat
+            const psiSummary = PSI_DIMS.map(d => {
+                const v = r.psi_profile?.[d.key];
+                return v ? `${d.label}: ${v.value.toFixed(2)} (${v.label})` : '';
+            }).filter(Boolean).join('\n');
+            const params = Object.entries(r.parameters||{}).map(([k,v]) => `${k}=${v.value}`).join(', ');
+            const ctxMsg = `[KONTEXT-ANALYSE]\nFrage: ${caState.question}\n\nΨ-Profil:\n${psiSummary}\n\nParameter: ${params}\n\nSynthese: ${r.synthesis}`;
+            // Switch to chat and populate
+            showSection('chat', document.querySelector('[data-section="chat"]'));
+            setTimeout(() => {
+                const input = document.getElementById('chatInput');
+                if (input) {
+                    input.value = ctxMsg;
+                    input.style.height = 'auto';
+                    input.style.height = input.scrollHeight + 'px';
+                    input.focus();
+                }
+            }, 200);
         }
 
-        async function ctxUpdateStatus(id, status) {
+        async function caShowHistory() {
+            caShowPanel('caHistory');
+            document.getElementById('caProgress').style.display = 'none';
+            const container = document.getElementById('caHistoryList');
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.5)"><div class="spinner" style="margin:0 auto 12px"></div>Wird geladen...</div>';
             try {
-                await fetch(`${API}/contexts/${id}`, {
-                    method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status })
+                let analyses = [];
+                // Try new versioned endpoint
+                let r = await fetch(`${API}/psi-analyses`, { headers: H() });
+                if (r.ok) {
+                    analyses = await r.json();
+                } else {
+                    // Fallback: load from old contexts table
+                    r = await fetch(`${API}/contexts`, { headers: H() });
+                    if (r.ok) {
+                        const old = await r.json();
+                        analyses = old.filter(c => c.client === 'Ψ-Analyse' || c.client === 'Kontextanalyse').map(c => {
+                            let psiProfile = {};
+                            try { psiProfile = JSON.parse(c.situation); } catch(e) {}
+                            return {
+                                id: c.id,
+                                lineage_id: `LEGACY-${c.id}`,
+                                version: 1,
+                                question: c.project || c.client || '–',
+                                mode: 'schnell',
+                                psi_profile: psiProfile,
+                                parameters: {},
+                                synthesis: c.goal || '',
+                                confidence: c.constraints || '',
+                                created_by: c.created_by,
+                                created_at: c.created_at
+                            };
+                        });
+                    }
+                }
+                if (!analyses.length) {
+                    container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Ψ-Analysen gespeichert.</div>';
+                    return;
+                }
+
+                // Group by lineage
+                const lineages = {};
+                analyses.forEach(a => {
+                    if (!lineages[a.lineage_id]) lineages[a.lineage_id] = [];
+                    lineages[a.lineage_id].push(a);
                 });
-                ctxLoad();
+
+                container.innerHTML = Object.entries(lineages).map(([lid, versions]) => {
+                    const latest = versions[0]; // already sorted DESC
+                    const date = new Date(latest.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: 'short', year: 'numeric' });
+                    const psi = latest.psi_profile || {};
+
+                    // Mini Ψ bars
+                    const psiMini = PSI_DIMS.map(d => {
+                        const v = psi[d.key];
+                        if (!v) return '';
+                        const pct = Math.round(v.value * 100);
+                        const hue = v.value < 0.3 ? 200 : v.value < 0.7 ? 45 : 140;
+                        return `<div style="display:flex;align-items:center;gap:4px;min-width:110px">
+                            <span style="font-size:12px">${d.icon}</span>
+                            <div style="flex:1;height:4px;background:var(--navy-mid);border-radius:2px;overflow:hidden;max-width:50px">
+                                <div style="width:${pct}%;height:100%;background:hsl(${hue},70%,55%);border-radius:2px"></div>
+                            </div>
+                            <span style="font-size:11px;color:hsl(${hue},70%,65%);font-weight:600">${v.value.toFixed(1)}</span>
+                        </div>`;
+                    }).join('');
+
+                    // Version pills
+                    const versionPills = versions.map(v => {
+                        const isLatest = v.id === latest.id;
+                        const vDate = new Date(v.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit' });
+                        return `<span onclick="caLoadVersion('${v.id}')" style="font-size:10px;padding:2px 8px;border-radius:10px;cursor:pointer;transition:all 0.2s;${isLatest ? 'background:var(--accent);color:white' : 'background:var(--navy-mid);color:rgba(255,255,255,0.5);border:1px solid var(--border)'}" title="${vDate}">v${v.version}</span>`;
+                    }).join('');
+
+                    // Params
+                    const params = latest.parameters || {};
+                    const paramStr = Object.entries(params).map(([k,v]) => {
+                        const sym = k === 'lambda' ? 'λ' : k === 'beta' ? 'β' : k === 'theta' ? 'θ' : k === 'delta' ? 'δ' : k;
+                        return `<span style="color:var(--accent-light)">${sym}</span>=${v.value}`;
+                    }).join('  ');
+
+                    return `
+                    <div style="padding:16px 18px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+                            <span style="font-size:11px;font-family:monospace;color:var(--accent-light);background:var(--accent-glow);padding:2px 8px;border-radius:6px">${lid}</span>
+                            <span style="font-weight:600;color:var(--white);font-size:14px;flex:1">${latest.question?.substring(0,80) || '–'}${(latest.question?.length||0) > 80 ? '...' : ''}</span>
+                            <span style="font-size:11px;color:rgba(255,255,255,0.25)">${date}</span>
+                        </div>
+                        <div style="display:flex;flex-wrap:wrap;gap:6px 12px;margin-bottom:10px">${psiMini}</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:8px">${paramStr}</div>
+                        ${latest.synthesis ? `<div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;margin-bottom:8px">${latest.synthesis.substring(0,200)}${latest.synthesis.length > 200 ? '...' : ''}</div>` : ''}
+                        <div style="display:flex;align-items:center;gap:8px;border-top:1px solid rgba(255,255,255,0.04);padding-top:8px;flex-wrap:wrap">
+                            <span style="font-size:10px;color:rgba(255,255,255,0.3)">Versionen:</span>
+                            ${versionPills}
+                            <div style="flex:1"></div>
+                            <button onclick="caNewVersion('${lid}','${latest.question?.replace(/'/g,"\\'")}')" style="font-size:11px;padding:3px 10px;background:rgba(139,170,255,0.08);color:var(--accent-light);border:1px solid rgba(139,170,255,0.2);border-radius:6px;cursor:pointer" title="Neue Version dieser Analyse">+ v${versions.length+1}</button>
+                            <button onclick="caDeleteAnalysis('${latest.id}')" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(248,113,113,0.5);border:1px solid rgba(248,113,113,0.15);border-radius:6px;cursor:pointer">Löschen</button>
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch(e) {
+                console.error('History load:', e);
+                container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Fehler beim Laden.</div>';
+            }
+        }
+
+        function caNewVersion(lineageId, question) {
+            caState.lineageId = lineageId;
+            caState.question = question;
+            caState.mode = 'schnell';
+            caRunSchnell(question);
+        }
+
+        async function caLoadVersion(analysisId) {
+            // Could expand to show full detail of a specific version
+            showToast(`Version ${analysisId} — Detail-View kommt bald`, 'info');
+        }
+
+        async function caDeleteAnalysis(id) {
+            if (!confirm('Ψ-Analyse wirklich löschen?')) return;
+            try {
+                let resp = await fetch(`${API}/psi-analyses/${id}`, { method: 'DELETE', headers: H() });
+                if (!resp.ok) {
+                    // Fallback: try old contexts endpoint
+                    resp = await fetch(`${API}/contexts/${id}`, { method: 'DELETE', headers: H() });
+                }
+                showToast('Analyse gelöscht', 'success');
+                caShowHistory();
             } catch(e) { showToast('Fehler', 'error'); }
         }
 
-        async function ctxDelete(id) {
-            if (!confirm('Kontext wirklich löschen?')) return;
-            try {
-                await fetch(`${API}/contexts/${id}`, { method: 'DELETE', headers: H() });
-                showToast('Lead gelöscht', 'success');
-                ctxLoad();
-            } catch(e) { showToast('Fehler', 'error'); }
-        }
+        // Keep legacy ctxLoad as alias
+        function ctxLoad() { caInit(); }
 
         // ── CRM ──────────────────────────────────────────
         let crmDeals = [];
@@ -6677,7 +7611,7 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
     async function fbAnalyzeScreen() {
         const colors = ['#f87171', '#fbbf24', '#34d399'];
         try {
-            const section = document.querySelector('.nav-link.active')?.dataset?.section || 'unknown';
+            const section = (document.querySelector('.nav-link.active')?.dataset?.section || document.querySelector('.nav-dropdown-item.active')?.dataset?.section || 'unknown');
             const r = await fetch(`${API}/feedback/analyze`, {
                 method: 'POST',
                 headers: { ...H(), 'Content-Type': 'application/json' },
@@ -6821,7 +7755,7 @@ Schreibe detailliert, wissenschaftlich fundiert und praxisorientiert. Nutze Tabe
         const btn = document.getElementById('fbSend'); btn.disabled = true; btn.textContent = '...';
         try {
             const imgData = document.getElementById('fbCanvas').toDataURL('image/jpeg', 0.7);
-            const section = document.querySelector('.nav-link.active')?.dataset?.section || 'unknown';
+            const section = (document.querySelector('.nav-link.active')?.dataset?.section || document.querySelector('.nav-dropdown-item.active')?.dataset?.section || 'unknown');
             const r = await fetch(`${API}/feedback`, { method:'POST', headers:{...H(),'Content-Type':'application/json'},
                 body: JSON.stringify({ type:fbState.type, comment, screenshot:imgData, page:section, url:window.location.href, viewport:`${window.innerWidth}x${window.innerHeight}`, userAgent:navigator.userAgent.substring(0,200) })
             });
