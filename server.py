@@ -3063,6 +3063,57 @@ class ChatRequest(BaseModel):
     question: str
     database: Optional[str] = None
     project_slug: Optional[str] = None
+    attachments: Optional[list] = None  # [{type, name, content_text, image_base64, media_type}]
+
+
+# ── Chat File Upload: Extract text / prepare image for Claude Vision ──
+@app.post("/api/chat/upload")
+async def chat_upload(file: UploadFile = File(...), user=Depends(require_auth)):
+    """Upload a file for chat context. Returns extracted text or base64 image."""
+    ext = (file.filename.split(".")[-1].lower() if file.filename else "").strip()
+    content_bytes = await file.read()
+
+    if len(content_bytes) > 20 * 1024 * 1024:  # 20MB limit for chat
+        raise HTTPException(400, "Datei zu gross (max 20 MB für Chat)")
+
+    # Image types → base64 for Claude Vision
+    image_types = {"png", "jpg", "jpeg", "gif", "webp"}
+    doc_types = {"pdf", "txt", "md", "csv", "json", "docx"}
+
+    if ext in image_types:
+        import base64 as b64
+        media_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}
+        return {
+            "ok": True,
+            "type": "image",
+            "name": file.filename,
+            "media_type": media_map.get(ext, "image/png"),
+            "image_base64": b64.b64encode(content_bytes).decode(),
+            "size": len(content_bytes)
+        }
+    elif ext in doc_types:
+        # Save temp, extract text
+        temp_path = UPLOAD_DIR / f"chat_temp_{uuid.uuid4().hex[:8]}.{ext}"
+        with open(temp_path, "wb") as f:
+            f.write(content_bytes)
+        text = extract_text(str(temp_path), ext)
+        try:
+            os.remove(temp_path)
+        except:
+            pass
+        # Truncate if too long
+        if len(text) > 50000:
+            text = text[:50000] + f"\n\n[... gekürzt, {len(text)} Zeichen total]"
+        return {
+            "ok": True,
+            "type": "document",
+            "name": file.filename,
+            "content_text": text,
+            "size": len(content_bytes),
+            "chars": len(text)
+        }
+    else:
+        raise HTTPException(400, f"Dateityp .{ext} nicht unterstützt. Erlaubt: {', '.join(sorted(image_types | doc_types))}")
 
 def search_knowledge_base(db, query: str, database: Optional[str] = None, limit: int = 8):
     """Three-tier hybrid search: Vector (if available) + PostgreSQL Fulltext + Keyword fallback."""
@@ -4015,12 +4066,33 @@ async def chat_project(slug: str, request: ChatRequest, user=Depends(require_aut
         if kb_context:
             system_prompt += f"\n\nZUSAETZLICHES WISSEN AUS DER BEATRIX KNOWLEDGE BASE:\n{kb_context[:4000]}"
 
+        # Build message content with attachments
+        attachments = request.attachments or []
+        user_content = []
+        doc_context = ""
+
+        for att in attachments:
+            if att.get("type") == "image" and att.get("image_base64"):
+                user_content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": att.get("media_type", "image/png"),
+                        "data": att["image_base64"]
+                    }
+                })
+            elif att.get("type") == "document" and att.get("content_text"):
+                doc_context += f"\n\n--- DOKUMENT: {att.get('name', 'Datei')} ---\n{att['content_text'][:30000]}\n--- ENDE DOKUMENT ---\n"
+
+        full_question = question + (f"\n\nHochgeladene Dokumente:{doc_context}" if doc_context else "")
+        user_content.append({"type": "text", "text": full_question})
+
         ctx_ssl = ssl.create_default_context(); ctx_ssl.check_hostname = False; ctx_ssl.verify_mode = ssl.CERT_NONE
         payload = json.dumps({
             "model": "claude-sonnet-4-20250514",
             "max_tokens": 4000,
             "system": system_prompt,
-            "messages": [{"role": "user", "content": question}]
+            "messages": [{"role": "user", "content": user_content}]
         }).encode()
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
             headers={
@@ -4123,12 +4195,37 @@ async def chat_project_stream(slug: str, request: ChatRequest, user=Depends(requ
         ctx_ssl.check_hostname = False
         ctx_ssl.verify_mode = ssl.CERT_NONE
 
+        # Build message content with attachments
+        attachments = request.attachments or []
+        user_content = []
+        doc_context = ""
+
+        for att in attachments:
+            if att.get("type") == "image" and att.get("image_base64"):
+                user_content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": att.get("media_type", "image/png"),
+                        "data": att["image_base64"]
+                    }
+                })
+            elif att.get("type") == "document" and att.get("content_text"):
+                doc_context += f"\n\n--- DOKUMENT: {att.get('name', 'Datei')} ---\n{att['content_text'][:30000]}\n--- ENDE DOKUMENT ---\n"
+
+        # Add document text to question
+        full_question = question
+        if doc_context:
+            full_question = f"{question}\n\nHochgeladene Dokumente:{doc_context}"
+
+        user_content.append({"type": "text", "text": full_question})
+
         payload = json.dumps({
             "model": "claude-sonnet-4-20250514",
             "max_tokens": 4000,
             "stream": True,
             "system": system_prompt,
-            "messages": [{"role": "user", "content": question}]
+            "messages": [{"role": "user", "content": user_content}]
         }).encode()
 
         full_text = []
