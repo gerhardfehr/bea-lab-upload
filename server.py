@@ -3067,16 +3067,147 @@ class ChatRequest(BaseModel):
 
 
 # ── Chat File Upload: Extract text / prepare image for Claude Vision ──
+# If PDF is a scientific paper → runs full paper pipeline (KB + GitHub + Embedding)
+
+def detect_scientific_paper(text: str, filename: str = "") -> dict:
+    """Heuristic detection: Is this text from a scientific paper?
+    Returns {is_paper: bool, confidence: float, signals: [str]}"""
+    if not text or len(text) < 500:
+        return {"is_paper": False, "confidence": 0, "signals": []}
+
+    text_lower = text[:8000].lower()
+    signals = []
+
+    # Strong signals (2 points each)
+    strong = {
+        "abstract": ["abstract\n", "abstract:", "abstract ", "\nabstract"],
+        "references": ["references\n", "\nreferences", "bibliography\n"],
+        "doi": ["doi:", "doi.org/", "https://doi"],
+        "journal": ["journal of ", "proceedings of ", "conference on "],
+        "peer_review": ["peer-review", "submitted to", "accepted for publication"],
+    }
+    # Medium signals (1 point each)
+    medium = {
+        "et_al": ["et al.", "et al,", "et al "],
+        "methodology": ["methodology", "research method", "empirical study", "empirische studie"],
+        "hypothesis": ["hypothesis", "hypothes", "h1:", "h2:", "hypothese"],
+        "findings": ["findings", "results show", "ergebnisse zeigen"],
+        "literature": ["literature review", "related work", "prior research", "literaturüberblick"],
+        "academic_style": ["(20", "(19", "pp.", "vol.", "no.", "p. "],
+        "keywords": ["keywords:", "key words:", "schlüsselwörter"],
+        "acknowledgments": ["acknowledgment", "acknowledgement", "danksagung"],
+        "author_affil": ["university", "universität", "institute", "institut", "department"],
+        "statistical": ["p < ", "p=0.", "n = ", "sd = ", "significant", "regression", "correlation"],
+    }
+
+    score = 0
+    for name, patterns in strong.items():
+        if any(p in text_lower for p in patterns):
+            signals.append(name)
+            score += 2
+    for name, patterns in medium.items():
+        if any(p in text_lower for p in patterns):
+            signals.append(name)
+            score += 1
+
+    # Filename hints
+    fn = filename.lower()
+    if any(w in fn for w in ["paper", "manuscript", "journal", "study", "research", "review", "working_paper"]):
+        signals.append("filename_hint")
+        score += 1
+
+    # Decision: score >= 5 = paper, 3-4 = maybe
+    is_paper = score >= 5
+    confidence = min(score / 10.0, 1.0)
+
+    return {"is_paper": is_paper, "confidence": round(confidence, 2), "signals": signals, "score": score}
+
+
+def run_paper_pipeline(filename: str, content_bytes: bytes, text_content: str, user_email: str) -> dict:
+    """Full paper pipeline: Hash check → DB → GitHub papers/ → Embedding.
+    Returns {ok, doc_id, github_url, duplicate, title}"""
+    content_hash = hashlib.sha256(content_bytes).hexdigest()
+    db = get_db()
+    try:
+        # 1. Duplicate check
+        existing = db.query(Document).filter(Document.content_hash == content_hash).first()
+        if existing:
+            return {
+                "ok": True, "duplicate": True,
+                "doc_id": existing.id, "title": existing.title,
+                "github_url": existing.github_url,
+                "message": f"Paper bereits in KB: \"{existing.title}\" ({existing.created_at.strftime('%d.%m.%Y')})"
+            }
+
+        # 2. Save file locally
+        ext = filename.split(".")[-1].lower() if filename else "pdf"
+        file_id = str(uuid.uuid4())
+        file_path = UPLOAD_DIR / f"{file_id}.{ext}"
+        with open(file_path, "wb") as f:
+            f.write(content_bytes)
+
+        # 3. Push to GitHub papers/evaluated/integrated/
+        gh_result = push_to_github(filename, content_bytes)
+        github_url = gh_result.get("url", None)
+        gh_status = "indexed+github" if github_url else "indexed"
+
+        # 4. Store in Knowledge Base (PostgreSQL)
+        doc = Document(
+            id=file_id,
+            title=filename or "Unnamed Paper",
+            content=text_content,
+            source_type="file",
+            file_type=ext,
+            file_path=str(file_path),
+            file_size=len(content_bytes),
+            database_target="knowledge_base",
+            status=gh_status,
+            github_url=github_url,
+            uploaded_by=user_email,
+            content_hash=content_hash,
+            doc_metadata={
+                "original_filename": filename,
+                "content_length": len(text_content),
+                "github": gh_result,
+                "upload_source": "chat",
+                "auto_detected": True
+            }
+        )
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+
+        # 5. Vector Embedding
+        try:
+            embed_document(db, doc.id)
+        except Exception as e:
+            logger.warning(f"Paper embedding failed: {e}")
+
+        logger.info(f"Paper pipeline complete: {filename} → KB:{doc.id} GH:{github_url}")
+        return {
+            "ok": True, "duplicate": False,
+            "doc_id": doc.id, "title": filename,
+            "github_url": github_url, "gh_status": gh_status,
+            "message": f"Paper \"{filename}\" in KB + GitHub gespeichert"
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Paper pipeline error: {e}")
+        return {"ok": False, "error": str(e), "message": f"Paper-Pipeline Fehler: {e}"}
+    finally:
+        db.close()
+
+
 @app.post("/api/chat/upload")
 async def chat_upload(file: UploadFile = File(...), user=Depends(require_auth)):
-    """Upload a file for chat context. Returns extracted text or base64 image."""
+    """Upload a file for chat context. PDFs are auto-detected as papers → full pipeline."""
     ext = (file.filename.split(".")[-1].lower() if file.filename else "").strip()
     content_bytes = await file.read()
 
-    if len(content_bytes) > 20 * 1024 * 1024:  # 20MB limit for chat
+    if len(content_bytes) > 20 * 1024 * 1024:
         raise HTTPException(400, "Datei zu gross (max 20 MB für Chat)")
 
-    # Image types → base64 for Claude Vision
     image_types = {"png", "jpg", "jpeg", "gif", "webp"}
     doc_types = {"pdf", "txt", "md", "csv", "json", "docx"}
 
@@ -3101,17 +3232,43 @@ async def chat_upload(file: UploadFile = File(...), user=Depends(require_auth)):
             os.remove(temp_path)
         except:
             pass
-        # Truncate if too long
-        if len(text) > 50000:
-            text = text[:50000] + f"\n\n[... gekürzt, {len(text)} Zeichen total]"
-        return {
+
+        # ── PDF Paper Detection ──
+        paper_result = None
+        if ext == "pdf":
+            detection = detect_scientific_paper(text, file.filename)
+            logger.info(f"Paper detection for '{file.filename}': score={detection['score']}, signals={detection['signals']}")
+
+            if detection["is_paper"]:
+                # Run full paper pipeline!
+                paper_result = run_paper_pipeline(
+                    file.filename, content_bytes, text,
+                    user.get("sub", user.get("email", ""))
+                )
+                logger.info(f"Paper pipeline result: {paper_result}")
+
+        # Truncate for chat context
+        text_for_chat = text
+        if len(text_for_chat) > 50000:
+            text_for_chat = text_for_chat[:50000] + f"\n\n[... gekürzt, {len(text)} Zeichen total]"
+
+        result = {
             "ok": True,
             "type": "document",
             "name": file.filename,
-            "content_text": text,
+            "content_text": text_for_chat,
             "size": len(content_bytes),
             "chars": len(text)
         }
+
+        # Add paper info if detected
+        if paper_result:
+            result["paper_detected"] = True
+            result["paper"] = paper_result
+        elif ext == "pdf":
+            result["paper_detected"] = False
+
+        return result
     else:
         raise HTTPException(400, f"Dateityp .{ext} nicht unterstützt. Erlaubt: {', '.join(sorted(image_types | doc_types))}")
 
@@ -3741,6 +3898,29 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
 
 {question}"""
 
+    # Build message content with attachments
+    attachments = request.attachments or []
+    user_content = []
+    doc_context = ""
+
+    for att in attachments:
+        if att.get("type") == "image" and att.get("image_base64"):
+            user_content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": att.get("media_type", "image/png"),
+                    "data": att["image_base64"]
+                }
+            })
+        elif att.get("type") == "document" and att.get("content_text"):
+            doc_context += f"\n\n--- DOKUMENT: {att.get('name', 'Datei')} ---\n{att['content_text'][:30000]}\n--- ENDE DOKUMENT ---\n"
+
+    if doc_context:
+        user_message += f"\n\nHochgeladene Dokumente:{doc_context}"
+
+    user_content.append({"type": "text", "text": user_message})
+
     async def event_generator():
         """Generator that streams Claude API response as SSE events."""
         ctx = ssl.create_default_context()
@@ -3752,7 +3932,7 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
             "max_tokens": 4000,
             "stream": True,
             "system": system_prompt,
-            "messages": [{"role": "user", "content": user_message}]
+            "messages": [{"role": "user", "content": user_content}]
         }).encode()
 
         full_text = []
