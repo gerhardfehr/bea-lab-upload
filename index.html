@@ -413,7 +413,7 @@
         .nav-hamburger { display:none; width:36px; height:36px; align-items:center; justify-content:center; background:none; border:1px solid var(--border); border-radius:8px; cursor:pointer; color:var(--text-secondary); transition:var(--transition); }
         .nav-hamburger:hover { border-color:var(--border-light); color:var(--white); }
         .nav-hamburger svg { width:18px; height:18px; }
-        @media (max-width:768px) { .mb-choices { grid-template-columns:1fr; } .mb-mode-cards { grid-template-columns:1fr 1fr; } }
+        @media (max-width:768px) { .mb-choices { grid-template-columns:1fr; } .mb-mode-cards { grid-template-columns:1fr 1fr; } #brfTypeCards { grid-template-columns:1fr 1fr !important; } #brfStep2Content .mb-choice { padding:8px 10px !important; } #caConfirmContent > div:first-child { grid-template-columns:1fr !important; } }
         @media (max-width:768px) { .profile-grid { grid-template-columns:1fr; } .profile-row { grid-template-columns:1fr; } }
         @media (max-width:640px) {
             .nav { padding:0 10px; flex-wrap:wrap; height:auto; min-height:48px; }
@@ -1636,45 +1636,78 @@
         <div class="container">
             <div class="section-header">
                 <h2>Briefing</h2>
-                <p>Starte mit dem, was du hast — BEATRIX sortiert und leitet weiter.</p>
+                <p>Starte mit dem, was du hast — BEATRIX holt dich ab und leitet dich weiter.</p>
             </div>
-            <div style="max-width:720px;margin:0 auto">
-                <div style="padding:32px;background:var(--navy-card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:24px">
-                    <div style="font-size:15px;font-weight:600;color:var(--white);margin-bottom:16px">Was ist dein Ausgangspunkt?</div>
-                    <textarea class="mb-input mb-textarea" id="briefingInput" placeholder="Beschreibe frei, was du hast: eine Frage, einen Kunden, ein Ziel, eine Beobachtung, ein Produkt, einen Vergleich..." style="min-height:120px;width:100%;box-sizing:border-box;font-size:14px;line-height:1.6"></textarea>
-                    <div style="margin-top:14px;display:flex;gap:10px">
-                        <button class="mb-btn mb-btn-primary" onclick="briefingAnalyze()">🧠 BEATRIX, sortiere das →</button>
+            <div style="max-width:800px;margin:0 auto">
+
+                <!-- STEP 1: Entry Type Selection -->
+                <div id="brfStep1">
+                    <div style="font-size:16px;font-weight:600;color:var(--white);margin-bottom:6px;text-align:center">Womit startest du?</div>
+                    <div style="font-size:13px;color:var(--text-muted);margin-bottom:24px;text-align:center">Wähle deinen Ausgangspunkt — BEATRIX führt dich von dort aus weiter.</div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px" id="brfTypeCards">
+                        <div class="mb-choice" style="padding:20px 16px;text-align:center;cursor:pointer" onclick="brfSelectType('frage')">
+                            <div style="font-size:32px;margin-bottom:10px">🔍</div>
+                            <div style="font-size:14px;font-weight:600;color:var(--white);margin-bottom:6px">Eine Frage</div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Warum tun oder lassen Menschen etwas? Ein Verhalten, das ich verstehen will.</div>
+                        </div>
+                        <div class="mb-choice" style="padding:20px 16px;text-align:center;cursor:pointer" onclick="brfSelectType('kunde')">
+                            <div style="font-size:32px;margin-bottom:10px">🏢</div>
+                            <div style="font-size:14px;font-weight:600;color:var(--white);margin-bottom:6px">Ein Kunde</div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Eine Organisation kommt mit einem Anliegen. Ich kenne den Kunden.</div>
+                        </div>
+                        <div class="mb-choice" style="padding:20px 16px;text-align:center;cursor:pointer" onclick="brfSelectType('ziel')">
+                            <div style="font-size:32px;margin-bottom:10px">🎯</div>
+                            <div style="font-size:14px;font-weight:600;color:var(--white);margin-bottom:6px">Ein Ziel</div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">So soll es in Zukunft aussehen. Ein Soll-Zustand oder eine Ambition.</div>
+                        </div>
+                        <div class="mb-choice" style="padding:20px 16px;text-align:center;cursor:pointer" onclick="brfSelectType('loesung')">
+                            <div style="font-size:32px;margin-bottom:10px">🛠️</div>
+                            <div style="font-size:14px;font-weight:600;color:var(--white);margin-bottom:6px">Eine Lösung</div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Wir haben ein Produkt, eine Massnahme oder eine Intervention — wird sie wirken?</div>
+                        </div>
+                        <div class="mb-choice" style="padding:20px 16px;text-align:center;cursor:pointer" onclick="brfSelectType('daten')">
+                            <div style="font-size:32px;margin-bottom:10px">📊</div>
+                            <div style="font-size:14px;font-weight:600;color:var(--white);margin-bottom:6px">Eine Beobachtung</div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Die Zahlen zeigen etwas Unerwartetes. Ein Gap, ein Trend, eine Anomalie.</div>
+                        </div>
+                        <div class="mb-choice" style="padding:20px 16px;text-align:center;cursor:pointer" onclick="brfSelectType('sorge')">
+                            <div style="font-size:32px;margin-bottom:10px">🚫</div>
+                            <div style="font-size:14px;font-weight:600;color:var(--white);margin-bottom:6px">Eine Sorge</div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Das darf auf keinen Fall passieren. Ein Risiko, das ich vermeiden will.</div>
+                        </div>
                     </div>
                 </div>
-                <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Beispiele:</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" id="briefingExamples">
-                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
-                        <div style="font-size:14px;margin-bottom:4px">🔍</div>
-                        <div style="font-size:12px;color:var(--white);line-height:1.4">"Warum wechseln Schweizer Bankkunden so selten?"</div>
+
+                <!-- STEP 2: Type-specific detail -->
+                <div id="brfStep2" style="display:none">
+                    <button class="mb-btn mb-btn-back" onclick="brfBack()" style="margin-bottom:16px">← Zurück</button>
+                    <div id="brfStep2Header" style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+                        <span id="brfStep2Icon" style="font-size:32px"></span>
+                        <div>
+                            <div id="brfStep2Title" style="font-size:16px;font-weight:700;color:var(--white)"></div>
+                            <div id="brfStep2Subtitle" style="font-size:13px;color:var(--text-muted)"></div>
+                        </div>
                     </div>
-                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
-                        <div style="font-size:14px;margin-bottom:4px">🏢</div>
-                        <div style="font-size:12px;color:var(--white);line-height:1.4">"UBS Private Banking, junge Erben als Zielgruppe"</div>
-                    </div>
-                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
-                        <div style="font-size:14px;margin-bottom:4px">🎯</div>
-                        <div style="font-size:12px;color:var(--white);line-height:1.4">"In 3 Jahren 40% Self-Service-Quote erreichen"</div>
-                    </div>
-                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
-                        <div style="font-size:14px;margin-bottom:4px">🛠️</div>
-                        <div style="font-size:12px;color:var(--white);line-height:1.4">"Wir launchen eine Vorsorge-App für Millennials"</div>
-                    </div>
-                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
-                        <div style="font-size:14px;margin-bottom:4px">📊</div>
-                        <div style="font-size:12px;color:var(--white);line-height:1.4">"Conversion von 2%, Branchenschnitt ist 8%"</div>
-                    </div>
-                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
-                        <div style="font-size:14px;margin-bottom:4px">🚫</div>
-                        <div style="font-size:12px;color:var(--white);line-height:1.4">"Auf keinen Fall darf die NPS unter 40 sinken"</div>
+
+                    <!-- Dynamic content per type -->
+                    <div id="brfStep2Content"></div>
+
+                    <!-- Common: describe more -->
+                    <div style="margin-top:20px;padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:8px" id="brfDetailLabel">Beschreibe es genauer</div>
+                        <textarea class="mb-input mb-textarea" id="brfDetailInput" style="min-height:80px;width:100%;box-sizing:border-box;font-size:14px;line-height:1.6"></textarea>
+                        <div style="margin-top:12px">
+                            <button class="mb-btn mb-btn-primary" onclick="brfAnalyze()" id="brfAnalyzeBtn">🧠 BEATRIX, analysiere das →</button>
+                        </div>
                     </div>
                 </div>
-                <!-- Briefing result -->
-                <div id="briefingResult" style="display:none;margin-top:24px"></div>
+
+                <!-- STEP 3: AI Result + Routing -->
+                <div id="brfStep3" style="display:none">
+                    <button class="mb-btn mb-btn-back" onclick="brfBackTo2()" style="margin-bottom:16px">← Zurück</button>
+                    <div id="briefingResult"></div>
+                </div>
             </div>
         </div>
     </section>
@@ -3047,62 +3080,242 @@
             });
         }
 
-        // ═══ BRIEFING FUNCTIONS ═══
-        function briefingFill(el) {
-            const text = el.querySelector('div:last-child')?.textContent?.replace(/^"|"$/g, '').trim();
-            if (text) document.getElementById('briefingInput').value = text;
+        // ═══ BRIEFING FUNCTIONS — Choice Architecture ═══
+        const brfState = { type: null, subChoice: null };
+
+        const BRF_TYPES = {
+            frage: {
+                icon: '🔍', title: 'Du hast eine Frage',
+                subtitle: 'Etwas an einem Verhalten gibt dir zu denken.',
+                label: 'Was genau willst du verstehen?',
+                placeholder: 'z.B. "Warum wechseln Kunden so selten den Anbieter?" oder "Wieso nutzen nur 3% den Self-Service?"',
+                quickPicks: [
+                    { icon: '🔄', text: 'Warum tun Menschen etwas nicht, obwohl es in ihrem Interesse wäre?' },
+                    { icon: '⚡', text: 'Warum handeln Menschen gegen ihre eigenen Absichten?' },
+                    { icon: '📉', text: 'Warum ist eine Kennzahl so tief/hoch — was steckt dahinter?' },
+                    { icon: '🤷', text: 'Warum funktioniert etwas in einem Kontext, aber nicht in einem anderen?' }
+                ]
+            },
+            kunde: {
+                icon: '🏢', title: 'Du hast einen Kunden',
+                subtitle: 'Eine Organisation kommt mit einem Anliegen.',
+                label: 'Um welchen Kunden geht es — und was ist das Thema?',
+                placeholder: 'z.B. "UBS Private Banking — junge Erben wechseln nicht in die Vermögensverwaltung"',
+                quickPicks: [
+                    { icon: '🏦', text: 'Eine Bank will die Kundenaktivierung verbessern' },
+                    { icon: '🏥', text: 'Eine Versicherung will Prävention fördern' },
+                    { icon: '🏛️', text: 'Eine Behörde will Compliance erhöhen' },
+                    { icon: '⚡', text: 'Ein Energieversorger will Wechselverhalten verstehen' }
+                ],
+                showCrm: true
+            },
+            ziel: {
+                icon: '🎯', title: 'Du hast ein Ziel',
+                subtitle: 'Ein Soll-Zustand, eine Ambition, eine Vision.',
+                label: 'Was soll in Zukunft anders sein?',
+                placeholder: 'z.B. "In 3 Jahren sollen 40% der Kunden den Self-Service nutzen" oder "NPS von 34 auf 55"',
+                quickPicks: [
+                    { icon: '📈', text: 'Eine Kennzahl soll sich verbessern (KPI, Conversion, NPS...)' },
+                    { icon: '🔄', text: 'Ein Verhalten soll sich ändern (mehr, weniger, anders...)' },
+                    { icon: '🌱', text: 'Ein neues Verhalten soll entstehen (Adoption, Gewohnheit...)' },
+                    { icon: '🏔️', text: 'Eine Transformation: "So soll es in 5 Jahren aussehen"' }
+                ]
+            },
+            loesung: {
+                icon: '🛠️', title: 'Du hast eine Lösung',
+                subtitle: 'Ein Produkt, eine Massnahme, eine Intervention — wird sie wirken?',
+                label: 'Was ist die Lösung und für wen?',
+                placeholder: 'z.B. "Wir launchen eine Vorsorge-App für Millennials" oder "Wir ändern den Default bei der Organspende"',
+                quickPicks: [
+                    { icon: '📱', text: 'Wir launchen ein digitales Produkt (App, Portal, Tool...)' },
+                    { icon: '📝', text: 'Wir ändern einen Prozess (Onboarding, Beratung, Antrag...)' },
+                    { icon: '💬', text: 'Wir ändern die Kommunikation (Brief, E-Mail, Kampagne...)' },
+                    { icon: '⚙️', text: 'Wir ändern die Entscheidungsarchitektur (Default, Framing, Timing...)' }
+                ]
+            },
+            daten: {
+                icon: '📊', title: 'Du hast eine Beobachtung',
+                subtitle: 'Die Zahlen zeigen etwas — aber was bedeutet es?',
+                label: 'Was zeigen die Daten?',
+                placeholder: 'z.B. "Conversion nur 2%, Branchenschnitt ist 8%" oder "80% öffnen die App, aber nur 5% schliessen den Prozess ab"',
+                quickPicks: [
+                    { icon: '📉', text: 'Ein Gap: Unsere Zahl ist viel schlechter als der Benchmark' },
+                    { icon: '🔻', text: 'Ein Drop-off: Viele starten, wenige schliessen ab' },
+                    { icon: '🤔', text: 'Eine Anomalie: Das Verhalten ist anders als erwartet' },
+                    { icon: '📊', text: 'Ein Vergleich: Zwei Gruppen/Märkte verhalten sich unterschiedlich' }
+                ]
+            },
+            sorge: {
+                icon: '🚫', title: 'Du hast eine Sorge',
+                subtitle: 'Etwas darf auf keinen Fall passieren.',
+                label: 'Was willst du vermeiden — und warum?',
+                placeholder: 'z.B. "Die NPS darf nicht unter 40 fallen" oder "Kein Vertrauensverlust bei der Digitalisierung"',
+                quickPicks: [
+                    { icon: '📉', text: 'Eine Kennzahl darf nicht sinken (NPS, Kundenbindung, Vertrauen...)' },
+                    { icon: '💔', text: 'Kunden dürfen nicht abwandern bei einer Veränderung' },
+                    { icon: '😤', text: 'Eine Massnahme darf keinen Backlash erzeugen' },
+                    { icon: '⚠️', text: 'Ein Reputationsrisiko muss vermieden werden' }
+                ]
+            }
+        };
+
+        function brfSelectType(type) {
+            brfState.type = type;
+            const cfg = BRF_TYPES[type];
+            if (!cfg) return;
+
+            // Mark selected card
+            document.querySelectorAll('#brfTypeCards .mb-choice').forEach(c => c.classList.remove('selected'));
+            event.currentTarget.classList.add('selected');
+
+            // Fill Step 2
+            document.getElementById('brfStep2Icon').textContent = cfg.icon;
+            document.getElementById('brfStep2Title').textContent = cfg.title;
+            document.getElementById('brfStep2Subtitle').textContent = cfg.subtitle;
+            document.getElementById('brfDetailLabel').textContent = cfg.label;
+            document.getElementById('brfDetailInput').placeholder = cfg.placeholder;
+            document.getElementById('brfDetailInput').value = '';
+
+            // Build quick picks
+            let html = '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Typische Ausgangspunkte — klicke zum Übernehmen:</div>';
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+            (cfg.quickPicks || []).forEach(qp => {
+                html += `<div class="mb-choice" style="padding:10px 12px;cursor:pointer;text-align:left" onclick="brfQuickPick(this)">
+                    <div style="display:flex;align-items:flex-start;gap:8px">
+                        <span style="font-size:16px;flex-shrink:0">${qp.icon}</span>
+                        <span style="font-size:12px;color:var(--white);line-height:1.5">${qp.text}</span>
+                    </div>
+                </div>`;
+            });
+            html += '</div>';
+
+            // CRM search for 'kunde' type
+            if (cfg.showCrm && crmCompaniesData && crmCompaniesData.length > 0) {
+                html += `<div style="margin-top:16px;padding:14px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                    <div style="font-size:12px;font-weight:600;color:var(--white);margin-bottom:8px">🔎 Kunde im CRM suchen</div>
+                    <input class="mb-input" id="brfCrmSearch" oninput="brfSearchCrm()" placeholder="Name oder Code eingeben..." style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px">
+                    <div id="brfCrmResults" style="max-height:160px;overflow-y:auto;margin-top:8px"></div>
+                </div>`;
+            }
+
+            document.getElementById('brfStep2Content').innerHTML = html;
+
+            // Transition
+            document.getElementById('brfStep1').style.display = 'none';
+            document.getElementById('brfStep2').style.display = 'block';
+            document.getElementById('brfStep3').style.display = 'none';
         }
 
-        async function briefingAnalyze() {
-            const input = document.getElementById('briefingInput').value.trim();
-            if (!input) { showToast('Bitte beschreibe deinen Ausgangspunkt', 'error'); return; }
+        function brfQuickPick(el) {
+            const text = el.querySelector('span:last-child')?.textContent?.trim();
+            if (text) document.getElementById('brfDetailInput').value = text;
+            // Deselect others, select this
+            el.parentElement.querySelectorAll('.mb-choice').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+        }
 
+        function brfSearchCrm() {
+            const q = (document.getElementById('brfCrmSearch')?.value || '').toLowerCase().trim();
+            const container = document.getElementById('brfCrmResults');
+            if (!q || q.length < 2) { container.innerHTML = ''; return; }
+            const matches = (crmCompaniesData || []).filter(c =>
+                (c.name||'').toLowerCase().includes(q) ||
+                (c.code||'').toLowerCase().includes(q) ||
+                (c.children||[]).some(ch => (ch.name||'').toLowerCase().includes(q))
+            ).slice(0, 6);
+            container.innerHTML = matches.map(c => `
+                <div style="padding:8px 10px;cursor:pointer;border-radius:6px;font-size:13px;color:var(--white);display:flex;align-items:center;gap:8px" 
+                     onmouseover="this.style.background='rgba(255,255,255,0.06)'" onmouseout="this.style.background=''" 
+                     onclick="brfPickCrm('${c.code}','${(c.name||'').replace(/'/g,"\\'")}')">
+                    <span style="font-size:16px">🏢</span>
+                    <div><div style="font-weight:600">${c.name}</div><div style="font-size:11px;color:var(--text-muted)">${c.code} · ${c.industry || ''}</div></div>
+                </div>
+            `).join('');
+        }
+
+        function brfPickCrm(code, name) {
+            brfState.crmCode = code;
+            brfState.crmName = name;
+            const input = document.getElementById('brfDetailInput');
+            const current = input.value.trim();
+            input.value = current ? `${name} — ${current}` : name;
+            document.getElementById('brfCrmResults').innerHTML = `<div style="padding:6px 10px;font-size:12px;color:#10b981">✓ ${name} (${code}) ausgewählt</div>`;
+        }
+
+        function brfBack() {
+            document.getElementById('brfStep1').style.display = 'block';
+            document.getElementById('brfStep2').style.display = 'none';
+            document.getElementById('brfStep3').style.display = 'none';
+        }
+
+        function brfBackTo2() {
+            document.getElementById('brfStep2').style.display = 'block';
+            document.getElementById('brfStep3').style.display = 'none';
+        }
+
+        function briefingFill(el) {
+            // Legacy compat
+            const text = el.querySelector('div:last-child')?.textContent?.replace(/^"|"$/g, '').trim();
+            if (text) document.getElementById('brfDetailInput').value = text;
+        }
+
+        async function brfAnalyze() {
+            const input = document.getElementById('brfDetailInput').value.trim();
+            if (!input) { showToast('Bitte beschreibe deinen Ausgangspunkt genauer', 'error'); return; }
+
+            // Show step 3 with loading
+            document.getElementById('brfStep2').style.display = 'none';
+            document.getElementById('brfStep3').style.display = 'block';
             const resultDiv = document.getElementById('briefingResult');
-            resultDiv.style.display = 'block';
-            resultDiv.innerHTML = `<div style="text-align:center;padding:30px"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:13px;color:rgba(255,255,255,0.5)">BEATRIX analysiert deinen Ausgangspunkt...</div></div>`;
+            resultDiv.innerHTML = `<div style="text-align:center;padding:30px"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:13px;color:rgba(255,255,255,0.5)">BEATRIX analysiert dein Briefing...</div></div>`;
 
-            const prompt = `Analysiere diesen Briefing-Input und identifiziere, was vorhanden ist und was fehlt.
+            const typeLabel = BRF_TYPES[brfState.type]?.title || brfState.type;
 
+            const prompt = `Analysiere dieses Briefing und erstelle eine strukturierte Einschätzung.
+
+Typ: ${brfState.type} (${typeLabel})
 Input: "${input}"
+${brfState.crmCode ? `CRM-Kunde: ${brfState.crmName} (${brfState.crmCode})` : ''}
 
 Antworte NUR als valides JSON:
 {
-  "typ": "frage|kunde|zielgruppe|verhalten|ziel|anti_ziel|loesung|vergleich|kontext|daten",
-  "typ_label": "Beschreibung des erkannten Typs",
+  "zusammenfassung": "2-3 Sätze: Was habe ich verstanden? Was ist der Kern des Anliegens?",
   "erkannt": {
     "land": "Erkanntes Land oder null",
     "branche": "Erkannte Branche oder null",
     "organisation": "Erkannte Organisation oder null",
-    "perspektive": "Erkannte Perspektive oder null",
-    "verhalten": "Erkanntes Verhalten oder null",
-    "ziel": "Erkanntes Ziel oder null"
+    "perspektive": "Kunden / Mitarbeitende / Management / null",
+    "verhalten": "Beschriebenes Verhalten oder null",
+    "ziel": "Genanntes Ziel oder null",
+    "kennzahlen": "Genannte Zahlen/KPIs oder null"
   },
-  "zusammenfassung": "2-3 Sätze: Was habe ich verstanden? Was ist der Kern?",
-  "empfehlung": "kontext|segmente|journey|nutzen|architektur|model|audit|wirkung|evidenz",
-  "empfehlung_label": "Name des empfohlenen nächsten Schritts",
-  "empfehlung_grund": "1 Satz warum dieser Schritt als nächstes sinnvoll ist",
-  "offene_fragen": ["Was fehlt noch?", "Was sollte BEATRIX noch wissen?"],
-  "alternative_pfade": [
-    { "section": "kontext|segmente|...", "label": "Name", "grund": "Warum auch sinnvoll" },
-    { "section": "...", "label": "...", "grund": "..." }
-  ]
+  "empfehlung": {
+    "section": "context|segmente|journey|nutzen|architektur|model|audit|wirkung|evidenz",
+    "label": "Name des empfohlenen nächsten Schritts",
+    "grund": "2 Sätze: Warum ist das der richtige nächste Schritt?",
+    "frage_fuer_analyse": "Die Kernfrage, die an die Analyse übergeben wird — klar formuliert"
+  },
+  "alternativen": [
+    { "section": "...", "label": "...", "grund": "1 Satz warum auch sinnvoll" },
+    { "section": "...", "label": "...", "grund": "1 Satz" }
+  ],
+  "offene_fragen": ["Was BEATRIX noch wissen müsste, um besser zu helfen", "Max 3 Fragen"]
 }`;
 
             try {
                 const resp = await fetch(`${API}/chat`, {
                     method: 'POST',
                     headers: { ...H(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question: prompt, system_prompt: 'Du bist BEATRIX Briefing-Analyst. Antworte NUR als valides JSON. Kein Markdown.' })
+                    body: JSON.stringify({ question: prompt, system_prompt: 'Du bist BEATRIX Briefing-Analyst bei FehrAdvice & Partners. Antworte NUR als valides JSON. Kein Markdown.' })
                 });
                 const data = await resp.json();
                 const text = (data.response || data.answer || '').replace(/```json|```/g, '').trim();
                 const result = JSON.parse(text);
-                briefingRender(result, input);
+                brfRenderResult(result, input);
             } catch (e) {
                 console.error('Briefing parse error:', e);
                 resultDiv.innerHTML = `<div style="padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:var(--radius)">
-                    <div style="font-size:14px;color:var(--white);margin-bottom:12px">Ich konnte den Ausgangspunkt nicht automatisch einordnen.</div>
-                    <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Starte direkt mit einer Analyse:</div>
+                    <div style="font-size:14px;color:var(--white);margin-bottom:12px">Automatische Einordnung nicht möglich — starte direkt:</div>
                     <div style="display:flex;flex-wrap:wrap;gap:8px">
                         <button class="mb-btn mb-btn-primary" onclick="briefingGoTo('context','${encodeURIComponent(input)}')">🔬 Kontext-Analyse</button>
                         <button class="mb-btn" onclick="briefingGoTo('chat','${encodeURIComponent(input)}')">💬 Im Chat besprechen</button>
@@ -3111,50 +3324,56 @@ Antworte NUR als valides JSON:
             }
         }
 
-        function briefingRender(r, originalInput) {
+        // Keep old briefingAnalyze as alias
+        async function briefingAnalyze() { await brfAnalyze(); }
+
+        function brfRenderResult(r, originalInput) {
             const resultDiv = document.getElementById('briefingResult');
-            const typIcons = { frage:'🔍', kunde:'🏢', zielgruppe:'👥', verhalten:'📊', ziel:'🎯', anti_ziel:'🚫', loesung:'🛠️', vergleich:'🔄', kontext:'🌍', daten:'📈' };
             const sectionIcons = { context:'🔬', segmente:'👥', journey:'🗺️', nutzen:'💎', architektur:'⚖️', model:'🏗️', audit:'📊', wirkung:'📈', evidenz:'🧪' };
 
-            // Erkannte Felder
+            // Erkannte Felder als Pills
             const erkannt = r.erkannt || {};
-            const erkanntHtml = Object.entries(erkannt)
-                .filter(([k,v]) => v && v !== 'null')
-                .map(([k,v]) => `<span style="display:inline-block;padding:4px 10px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;font-size:12px;color:#10b981">✓ ${v}</span>`)
+            const erkanntPills = Object.entries(erkannt)
+                .filter(([k,v]) => v && v !== 'null' && v !== null)
+                .map(([k,v]) => `<span style="display:inline-block;padding:5px 12px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:14px;font-size:12px;color:#10b981;font-weight:500">✓ ${v}</span>`)
                 .join(' ');
 
-            const offenHtml = (r.offene_fragen || [])
-                .map(q => `<div style="padding:6px 0;font-size:13px;color:var(--text-muted)">→ ${q}</div>`)
+            // Offene Fragen
+            const offenHtml = (r.offene_fragen || []).filter(q => q)
+                .map(q => `<div style="padding:5px 0;font-size:13px;color:rgba(255,255,255,0.7)">❓ ${q}</div>`)
                 .join('');
 
-            const altHtml = (r.alternative_pfade || [])
-                .map(a => `<button class="mb-btn" style="font-size:12px;padding:6px 12px" onclick="briefingGoTo('${a.section}','${encodeURIComponent(originalInput)}')">${sectionIcons[a.section]||'📌'} ${a.label}</button>`)
+            // Alternativen
+            const altHtml = (r.alternativen || [])
+                .map(a => `<button class="mb-btn" style="font-size:12px;padding:8px 14px" onclick="briefingGoTo('${a.section}','${encodeURIComponent(r.empfehlung?.frage_fuer_analyse || originalInput)}')">${sectionIcons[a.section]||'📌'} ${a.label}<span style="display:block;font-size:10px;color:var(--text-muted);font-weight:400;margin-top:2px">${a.grund}</span></button>`)
                 .join(' ');
+
+            const emp = r.empfehlung || {};
 
             resultDiv.innerHTML = `
                 <div style="padding:24px;background:var(--navy-card);border:1px solid var(--border);border-radius:var(--radius)">
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-                        <span style="font-size:28px">${typIcons[r.typ] || '📋'}</span>
-                        <div>
-                            <div style="font-size:15px;font-weight:700;color:var(--white)">${r.typ_label || 'Briefing erkannt'}</div>
-                            <div style="font-size:12px;color:var(--text-muted)">Typ: ${r.typ || 'unbekannt'}</div>
-                        </div>
+                    <!-- Zusammenfassung -->
+                    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:20px">
+                        <span style="font-size:28px">${BRF_TYPES[brfState.type]?.icon || '📋'}</span>
+                        <div style="font-size:14px;color:rgba(255,255,255,0.88);line-height:1.75">${r.zusammenfassung || ''}</div>
                     </div>
 
-                    <div style="font-size:14px;color:rgba(255,255,255,0.85);line-height:1.7;margin-bottom:16px">${r.zusammenfassung || ''}</div>
+                    <!-- Erkannt -->
+                    ${erkanntPills ? `<div style="margin-bottom:18px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.8px;margin-bottom:8px">Erkannt</div><div style="display:flex;flex-wrap:wrap;gap:6px">${erkanntPills}</div></div>` : ''}
 
-                    ${erkanntHtml ? `<div style="margin-bottom:16px"><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:8px">Erkannt</div><div style="display:flex;flex-wrap:wrap;gap:6px">${erkanntHtml}</div></div>` : ''}
+                    <!-- Offene Fragen -->
+                    ${offenHtml ? `<div style="margin-bottom:20px;padding:14px;background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.15);border-radius:var(--radius)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#f59e0b;letter-spacing:0.8px;margin-bottom:6px">Was noch offen ist</div>${offenHtml}</div>` : ''}
 
-                    ${offenHtml ? `<div style="margin-bottom:20px;padding:14px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);border-radius:var(--radius)"><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#f59e0b;letter-spacing:0.5px;margin-bottom:6px">Was noch offen ist</div>${offenHtml}</div>` : ''}
-
-                    <div style="padding:16px;background:linear-gradient(135deg,rgba(91,138,245,0.1),rgba(91,138,245,0.03));border:1px solid rgba(91,138,245,0.25);border-radius:var(--radius);margin-bottom:16px">
-                        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--accent);letter-spacing:0.5px;margin-bottom:8px">Empfohlener nächster Schritt</div>
-                        <div style="font-size:15px;font-weight:600;color:var(--white);margin-bottom:4px">${sectionIcons[r.empfehlung]||'📌'} ${r.empfehlung_label || r.empfehlung}</div>
-                        <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">${r.empfehlung_grund || ''}</div>
-                        <button class="mb-btn mb-btn-primary" onclick="briefingGoTo('${r.empfehlung}','${encodeURIComponent(originalInput)}')">→ ${r.empfehlung_label || r.empfehlung} starten</button>
+                    <!-- Empfehlung -->
+                    <div style="padding:18px;background:linear-gradient(135deg,rgba(91,138,245,0.1),rgba(91,138,245,0.03));border:1px solid rgba(91,138,245,0.25);border-radius:var(--radius);margin-bottom:18px">
+                        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--accent);letter-spacing:0.8px;margin-bottom:10px">Empfohlener nächster Schritt</div>
+                        <div style="font-size:16px;font-weight:700;color:var(--white);margin-bottom:4px">${sectionIcons[emp.section]||'📌'} ${emp.label || emp.section}</div>
+                        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.6">${emp.grund || ''}</div>
+                        <button class="mb-btn mb-btn-primary" onclick="briefingGoTo('${emp.section}','${encodeURIComponent(emp.frage_fuer_analyse || originalInput)}')">→ ${emp.label || emp.section} starten</button>
                     </div>
 
-                    ${altHtml ? `<div><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:8px">Oder alternativ</div><div style="display:flex;flex-wrap:wrap;gap:8px">${altHtml}</div></div>` : ''}
+                    <!-- Alternativen -->
+                    ${altHtml ? `<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.8px;margin-bottom:10px">Oder alternativ</div><div style="display:flex;flex-wrap:wrap;gap:8px">${altHtml}</div></div>` : ''}
                 </div>`;
         }
 
