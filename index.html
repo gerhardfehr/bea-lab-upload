@@ -69,7 +69,7 @@
         .nav-dropdown-trigger:hover, .nav-dropdown-trigger.active { color:var(--white); background:var(--navy-mid); }
         .nav-dropdown-trigger svg { width:10px; height:10px; opacity:0.5; transition:transform 0.2s; }
         .nav-dropdown.open .nav-dropdown-trigger svg { transform:rotate(180deg); }
-        .nav-dropdown-menu { display:none; position:absolute; top:calc(100% + 6px); left:0; min-width:200px; background:var(--navy-mid); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 12px 32px rgba(0,0,0,0.4); padding:6px; z-index:200; }
+        .nav-dropdown-menu { display:none; position:absolute; top:calc(100% + 6px); left:0; min-width:260px; background:var(--navy-mid); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 12px 32px rgba(0,0,0,0.4); padding:6px; z-index:200; }
         .nav-dropdown.open .nav-dropdown-menu { display:block; }
         .nav-dropdown-item { display:flex; align-items:center; gap:10px; padding:10px 14px; font-size:13px; font-weight:500; color:var(--text-secondary); text-decoration:none; border-radius:var(--radius-sm); transition:var(--transition); cursor:pointer; white-space:nowrap; }
         .nav-dropdown-item:hover { color:var(--white); background:rgba(255,255,255,0.06); }
@@ -77,6 +77,7 @@
         .nav-dropdown-item svg { width:15px; height:15px; opacity:0.5; flex-shrink:0; }
         .nav-dropdown-item:hover svg { opacity:0.8; }
         .nav-dropdown-divider { height:1px; background:var(--border); margin:4px 6px; }
+        .nav-dropdown-header { padding:6px 14px 4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.25); pointer-events:none; }
         .nav-right { display:flex; align-items:center; gap:12px; }
         .nav-status { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:500; color:var(--success); padding:5px 12px; background:var(--success-bg); border-radius:20px; }
         .nav-status .dot { width:6px; height:6px; border-radius:50%; background:var(--success); animation:pulse 2s infinite; }
@@ -529,13 +530,44 @@
                     🧠 Behavioral Design <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
                 <div class="nav-dropdown-menu">
-                    <a class="nav-dropdown-item" data-section="model" onclick="navDropClick('model',this)">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                        Modell-Building
+                    <div class="nav-dropdown-header">Einstieg</div>
+                    <a class="nav-dropdown-item" data-section="briefing" onclick="navDropClick('briefing',this)">
+                        📋 Briefing
                     </a>
+                    <div class="nav-dropdown-divider"></div>
+                    <div class="nav-dropdown-header">Verstehen</div>
                     <a class="nav-dropdown-item" id="navDropContext" data-section="context" onclick="navDropClick('context',this)">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                        Kontext-Analyse
+                        🔬 Kontext-Analyse
+                    </a>
+                    <a class="nav-dropdown-item" data-section="segments" onclick="navDropClick('segments',this)">
+                        👥 Segment-Analyse
+                    </a>
+                    <a class="nav-dropdown-item" data-section="journey" onclick="navDropClick('journey',this)">
+                        🗺️ Behavioral Journey
+                    </a>
+                    <div class="nav-dropdown-divider"></div>
+                    <div class="nav-dropdown-header">Gestalten</div>
+                    <a class="nav-dropdown-item" data-section="nutzen" onclick="navDropClick('nutzen',this)">
+                        💎 Nutzen & Anreize
+                    </a>
+                    <a class="nav-dropdown-item" data-section="architektur" onclick="navDropClick('architektur',this)">
+                        ⚖️ Entscheidungsarchitektur
+                    </a>
+                    <a class="nav-dropdown-item" data-section="model" onclick="navDropClick('model',this)">
+                        🏗️ Modell-Building
+                    </a>
+                    <div class="nav-dropdown-divider"></div>
+                    <div class="nav-dropdown-header">Messen</div>
+                    <a class="nav-dropdown-item" data-section="audit" onclick="navDropClick('audit',this)">
+                        📊 Behavioral Audit
+                    </a>
+                    <a class="nav-dropdown-item" data-section="wirkung" onclick="navDropClick('wirkung',this)">
+                        📈 Wirkungsmessung
+                    </a>
+                    <div class="nav-dropdown-divider"></div>
+                    <div class="nav-dropdown-header">Prüfen</div>
+                    <a class="nav-dropdown-item" data-section="evidenz" onclick="navDropClick('evidenz',this)">
+                        🧪 Evidenz-Check
                     </a>
                 </div>
             </div>
@@ -1595,6 +1627,166 @@
                 <div class="mb-actions" style="margin-top:16px">
                     <button class="mb-btn mb-btn-back" onclick="caGoToStart()">← Neue Analyse</button>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════ BRIEFING SECTION ═══════ -->
+    <section class="section" id="briefing-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Briefing</h2>
+                <p>Starte mit dem, was du hast — BEATRIX sortiert und leitet weiter.</p>
+            </div>
+            <div style="max-width:720px;margin:0 auto">
+                <div style="padding:32px;background:var(--navy-card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:24px">
+                    <div style="font-size:15px;font-weight:600;color:var(--white);margin-bottom:16px">Was ist dein Ausgangspunkt?</div>
+                    <textarea class="mb-input mb-textarea" id="briefingInput" placeholder="Beschreibe frei, was du hast: eine Frage, einen Kunden, ein Ziel, eine Beobachtung, ein Produkt, einen Vergleich..." style="min-height:120px;width:100%;box-sizing:border-box;font-size:14px;line-height:1.6"></textarea>
+                    <div style="margin-top:14px;display:flex;gap:10px">
+                        <button class="mb-btn mb-btn-primary" onclick="briefingAnalyze()">🧠 BEATRIX, sortiere das →</button>
+                    </div>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Beispiele:</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" id="briefingExamples">
+                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
+                        <div style="font-size:14px;margin-bottom:4px">🔍</div>
+                        <div style="font-size:12px;color:var(--white);line-height:1.4">"Warum wechseln Schweizer Bankkunden so selten?"</div>
+                    </div>
+                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
+                        <div style="font-size:14px;margin-bottom:4px">🏢</div>
+                        <div style="font-size:12px;color:var(--white);line-height:1.4">"UBS Private Banking, junge Erben als Zielgruppe"</div>
+                    </div>
+                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
+                        <div style="font-size:14px;margin-bottom:4px">🎯</div>
+                        <div style="font-size:12px;color:var(--white);line-height:1.4">"In 3 Jahren 40% Self-Service-Quote erreichen"</div>
+                    </div>
+                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
+                        <div style="font-size:14px;margin-bottom:4px">🛠️</div>
+                        <div style="font-size:12px;color:var(--white);line-height:1.4">"Wir launchen eine Vorsorge-App für Millennials"</div>
+                    </div>
+                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
+                        <div style="font-size:14px;margin-bottom:4px">📊</div>
+                        <div style="font-size:12px;color:var(--white);line-height:1.4">"Conversion von 2%, Branchenschnitt ist 8%"</div>
+                    </div>
+                    <div class="mb-choice" style="padding:12px 14px;cursor:pointer" onclick="briefingFill(this)">
+                        <div style="font-size:14px;margin-bottom:4px">🚫</div>
+                        <div style="font-size:12px;color:var(--white);line-height:1.4">"Auf keinen Fall darf die NPS unter 40 sinken"</div>
+                    </div>
+                </div>
+                <!-- Briefing result -->
+                <div id="briefingResult" style="display:none;margin-top:24px"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════ SEGMENTS SECTION ═══════ -->
+    <section class="section" id="segments-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Segment-Analyse</h2>
+                <p>Wer ist die Zielgruppe? Verhaltensbasierte Segmentierung jenseits von Demografie.</p>
+            </div>
+            <div style="text-align:center;padding:60px 20px">
+                <div style="font-size:48px;margin-bottom:16px">👥</div>
+                <div style="font-size:18px;font-weight:600;color:var(--white);margin-bottom:8px">Segment-Analyse</div>
+                <div style="font-size:14px;color:var(--text-muted);max-width:480px;margin:0 auto;line-height:1.6">Verhaltensbasierte Segmente identifizieren: Nicht wer Menschen <em>sind</em>, sondern wie sie <em>entscheiden</em>. Basierend auf Ψ-Profilen, nicht Demografie.</div>
+                <div style="margin-top:20px;padding:12px 20px;background:rgba(91,138,245,0.08);border:1px solid rgba(91,138,245,0.2);border-radius:var(--radius);display:inline-block;font-size:13px;color:var(--accent-light)">🚧 In Entwicklung — Q2 2026</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════ JOURNEY SECTION ═══════ -->
+    <section class="section" id="journey-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Behavioral Journey</h2>
+                <p>Wo stehen die Menschen im Veränderungsprozess? Von Awareness über Readiness zu Action.</p>
+            </div>
+            <div style="text-align:center;padding:60px 20px">
+                <div style="font-size:48px;margin-bottom:16px">🗺️</div>
+                <div style="font-size:18px;font-weight:600;color:var(--white);margin-bottom:8px">Behavioral Change Journey</div>
+                <div style="font-size:14px;color:var(--text-muted);max-width:480px;margin:0 auto;line-height:1.6">Die Reise vom Nicht-Wissen zum Handeln: Awareness → Consideration → Readiness → Action → Habit. Für jede Stufe andere Interventionen.</div>
+                <div style="margin-top:20px;padding:12px 20px;background:rgba(91,138,245,0.08);border:1px solid rgba(91,138,245,0.2);border-radius:var(--radius);display:inline-block;font-size:13px;color:var(--accent-light)">🚧 In Entwicklung — Q2 2026</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════ NUTZEN SECTION ═══════ -->
+    <section class="section" id="nutzen-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Nutzen & Anreize</h2>
+                <p>Was treibt die Entscheidung? Wahrgenommener Nutzen, Kosten und Barrieren.</p>
+            </div>
+            <div style="text-align:center;padding:60px 20px">
+                <div style="font-size:48px;margin-bottom:16px">💎</div>
+                <div style="font-size:18px;font-weight:600;color:var(--white);margin-bottom:8px">Nutzen- & Anreizanalyse</div>
+                <div style="font-size:14px;color:var(--text-muted);max-width:480px;margin:0 auto;line-height:1.6">Was gewinnen Menschen durch eine Veränderung? Was verlieren sie? Welche Barrieren stehen im Weg — real und wahrgenommen?</div>
+                <div style="margin-top:20px;padding:12px 20px;background:rgba(91,138,245,0.08);border:1px solid rgba(91,138,245,0.2);border-radius:var(--radius);display:inline-block;font-size:13px;color:var(--accent-light)">🚧 In Entwicklung — Q2 2026</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════ ARCHITEKTUR SECTION ═══════ -->
+    <section class="section" id="architektur-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Entscheidungsarchitektur</h2>
+                <p>Wie wird die Entscheidung präsentiert? Touchpoints, Defaults, Framing, Choice Architecture.</p>
+            </div>
+            <div style="text-align:center;padding:60px 20px">
+                <div style="font-size:48px;margin-bottom:16px">⚖️</div>
+                <div style="font-size:18px;font-weight:600;color:var(--white);margin-bottom:8px">Entscheidungsarchitektur</div>
+                <div style="font-size:14px;color:var(--text-muted);max-width:480px;margin:0 auto;line-height:1.6">Defaults, Framing, Sequencing, Social Proof — die konkreten Hebel, mit denen Entscheidungen gestaltet werden. Wo, wann und wie die Intervention ansetzt.</div>
+                <div style="margin-top:20px;padding:12px 20px;background:rgba(91,138,245,0.08);border:1px solid rgba(91,138,245,0.2);border-radius:var(--radius);display:inline-block;font-size:13px;color:var(--accent-light)">🚧 In Entwicklung — Q3 2026</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════ AUDIT SECTION ═══════ -->
+    <section class="section" id="audit-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Behavioral Audit</h2>
+                <p>Ist-Zustand erheben: Was passiert heute? Baseline für Verhaltensveränderung.</p>
+            </div>
+            <div style="text-align:center;padding:60px 20px">
+                <div style="font-size:48px;margin-bottom:16px">📊</div>
+                <div style="font-size:18px;font-weight:600;color:var(--white);margin-bottom:8px">Behavioral Audit</div>
+                <div style="font-size:14px;color:var(--text-muted);max-width:480px;margin:0 auto;line-height:1.6">Systematische Bestandsaufnahme: Welches Verhalten zeigt die Zielgruppe heute? KPIs, Conversion Rates, Drop-offs — die Baseline vor jeder Intervention.</div>
+                <div style="margin-top:20px;padding:12px 20px;background:rgba(91,138,245,0.08);border:1px solid rgba(91,138,245,0.2);border-radius:var(--radius);display:inline-block;font-size:13px;color:var(--accent-light)">🚧 In Entwicklung — Q3 2026</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════ WIRKUNG SECTION ═══════ -->
+    <section class="section" id="wirkung-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Wirkungsmessung</h2>
+                <p>Hat die Intervention gewirkt? Vorher/Nachher, Effect Sizes, RCT-Ergebnisse.</p>
+            </div>
+            <div style="text-align:center;padding:60px 20px">
+                <div style="font-size:48px;margin-bottom:16px">📈</div>
+                <div style="font-size:18px;font-weight:600;color:var(--white);margin-bottom:8px">Wirkungsmessung</div>
+                <div style="font-size:14px;color:var(--text-muted);max-width:480px;margin:0 auto;line-height:1.6">Soll vs. Ist: Was hat die Intervention bewirkt? Effect Size berechnen, statistische Signifikanz prüfen, ROI der Verhaltensänderung dokumentieren.</div>
+                <div style="margin-top:20px;padding:12px 20px;background:rgba(91,138,245,0.08);border:1px solid rgba(91,138,245,0.2);border-radius:var(--radius);display:inline-block;font-size:13px;color:var(--accent-light)">🚧 In Entwicklung — Q3 2026</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════ EVIDENZ SECTION ═══════ -->
+    <section class="section" id="evidenz-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Evidenz-Check</h2>
+                <p>Was sagt die Forschung? Theorien, Studien und empirische Evidenz prüfen.</p>
+            </div>
+            <div style="text-align:center;padding:60px 20px">
+                <div style="font-size:48px;margin-bottom:16px">🧪</div>
+                <div style="font-size:18px;font-weight:600;color:var(--white);margin-bottom:8px">Evidenz-Check</div>
+                <div style="font-size:14px;color:var(--text-muted);max-width:480px;margin:0 auto;line-height:1.6">186 Theorien, 200+ Mechanismen, 94 Parameter in der BEATRIX-Wissensdatenbank. Welche Evidenz stützt unseren Ansatz? Wo sind die Grenzen?</div>
+                <div style="margin-top:20px;padding:12px 20px;background:rgba(91,138,245,0.08);border:1px solid rgba(91,138,245,0.2);border-radius:var(--radius);display:inline-block;font-size:13px;color:var(--accent-light)">🚧 In Entwicklung — Q2 2026</div>
             </div>
         </div>
     </section>
@@ -2853,6 +3045,145 @@
             document.querySelectorAll('#caProgress .mb-step-line').forEach((line, i) => {
                 line.classList.toggle('completed', i < step);
             });
+        }
+
+        // ═══ BRIEFING FUNCTIONS ═══
+        function briefingFill(el) {
+            const text = el.querySelector('div:last-child')?.textContent?.replace(/^"|"$/g, '').trim();
+            if (text) document.getElementById('briefingInput').value = text;
+        }
+
+        async function briefingAnalyze() {
+            const input = document.getElementById('briefingInput').value.trim();
+            if (!input) { showToast('Bitte beschreibe deinen Ausgangspunkt', 'error'); return; }
+
+            const resultDiv = document.getElementById('briefingResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<div style="text-align:center;padding:30px"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:13px;color:rgba(255,255,255,0.5)">BEATRIX analysiert deinen Ausgangspunkt...</div></div>`;
+
+            const prompt = `Analysiere diesen Briefing-Input und identifiziere, was vorhanden ist und was fehlt.
+
+Input: "${input}"
+
+Antworte NUR als valides JSON:
+{
+  "typ": "frage|kunde|zielgruppe|verhalten|ziel|anti_ziel|loesung|vergleich|kontext|daten",
+  "typ_label": "Beschreibung des erkannten Typs",
+  "erkannt": {
+    "land": "Erkanntes Land oder null",
+    "branche": "Erkannte Branche oder null",
+    "organisation": "Erkannte Organisation oder null",
+    "perspektive": "Erkannte Perspektive oder null",
+    "verhalten": "Erkanntes Verhalten oder null",
+    "ziel": "Erkanntes Ziel oder null"
+  },
+  "zusammenfassung": "2-3 Sätze: Was habe ich verstanden? Was ist der Kern?",
+  "empfehlung": "kontext|segmente|journey|nutzen|architektur|model|audit|wirkung|evidenz",
+  "empfehlung_label": "Name des empfohlenen nächsten Schritts",
+  "empfehlung_grund": "1 Satz warum dieser Schritt als nächstes sinnvoll ist",
+  "offene_fragen": ["Was fehlt noch?", "Was sollte BEATRIX noch wissen?"],
+  "alternative_pfade": [
+    { "section": "kontext|segmente|...", "label": "Name", "grund": "Warum auch sinnvoll" },
+    { "section": "...", "label": "...", "grund": "..." }
+  ]
+}`;
+
+            try {
+                const resp = await fetch(`${API}/chat`, {
+                    method: 'POST',
+                    headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: prompt, system_prompt: 'Du bist BEATRIX Briefing-Analyst. Antworte NUR als valides JSON. Kein Markdown.' })
+                });
+                const data = await resp.json();
+                const text = (data.response || data.answer || '').replace(/```json|```/g, '').trim();
+                const result = JSON.parse(text);
+                briefingRender(result, input);
+            } catch (e) {
+                console.error('Briefing parse error:', e);
+                resultDiv.innerHTML = `<div style="padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:var(--radius)">
+                    <div style="font-size:14px;color:var(--white);margin-bottom:12px">Ich konnte den Ausgangspunkt nicht automatisch einordnen.</div>
+                    <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Starte direkt mit einer Analyse:</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px">
+                        <button class="mb-btn mb-btn-primary" onclick="briefingGoTo('context','${encodeURIComponent(input)}')">🔬 Kontext-Analyse</button>
+                        <button class="mb-btn" onclick="briefingGoTo('chat','${encodeURIComponent(input)}')">💬 Im Chat besprechen</button>
+                    </div>
+                </div>`;
+            }
+        }
+
+        function briefingRender(r, originalInput) {
+            const resultDiv = document.getElementById('briefingResult');
+            const typIcons = { frage:'🔍', kunde:'🏢', zielgruppe:'👥', verhalten:'📊', ziel:'🎯', anti_ziel:'🚫', loesung:'🛠️', vergleich:'🔄', kontext:'🌍', daten:'📈' };
+            const sectionIcons = { context:'🔬', segmente:'👥', journey:'🗺️', nutzen:'💎', architektur:'⚖️', model:'🏗️', audit:'📊', wirkung:'📈', evidenz:'🧪' };
+
+            // Erkannte Felder
+            const erkannt = r.erkannt || {};
+            const erkanntHtml = Object.entries(erkannt)
+                .filter(([k,v]) => v && v !== 'null')
+                .map(([k,v]) => `<span style="display:inline-block;padding:4px 10px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;font-size:12px;color:#10b981">✓ ${v}</span>`)
+                .join(' ');
+
+            const offenHtml = (r.offene_fragen || [])
+                .map(q => `<div style="padding:6px 0;font-size:13px;color:var(--text-muted)">→ ${q}</div>`)
+                .join('');
+
+            const altHtml = (r.alternative_pfade || [])
+                .map(a => `<button class="mb-btn" style="font-size:12px;padding:6px 12px" onclick="briefingGoTo('${a.section}','${encodeURIComponent(originalInput)}')">${sectionIcons[a.section]||'📌'} ${a.label}</button>`)
+                .join(' ');
+
+            resultDiv.innerHTML = `
+                <div style="padding:24px;background:var(--navy-card);border:1px solid var(--border);border-radius:var(--radius)">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+                        <span style="font-size:28px">${typIcons[r.typ] || '📋'}</span>
+                        <div>
+                            <div style="font-size:15px;font-weight:700;color:var(--white)">${r.typ_label || 'Briefing erkannt'}</div>
+                            <div style="font-size:12px;color:var(--text-muted)">Typ: ${r.typ || 'unbekannt'}</div>
+                        </div>
+                    </div>
+
+                    <div style="font-size:14px;color:rgba(255,255,255,0.85);line-height:1.7;margin-bottom:16px">${r.zusammenfassung || ''}</div>
+
+                    ${erkanntHtml ? `<div style="margin-bottom:16px"><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:8px">Erkannt</div><div style="display:flex;flex-wrap:wrap;gap:6px">${erkanntHtml}</div></div>` : ''}
+
+                    ${offenHtml ? `<div style="margin-bottom:20px;padding:14px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);border-radius:var(--radius)"><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#f59e0b;letter-spacing:0.5px;margin-bottom:6px">Was noch offen ist</div>${offenHtml}</div>` : ''}
+
+                    <div style="padding:16px;background:linear-gradient(135deg,rgba(91,138,245,0.1),rgba(91,138,245,0.03));border:1px solid rgba(91,138,245,0.25);border-radius:var(--radius);margin-bottom:16px">
+                        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--accent);letter-spacing:0.5px;margin-bottom:8px">Empfohlener nächster Schritt</div>
+                        <div style="font-size:15px;font-weight:600;color:var(--white);margin-bottom:4px">${sectionIcons[r.empfehlung]||'📌'} ${r.empfehlung_label || r.empfehlung}</div>
+                        <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">${r.empfehlung_grund || ''}</div>
+                        <button class="mb-btn mb-btn-primary" onclick="briefingGoTo('${r.empfehlung}','${encodeURIComponent(originalInput)}')">→ ${r.empfehlung_label || r.empfehlung} starten</button>
+                    </div>
+
+                    ${altHtml ? `<div><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:8px">Oder alternativ</div><div style="display:flex;flex-wrap:wrap;gap:8px">${altHtml}</div></div>` : ''}
+                </div>`;
+        }
+
+        function briefingGoTo(section, encodedInput) {
+            const input = decodeURIComponent(encodedInput);
+            // Navigate to section
+            const navItem = document.querySelector(`.nav-dropdown-item[data-section="${section}"]`);
+            navDropClick(section, navItem);
+
+            // Pre-fill where possible
+            if (section === 'context') {
+                // Start Kontext-Analyse gefuehrt with this input
+                setTimeout(() => {
+                    caStartMode('gefuehrt');
+                    setTimeout(() => {
+                        const qEl = document.getElementById('caQuestion');
+                        if (qEl) qEl.value = input;
+                        document.getElementById('caCustomInput').style.display = 'block';
+                    }, 100);
+                }, 200);
+            } else if (section === 'chat') {
+                // Switch to chat and pre-fill
+                showSection('chat');
+                setTimeout(() => {
+                    const chatInput = document.getElementById('chatInput');
+                    if (chatInput) { chatInput.value = input; chatInput.focus(); }
+                }, 200);
+            }
+            // For placeholder sections, navigation is enough
         }
 
         function caGoToStart() {
