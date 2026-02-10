@@ -324,8 +324,8 @@
         .mb-header h2 { font-size:24px; font-weight:700; color:var(--white); margin:0; }
         .mb-header p { font-size:14px; color:var(--text-secondary); margin:4px 0 0; }
         .mb-progress { display:flex; gap:4px; padding:16px 0; margin-bottom:28px; overflow-x:auto; }
-        .mb-step-dot { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:80px; cursor:pointer; }
-        .mb-step-num { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; border:2px solid var(--border); color:var(--text-muted); background:var(--navy-light); transition:var(--transition); }
+        .mb-step-dot { display:flex; flex-direction:column; align-items:center; gap:4px; min-width:60px; cursor:pointer; }
+        .mb-step-num { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; border:2px solid var(--border); color:var(--text-muted); background:var(--navy-light); transition:var(--transition); }
         .mb-step-dot.active .mb-step-num { border-color:var(--accent); color:var(--white); background:var(--accent); box-shadow:0 0 16px var(--accent-glow); }
         .mb-step-dot.completed .mb-step-num { border-color:var(--success); color:var(--white); background:var(--success); }
         .mb-step-dot.completed .mb-step-num::after { content:'✓'; }
@@ -907,7 +907,7 @@
                             <div class="mb-choice-num">3</div>
                             <div class="mb-choice-icon">🔬</div>
                             <div class="mb-choice-title">Alle 8 Ψ-Dimensionen</div>
-                            <div class="mb-choice-desc">Vollständige Analyse: Ψ_I, Ψ_S, Ψ_K, Ψ_C, Ψ_T, Ψ_E, Ψ_M, Ψ_F.</div>
+                            <div class="mb-choice-desc">Vollständige Analyse aller 8 Kontextdimensionen.</div>
                             <div class="mb-choice-meta">Maximale Tiefe</div>
                         </div>
                         <div class="mb-choice custom-choice" onclick="mbSelect(this,'custom')">
@@ -1054,17 +1054,21 @@
                 <div class="mb-step-line"></div>
                 <div class="mb-step-dot" data-castep="2"><div class="mb-step-num">3</div><div class="mb-step-label">Branche</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="3"><div class="mb-step-num">4</div><div class="mb-step-label">Situation</div></div>
+                <div class="mb-step-dot" data-castep="3"><div class="mb-step-num">4</div><div class="mb-step-label">Organisation</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="4"><div class="mb-step-num">5</div><div class="mb-step-label">Analyse</div></div>
+                <div class="mb-step-dot" data-castep="4"><div class="mb-step-num">5</div><div class="mb-step-label">Perspektive</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="5"><div class="mb-step-num">6</div><div class="mb-step-label">Ergebnis</div></div>
+                <div class="mb-step-dot" data-castep="5"><div class="mb-step-num">6</div><div class="mb-step-label">Situation</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="6"><div class="mb-step-num">7</div><div class="mb-step-label">Analyse</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="7"><div class="mb-step-num">8</div><div class="mb-step-label">Ergebnis</div></div>
             </div>
 
             <!-- ═══ START: Mode Selection ═══ -->
             <div class="mb-panel active" id="caStart">
                 <div class="mb-step-title">Neue Kontextanalyse starten</div>
-                <div class="mb-step-desc">Die Kontextanalyse identifiziert die 8 Ψ-Dimensionen für dein Verhalten oder deine Fragestellung. Jeder Kontext verändert alle Parameter — λ, β, γ, θ sind Funktionen von Ψ, nicht Konstanten.</div>
+                <div class="mb-step-desc">Die Kontextanalyse identifiziert alle relevanten Einflussfaktoren auf Verhalten und Entscheidungen. Jeder Kontext — Land, Branche, Organisation, Situation — verändert, wie Menschen sich verhalten.</div>
 
                 <div class="mb-mode-cards">
                     <div class="mb-mode-card" onclick="caSelectMode(this,'schnell')">
@@ -1205,11 +1209,108 @@
                 </div>
                 <div class="mb-actions">
                     <button class="mb-btn mb-btn-back" onclick="caBack(1)">← Zurück</button>
-                    <button class="mb-btn mb-btn-primary" id="caStep2Btn" disabled onclick="caNextStep(2)">Weiter →</button>
+                    <button class="mb-btn mb-btn-primary" id="caStep2Btn" disabled onclick="caGoToOrg()">Weiter →</button>
                 </div>
             </div>
 
-            <!-- ═══ STEP 3: MICRO ═══ -->
+            <!-- ═══ STEP 3: ORGANISATION ═══ -->
+            <div class="mb-panel" id="caStepOrg">
+                <div class="mb-step-title">Für welche Organisation?</div>
+                <div class="mb-step-desc">Wähle ein bestehendes Unternehmen aus dem CRM oder lege ein neues an.</div>
+
+                <div class="mb-choices" id="caOrgTypeChoices">
+                    <div class="mb-choice" onclick="caSelectOrgType(this,'company')">
+                        <div class="mb-choice-num">1</div>
+                        <div class="mb-choice-icon">🏢</div>
+                        <div class="mb-choice-title">Unternehmen</div>
+                        <div class="mb-choice-desc">Privatwirtschaftliches Unternehmen — Bank, Versicherung, Industrie, etc.</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelectOrgType(this,'public')">
+                        <div class="mb-choice-num">2</div>
+                        <div class="mb-choice-icon">🏛️</div>
+                        <div class="mb-choice-title">Behörde / Öffentliche Institution</div>
+                        <div class="mb-choice-desc">Verwaltung, Regulierungsbehörde, staatliche Organisation.</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelectOrgType(this,'healthcare')">
+                        <div class="mb-choice-num">3</div>
+                        <div class="mb-choice-icon">🏥</div>
+                        <div class="mb-choice-title">Gesundheitseinrichtung</div>
+                        <div class="mb-choice-desc">Spital, Krankenkasse, Pflegeeinrichtung, Praxis.</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelectOrgType(this,'general')">
+                        <div class="mb-choice-num">4</div>
+                        <div class="mb-choice-icon">👤</div>
+                        <div class="mb-choice-title">Allgemein / kein spezifisches Unternehmen</div>
+                        <div class="mb-choice-desc">Grundlagenanalyse für einen Markt oder eine Zielgruppe, ohne konkreten Kunden.</div>
+                    </div>
+                </div>
+
+                <!-- CRM Search (appears when company/public/healthcare selected) -->
+                <div id="caOrgSearch" style="display:none;margin-top:16px">
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">🔍 Bestehender Kunde aus CRM</div>
+                        <input class="mb-input" id="caOrgSearchInput" placeholder="Name eingeben zum Suchen..." oninput="caSearchOrg()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border);margin-bottom:10px">
+                        <div id="caOrgResults" style="max-height:200px;overflow-y:auto"></div>
+                        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+                            <button class="mb-btn mb-btn-secondary" onclick="caNewOrg()" style="font-size:12px;padding:6px 14px">➕ Neue Organisation anlegen</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- New Org Form (appears on click) -->
+                <div id="caNewOrgForm" style="display:none;margin-top:16px">
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">➕ Neue Organisation</div>
+                        <input class="mb-input" id="caNewOrgName" placeholder="Name der Organisation" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border);margin-bottom:8px">
+                        <input class="mb-input" id="caNewOrgDesc" placeholder="Kurzbeschreibung (optional)" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                    </div>
+                </div>
+
+                <div class="mb-actions" style="margin-top:16px">
+                    <button class="mb-btn mb-btn-back" onclick="caBackToStep('caStep2',2)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="caOrgBtn" disabled onclick="caGoToPersp()">Weiter →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 4: PERSPEKTIVE ═══ -->
+            <div class="mb-panel" id="caStepPersp">
+                <div class="mb-step-title">Wessen Verhalten analysieren wir?</div>
+                <div class="mb-step-desc" id="caPerspDesc">Aus welcher Perspektive soll der Kontext verstanden werden?</div>
+
+                <div class="mb-choices" id="caPerspChoices">
+                    <div class="mb-choice" onclick="caSelectPersp(this,'kunden')">
+                        <div class="mb-choice-num">1</div>
+                        <div class="mb-choice-icon">🛒</div>
+                        <div class="mb-choice-title">Kunden</div>
+                        <div class="mb-choice-desc">Wie erleben die Kunden die Entscheidungssituation? Was treibt ihr Verhalten?</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelectPersp(this,'mitarbeitende')">
+                        <div class="mb-choice-num">2</div>
+                        <div class="mb-choice-icon">👔</div>
+                        <div class="mb-choice-title">Mitarbeitende</div>
+                        <div class="mb-choice-desc">Wie verhalten sich Berater, Sachbearbeiter, Pflegende im Arbeitsalltag?</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelectPersp(this,'management')">
+                        <div class="mb-choice-num">3</div>
+                        <div class="mb-choice-icon">📊</div>
+                        <div class="mb-choice-title">Management / Entscheider</div>
+                        <div class="mb-choice-desc">Wie trifft die Geschäftsleitung strategische Entscheidungen?</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelectPersp(this,'alle')">
+                        <div class="mb-choice-num">4</div>
+                        <div class="mb-choice-icon">🔄</div>
+                        <div class="mb-choice-title">Alle Perspektiven (Strategie)</div>
+                        <div class="mb-choice-desc">Ganzheitliche Analyse über alle Stakeholder — ideal für strategische Projekte.</div>
+                    </div>
+                </div>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="caBackToStep('caStepOrg',3)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="caPerspBtn" disabled onclick="caGoToSituation()">Weiter →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 5: SITUATION (was STEP 3: MICRO) ═══ -->
             <div class="mb-panel" id="caStep3">
                 <div class="mb-step-title">Die konkrete Situation</div>
                 <div class="mb-step-desc">In welcher Situation befindet sich die Person, wenn sie die Entscheidung trifft?</div>
@@ -1270,14 +1371,14 @@
                 </div>
 
                 <div class="mb-actions">
-                    <button class="mb-btn mb-btn-back" onclick="caBack(2)">← Zurück</button>
-                    <button class="mb-btn mb-btn-primary" id="caStep3Btn" disabled onclick="caAnalyze()">🔍 Ψ-Profil berechnen →</button>
+                    <button class="mb-btn mb-btn-back" onclick="caBackToStep('caStepPersp',4)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="caStep3Btn" disabled onclick="caAnalyze()">🔍 Kontextprofil erstellen →</button>
                 </div>
             </div>
 
             <!-- ═══ STEP 4: Ψ-Profil ═══ -->
             <div class="mb-panel" id="caStep4">
-                <div class="mb-step-title">Ψ-Profil wird berechnet...</div>
+                <div class="mb-step-title">Kontextprofil wird erstellt...</div>
                 <div class="mb-step-desc">BEATRIX analysiert die 8 Ψ-Dimensionen basierend auf deinen Angaben und der BCM2-Kontextdatenbank.</div>
 
                 <div id="caAnalysisProgress" style="padding:40px;text-align:center">
@@ -1332,7 +1433,7 @@
             <!-- ═══ HISTORY: Bisherige Analysen ═══ -->
             <div class="mb-panel" id="caHistory">
                 <div class="mb-step-title">Bisherige Kontextanalysen</div>
-                <div class="mb-step-desc">Gespeicherte Ψ-Profile aus früheren Analysen.</div>
+                <div class="mb-step-desc">Gespeicherte Kontextprofile aus früheren Analysen.</div>
                 <div id="caHistoryList" style="display:flex;flex-direction:column;gap:10px">
                     <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Wird geladen...</div>
                 </div>
@@ -2542,7 +2643,7 @@
         // Kontext-Analyse state managed by caState and caHistoryData
 
         // ── KONTEXT-ANALYSE WORKFLOW ──────────────────────────
-        const caState = { mode: null, step: -1, question: '', macro: null, meso: null, micro: {}, result: null, lineageId: null, currentVersionId: null, customerCode: null, projectSlug: null };
+        const caState = { mode: null, step: -1, question: '', macro: null, meso: null, orgType: null, orgCode: null, orgName: null, perspective: null, micro: {}, result: null, lineageId: null, currentVersionId: null, customerCode: null, projectSlug: null };
         let caHistoryData = [];
 
         const PSI_DIMS = [
@@ -2604,6 +2705,7 @@
             caState.mode = null;
             caState.lineageId = null;
             caState.currentVersionId = null;
+            caState.orgType = null; caState.orgCode = null; caState.orgName = null; caState.perspective = null;
             document.querySelectorAll('#caStart .mb-mode-card').forEach(c => c.classList.remove('selected'));
             document.getElementById('caStartBtn').disabled = true;
             document.getElementById('caProgress').style.display = 'none';
@@ -2612,8 +2714,7 @@
 
         function caBack(toStep) {
             caState.step = toStep;
-            const panels = ['caStep0','caStep1','caStep2','caStep3','caStep4'];
-            caShowPanel(panels[toStep]);
+            caShowPanel(CA_PANELS[toStep]);
             caUpdateProgress(toStep);
         }
 
@@ -2622,14 +2723,15 @@
             if (!caState.currentVersionId) {
                 await caSaveAndUse();
             }
-            // Switch to tief mode, keep question + lineage
+            // Switch to gefuehrt mode, keep question + lineage
             const keepQuestion = caState.question;
             const keepLineage = caState.lineageId;
             caState.mode = 'gefuehrt';
             caState.result = null;
             caState.step = 1;
-            // Reset context selections
+            // Reset all context selections
             caState.macro = null; caState.meso = null; caState.micro = null;
+            caState.orgType = null; caState.orgCode = null; caState.orgName = null; caState.perspective = null;
             // Re-populate question
             const qEl = document.getElementById('caQuestion');
             if (qEl) qEl.value = keepQuestion;
@@ -2639,10 +2741,11 @@
             document.getElementById('caProgress').style.display = 'flex';
             caShowPanel('caStep1');
             caUpdateProgress(1);
-            // Reset step selections
-            document.querySelectorAll('#caStep1 .mb-choice, #caStep2 .mb-choice').forEach(c => c.classList.remove('selected'));
-            document.getElementById('caStep1Btn').disabled = true;
-            document.getElementById('caStep2Btn').disabled = true;
+            // Reset all step selections
+            document.querySelectorAll('#caStep1 .mb-choice, #caStep2 .mb-choice, #caOrgTypeChoices .mb-choice, #caPerspChoices .mb-choice').forEach(c => c.classList.remove('selected'));
+            ['caStep1Btn','caStep2Btn','caOrgBtn','caPerspBtn'].forEach(id => { const b = document.getElementById(id); if(b) b.disabled = true; });
+            document.getElementById('caOrgSearch').style.display = 'none';
+            document.getElementById('caNewOrgForm').style.display = 'none';
             showToast('🔍 Jetzt Kontext vertiefen — gleiche Frage, tiefere Analyse', 'info');
         }
 
@@ -2720,12 +2823,131 @@
             }
         }
 
+        const CA_PANELS = ['caStep0','caStep1','caStep2','caStepOrg','caStepPersp','caStep3','caStep4'];
+
         function caNextStep(fromStep) {
             const next = fromStep + 1;
             caState.step = next;
-            const panels = ['caStep0','caStep1','caStep2','caStep3','caStep4'];
-            caShowPanel(panels[next]);
+            caShowPanel(CA_PANELS[next]);
             caUpdateProgress(next);
+        }
+
+        function caBackToStep(panelId, stepNum) {
+            caState.step = stepNum;
+            caShowPanel(panelId);
+            caUpdateProgress(stepNum);
+        }
+
+        // ═══ ORGANISATION STEP ═══
+        function caGoToOrg() {
+            caState.step = 3;
+            caShowPanel('caStepOrg');
+            caUpdateProgress(3);
+        }
+
+        function caSelectOrgType(el, type) {
+            document.querySelectorAll('#caOrgTypeChoices .mb-choice').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            caState.orgType = type;
+            caState.orgCode = null;
+            caState.orgName = null;
+
+            const searchEl = document.getElementById('caOrgSearch');
+            const formEl = document.getElementById('caNewOrgForm');
+            formEl.style.display = 'none';
+
+            if (type === 'general') {
+                searchEl.style.display = 'none';
+                caState.orgName = 'Allgemein';
+                document.getElementById('caOrgBtn').disabled = false;
+            } else {
+                searchEl.style.display = 'block';
+                document.getElementById('caOrgBtn').disabled = true;
+                document.getElementById('caOrgSearchInput').value = '';
+                document.getElementById('caOrgResults').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px">Tippe um zu suchen...</div>';
+                // Load CRM data if not loaded
+                if (!crmCompaniesData.length) crmLoadCompanies();
+            }
+        }
+
+        function caSearchOrg() {
+            const q = document.getElementById('caOrgSearchInput').value.toLowerCase().trim();
+            const el = document.getElementById('caOrgResults');
+            if (!q) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px">Tippe um zu suchen...</div>'; return; }
+
+            // Search in CRM companies data
+            const matches = crmCompaniesData.filter(c =>
+                (c.name || '').toLowerCase().includes(q) ||
+                (c.code || '').toLowerCase().includes(q) ||
+                (c.children || []).some(ch => (ch.name || '').toLowerCase().includes(q))
+            ).slice(0, 8);
+
+            if (!matches.length) {
+                el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px">Keine Treffer — erstelle eine neue Organisation ↓</div>';
+                return;
+            }
+
+            el.innerHTML = matches.map(c => `
+                <div onclick="caPickOrg('${c.code || ''}','${(c.name||'').replace(/'/g,"\\\'")}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s;font-size:13px;display:flex;align-items:center;gap:10px" onmouseover="this.style.background='rgba(91,138,245,0.1)'" onmouseout="this.style.background='transparent'">
+                    <span style="font-size:18px">🏢</span>
+                    <div>
+                        <div style="color:var(--white);font-weight:500">${c.name || 'Unbekannt'}</div>
+                        <div style="font-size:11px;color:var(--text-muted)">${c.code || ''} · ${c.industry || c.type || ''}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function caPickOrg(code, name) {
+            caState.orgCode = code;
+            caState.orgName = name;
+            caState.customerCode = code;
+            document.getElementById('caOrgSearchInput').value = name;
+            document.getElementById('caOrgResults').innerHTML = `<div style="padding:10px 14px;background:rgba(91,138,245,0.1);border-radius:8px;font-size:13px;color:var(--accent-light)">✅ ${name} (${code}) ausgewählt</div>`;
+            document.getElementById('caOrgBtn').disabled = false;
+            document.getElementById('caNewOrgForm').style.display = 'none';
+        }
+
+        function caNewOrg() {
+            document.getElementById('caNewOrgForm').style.display = 'block';
+            document.getElementById('caOrgResults').innerHTML = '';
+            document.getElementById('caOrgSearchInput').value = '';
+            document.getElementById('caNewOrgName').focus();
+            document.getElementById('caNewOrgName').oninput = () => {
+                const name = document.getElementById('caNewOrgName').value.trim();
+                if (name) {
+                    caState.orgName = name;
+                    caState.orgCode = null; // New, no code yet
+                    document.getElementById('caOrgBtn').disabled = false;
+                } else {
+                    document.getElementById('caOrgBtn').disabled = true;
+                }
+            };
+        }
+
+        // ═══ PERSPEKTIVE STEP ═══
+        function caGoToPersp() {
+            caState.step = 4;
+            caShowPanel('caStepPersp');
+            caUpdateProgress(4);
+            // Update description based on org
+            const desc = document.getElementById('caPerspDesc');
+            if (caState.orgName && caState.orgName !== 'Allgemein') {
+                desc.textContent = `Wessen Verhalten bei ${caState.orgName} möchten wir verstehen?`;
+            }
+        }
+
+        function caSelectPersp(el, value) {
+            document.querySelectorAll('#caPerspChoices .mb-choice').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            caState.perspective = value;
+            document.getElementById('caPerspBtn').disabled = false;
+        }
+
+        function caGoToSituation() {
+            caState.step = 5;
+            caShowPanel('caStep3');
+            caUpdateProgress(5);
         }
 
         function caUpdateMicroBtn() {
@@ -2744,18 +2966,18 @@
                 cognitive: document.getElementById('caMicroCognitive').value,
                 notes: document.getElementById('caMicroNotes').value.trim()
             };
-            caState.step = 4;
+            caState.step = 6;
             caShowPanel('caStep4');
-            caUpdateProgress(4);
+            caUpdateProgress(6);
             // Run AI analysis
             await caRunAnalysis();
         }
 
         async function caRunSchnell(question) {
-            caState.step = 4;
+            caState.step = 6;
             caShowPanel('caStep4');
             document.getElementById('caProgress').style.display = 'flex';
-            caUpdateProgress(4);
+            caUpdateProgress(6);
             await caRunAnalysis();
         }
 
@@ -2773,9 +2995,12 @@
             }
 
             // Call AI for full analysis
+            const orgInfo = caState.orgName && caState.orgName !== 'Allgemein' ? `\nOrganisation: ${caState.orgName}${caState.orgCode ? ' ('+caState.orgCode+')' : ''} [Typ: ${caState.orgType || 'unbekannt'}]` : '';
+            const perspInfo = caState.perspective ? `\nPerspektive: ${caState.perspective === 'alle' ? 'Alle Stakeholder (strategische Gesamtanalyse)' : caState.perspective === 'kunden' ? 'Kunden/Endnutzer' : caState.perspective === 'mitarbeitende' ? 'Mitarbeitende/Frontline' : 'Management/Entscheider'}` : '';
+
             const prompt = caState.mode === 'schnell'
                 ? `Führe eine vollständige EBF-Kontextanalyse durch für folgende Frage:\n"${caState.question}"\n\nAnalysiere alle 5 Ebenen (MACRO→MESO→MICRO→INDIVIDUAL→META) und alle 8 Ψ-Dimensionen.`
-                : `Führe eine EBF-Kontextanalyse durch:\nFrage: "${caState.question}"\nMACRO: ${caState.macro}${caState.macro==='custom_macro' ? ' ('+document.getElementById('caMacroCustom')?.value+')' : ''}\nMESO: ${caState.meso}${caState.meso==='custom_meso' ? ' ('+document.getElementById('caMesoCustom')?.value+')' : ''}\nMICRO: Ort=${caState.micro.where}, Sozial=${caState.micro.social}, Zeit=${caState.micro.time}, Kognitiv=${caState.micro.cognitive}${caState.micro.notes ? ', Notizen: '+caState.micro.notes : ''}`;
+                : `Führe eine EBF-Kontextanalyse durch:\nFrage: "${caState.question}"\nMACRO: ${caState.macro}${caState.macro==='custom_macro' ? ' ('+document.getElementById('caMacroCustom')?.value+')' : ''}\nMESO: ${caState.meso}${caState.meso==='custom_meso' ? ' ('+document.getElementById('caMesoCustom')?.value+')' : ''}${orgInfo}${perspInfo}\nMICRO: Ort=${caState.micro.where}, Sozial=${caState.micro.social}, Zeit=${caState.micro.time}, Kognitiv=${caState.micro.cognitive}${caState.micro.notes ? ', Notizen: '+caState.micro.notes : ''}`;
 
             const sysPrompt = `Du bist BEATRIX Kontext-Analyst. Analysiere mit dem EBF Ψ-Framework.
 
@@ -2896,9 +3121,9 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
 
             document.getElementById('caAnalysisProgress').style.display = 'none';
             document.getElementById('caAnalysisResult').style.display = 'block';
-            document.querySelector('#caStep4 .mb-step-title').textContent = 'Ψ-Profil — Ergebnis';
+            document.querySelector('#caStep4 .mb-step-title').textContent = 'Kontextprofil — Ergebnis';
             document.querySelector('#caStep4 .mb-step-desc').textContent = caState.question;
-            caUpdateProgress(5);
+            caUpdateProgress(7);
 
             // Show "Kontext vertiefen" button only in schnell mode
             const deepenBtn = document.getElementById('caDeepenBtn');
@@ -2999,7 +3224,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                 question: caState.question,
                 mode: caState.mode,
                 macro_context: caState.macro ? { country: caState.macro, custom: document.getElementById('caMacroCustom')?.value } : null,
-                meso_context: caState.meso ? { industry: caState.meso, custom: document.getElementById('caMesoCustom')?.value } : null,
+                meso_context: caState.meso ? { industry: caState.meso, custom: document.getElementById('caMesoCustom')?.value, org_type: caState.orgType, org_name: caState.orgName, perspective: caState.perspective } : null,
                 micro_context: caState.micro || null,
                 psi_profile: r.psi_profile,
                 parameters: r.parameters,
@@ -3018,7 +3243,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                 });
                 if (resp.ok) {
                     const result = await resp.json();
-                    showToast(`Ψ-Profil gespeichert: ${result.lineage_id} v${result.version}`, 'success');
+                    showToast(`Kontextprofil gespeichert: ${result.lineage_id} v${result.version}`, 'success');
                     caState.lineageId = result.lineage_id;
                     caState.currentVersionId = result.id;
                     return;
@@ -3038,7 +3263,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                     body: JSON.stringify(fallback)
                 });
                 if (resp.ok) {
-                    showToast('Ψ-Profil gespeichert (Legacy-Modus)', 'success');
+                    showToast('Kontextprofil gespeichert', 'success');
                 } else {
                     throw new Error('Both endpoints failed');
                 }
