@@ -412,11 +412,32 @@
         @media (max-width:768px) { .mb-choices { grid-template-columns:1fr; } .mb-mode-cards { grid-template-columns:1fr 1fr; } }
         @media (max-width:768px) { .profile-grid { grid-template-columns:1fr; } .profile-row { grid-template-columns:1fr; } }
         @media (max-width:640px) {
-            .nav { padding:0 16px; } .nav-links { display:none; } .hero { padding:48px 16px 40px; } .hero h1 { font-size:28px; }
+            .nav { padding:0 12px; flex-wrap:wrap; height:auto; min-height:56px; }
+            .nav-brand .nav-title { font-size:16px; }
+            .nav-links { display:none; width:100%; order:3; flex-direction:column; padding:8px 0 12px; border-top:1px solid var(--border); }
+            .nav-links.mobile-open { display:flex; }
+            .nav-links .nav-link { padding:12px 16px; font-size:14px; border-radius:8px; }
+            .nav-links .nav-dropdown { width:100%; }
+            .nav-links .nav-dropdown-trigger { width:100%; padding:12px 16px; font-size:14px; justify-content:flex-start; }
+            .nav-links .nav-dropdown-menu { position:static; background:rgba(15,30,55,0.6); border:none; box-shadow:none; margin:0; padding:0 0 0 20px; border-radius:0; }
+            .nav-links .nav-dropdown-item { padding:10px 16px; font-size:13px; }
+            .nav-links .nav-dropdown.open .nav-dropdown-menu { display:flex; flex-direction:column; }
+            .nav-right { order:2; gap:6px; }
+            .nav-right .nav-status { font-size:11px; padding:3px 8px; }
+            .nav-right .nav-logout { display:none; }
+            .nav-right #appVersion { display:none; }
+            .nav-hamburger { display:flex; order:1; margin-left:auto; margin-right:8px; }
+            .hero { padding:48px 16px 40px; } .hero h1 { font-size:28px; }
             .hero-stats { gap:20px; } .container { padding:24px 16px 60px; } .db-selector { grid-template-columns:1fr; }
             .input-row { grid-template-columns:1fr; } .upload-zone { padding:36px 20px; } .actions { flex-direction:column; gap:12px; }
             .auth-card { padding:36px 24px; } .auth-title { font-size:24px; }
+            #caPsiCards { grid-template-columns:repeat(2,1fr) !important; }
+            .mb-mode-cards { grid-template-columns:1fr !important; }
+            .mb-choices { grid-template-columns:1fr !important; }
         }
+        .nav-hamburger { display:none; width:36px; height:36px; align-items:center; justify-content:center; background:none; border:1px solid var(--border); border-radius:8px; cursor:pointer; color:var(--text-secondary); transition:var(--transition); }
+        .nav-hamburger:hover { border-color:var(--border-light); color:var(--white); }
+        .nav-hamburger svg { width:18px; height:18px; }
     </style>
 </head>
 <body>
@@ -493,6 +514,9 @@
     <!-- ═══════ MAIN APP ═══════ -->
     <nav class="nav">
         <a href="#" class="nav-brand" onclick="showSection('hero')"><img src="/logo.jpeg" alt="BEATRIX" class="nav-logo-img"><span class="nav-title">BEATRIX</span></a>
+        <button class="nav-hamburger" id="navHamburger" onclick="toggleMobileNav()" aria-label="Menu">
+            <svg id="hamburgerIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
         <div class="nav-links">
             <a href="#" class="nav-link active" data-section="chat" onclick="showSection('chat',this)">💬 Fragen</a>
             <div class="nav-dropdown" id="navDropBehavioral">
@@ -2336,8 +2360,9 @@
 
         // ── App Logic ───────────────────────────────────
         function showSection(name,el) {
-            // Close any open dropdowns
+            // Close any open dropdowns + mobile nav
             document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            closeMobileNav();
             // Clear all active states
             document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
             document.querySelectorAll('.nav-dropdown-trigger').forEach(t=>t.classList.remove('active'));
@@ -2359,6 +2384,24 @@
             if(name==='model') { if (!mbUserProfile) mbLoadUserProfile().then(() => mbApplyDefault('start')); }
         }
 
+        function toggleMobileNav() {
+            const links = document.querySelector('.nav-links');
+            const isOpen = links.classList.toggle('mobile-open');
+            const icon = document.getElementById('hamburgerIcon');
+            if (isOpen) {
+                icon.innerHTML = '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>';
+            } else {
+                icon.innerHTML = '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>';
+            }
+        }
+
+        function closeMobileNav() {
+            const links = document.querySelector('.nav-links');
+            if (links) links.classList.remove('mobile-open');
+            const icon = document.getElementById('hamburgerIcon');
+            if (icon) icon.innerHTML = '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>';
+        }
+
         function toggleDropdown(id) {
             const dd = document.getElementById(id);
             const wasOpen = dd.classList.contains('open');
@@ -2367,8 +2410,9 @@
         }
 
         function navDropClick(section, itemEl) {
-            // Close dropdown
+            // Close dropdown + mobile nav
             document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+            closeMobileNav();
             // Clear all actives
             document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
             document.querySelectorAll('.nav-dropdown-trigger').forEach(t=>t.classList.remove('active'));
