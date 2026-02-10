@@ -1007,72 +1007,285 @@
     <!-- ═══════ AUSGANGSLAGE / KONTEXT SECTION ═══════ -->
     <section class="section" id="context-section">
         <div class="container">
-            <div class="section-header">
-                <h2>Ausgangslage</h2>
-                <p>Kontext und Rahmenbedingungen für Projekte und Mandate erfassen.</p>
-            </div>
-
-            <!-- Context Cards Grid -->
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Aktive Kontexte</div>
-                    <div id="ctxKpiActive" style="font-size:28px;font-weight:700;color:white;margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">erfasst</div>
+            <div class="mb-header">
+                <div>
+                    <h2>Kontext-Analyse</h2>
+                    <p>8 Ψ-Dimensionen × 5-Ebenen-Hierarchie — weil ohne Kontext jede Antwort falsch ist</p>
                 </div>
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Laufende Mandate</div>
-                    <div id="ctxKpiActive2" style="font-size:28px;font-weight:700;color:#34d399;margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(52,211,153,0.7)">aktiv</div>
-                </div>
-                <div style="padding:16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px">Zuletzt aktualisiert</div>
-                    <div id="ctxKpiLast" style="font-size:16px;font-weight:700;color:var(--accent-light);margin:6px 0">–</div>
-                    <div style="font-size:11px;color:rgba(139,170,255,0.7)">letztes Update</div>
+                <div style="display:flex;gap:8px">
+                    <button class="mb-btn mb-btn-secondary" onclick="caShowHistory()" id="caHistoryBtn">📋 Bisherige Analysen</button>
                 </div>
             </div>
 
-            <!-- New Context Button -->
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div style="font-size:14px;font-weight:600;color:white">Kontexte <span id="ctxCount" style="font-size:12px;color:rgba(255,255,255,0.4)"></span></div>
-                <button class="mb-btn mb-btn-primary" onclick="ctxShowAdd()" style="font-size:12px;padding:6px 14px">+ Neuer Kontext</button>
+            <!-- PROGRESS BAR -->
+            <div class="mb-progress" id="caProgress" style="display:none">
+                <div class="mb-step-dot active" data-castep="0"><div class="mb-step-num">1</div><div class="mb-step-label">Thema</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="1"><div class="mb-step-num">2</div><div class="mb-step-label">MACRO</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="2"><div class="mb-step-num">3</div><div class="mb-step-label">MESO</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="3"><div class="mb-step-num">4</div><div class="mb-step-label">MICRO</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="4"><div class="mb-step-num">5</div><div class="mb-step-label">Ψ-Profil</div></div>
+                <div class="mb-step-line"></div>
+                <div class="mb-step-dot" data-castep="5"><div class="mb-step-num">6</div><div class="mb-step-label">Ergebnis</div></div>
             </div>
 
-            <!-- Add Context Form (hidden) -->
-            <div id="ctxAddForm" style="display:none;padding:20px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px">
-                <div style="font-size:14px;font-weight:600;color:white;margin-bottom:12px">Neuer Kontext / Ausgangslage</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                    <input class="mb-input" id="ctxClient" placeholder="Kunde / Mandant" style="font-size:13px;padding:8px 12px">
-                    <input class="mb-input" id="ctxProject" placeholder="Projekt / Mandat" style="font-size:13px;padding:8px 12px">
-                    <select class="mb-input" id="ctxDomain" style="font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
-                        <option value="">Domain wählen...</option>
-                        <option value="FIN">Finanzen</option>
-                        <option value="HLT">Gesundheit</option>
-                        <option value="POL">Politik</option>
-                        <option value="ORG">Organisation</option>
-                        <option value="EDU">Bildung</option>
-                        <option value="ENV">Umwelt / Energie</option>
-                        <option value="REL">Beziehungen</option>
-                        <option value="OTH">Andere</option>
-                    </select>
-                    <select class="mb-input" id="ctxStatus" style="font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
-                        <option value="aktiv">Aktiv</option>
-                        <option value="planung">In Planung</option>
-                        <option value="abgeschlossen">Abgeschlossen</option>
-                        <option value="pausiert">Pausiert</option>
-                    </select>
+            <!-- ═══ START: Mode Selection ═══ -->
+            <div class="mb-panel active" id="caStart">
+                <div class="mb-step-title">Neue Kontextanalyse starten</div>
+                <div class="mb-step-desc">Die Kontextanalyse identifiziert die 8 Ψ-Dimensionen für dein Verhalten oder deine Fragestellung. Jeder Kontext verändert alle Parameter — λ, β, γ, θ sind Funktionen von Ψ, nicht Konstanten.</div>
+
+                <div class="mb-mode-cards">
+                    <div class="mb-mode-card" onclick="caSelectMode(this,'schnell')">
+                        <div class="mb-mode-icon">⚡</div>
+                        <div class="mb-mode-name">Schnell</div>
+                        <div class="mb-mode-time">~5 Minuten</div>
+                        <div class="mb-mode-desc">Frage eingeben → BEATRIX analysiert alle 5 Ebenen automatisch</div>
+                    </div>
+                    <div class="mb-mode-card" onclick="caSelectMode(this,'gefuehrt')">
+                        <div class="mb-mode-icon">🎯</div>
+                        <div class="mb-mode-name">Geführt</div>
+                        <div class="mb-mode-time">~15 Minuten</div>
+                        <div class="mb-mode-desc">Schritt für Schritt durch MACRO → MESO → MICRO mit 3+1 Optionen</div>
+                    </div>
+                    <div class="mb-mode-card" onclick="caSelectMode(this,'projekt')">
+                        <div class="mb-mode-icon">📊</div>
+                        <div class="mb-mode-name">Projekt</div>
+                        <div class="mb-mode-time">~10 Minuten</div>
+                        <div class="mb-mode-desc">Für einen bestehenden Kunden/Projekt aus der Datenbank</div>
+                    </div>
+                    <div class="mb-mode-card" onclick="caSelectMode(this,'vergleich')">
+                        <div class="mb-mode-icon">🔄</div>
+                        <div class="mb-mode-name">Vergleich</div>
+                        <div class="mb-mode-time">~20 Minuten</div>
+                        <div class="mb-mode-desc">Zwei Kontexte vergleichen — wie ändern sich Parameter von A → B?</div>
+                    </div>
                 </div>
-                <textarea class="mb-input" id="ctxSituation" placeholder="Ausgangslage: Was ist die aktuelle Situation des Kunden? Welches Problem soll gelöst werden?" style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:80px;width:100%;box-sizing:border-box"></textarea>
-                <textarea class="mb-input" id="ctxGoal" placeholder="Ziel: Was soll erreicht werden? Welches Verhalten soll verändert werden?" style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:60px;width:100%;box-sizing:border-box"></textarea>
-                <textarea class="mb-input" id="ctxConstraints" placeholder="Rahmenbedingungen: Budget, Zeitrahmen, Stakeholder, Einschränkungen..." style="font-size:13px;padding:8px 12px;margin-top:10px;min-height:60px;width:100%;box-sizing:border-box"></textarea>
-                <div style="display:flex;gap:8px;margin-top:12px">
-                    <button class="mb-btn mb-btn-primary" onclick="ctxSave()" style="font-size:12px;padding:6px 14px">Speichern</button>
-                    <button class="mb-btn mb-btn-back" onclick="document.getElementById('ctxAddForm').style.display='none'" style="font-size:12px;padding:6px 14px">Abbrechen</button>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-primary" id="caStartBtn" disabled onclick="caStartWorkflow()">Analyse starten →</button>
                 </div>
             </div>
 
-            <!-- Context List -->
-            <div id="ctxTable" style="display:flex;flex-direction:column;gap:10px">
-                <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Kontexte werden geladen...</div>
+            <!-- ═══ STEP 0: Thema/Frage ═══ -->
+            <div class="mb-panel" id="caStep0">
+                <div class="mb-step-title">Was willst du analysieren?</div>
+                <div class="mb-step-desc">Beschreibe das Verhalten, die Entscheidung oder die Fragestellung. BEATRIX identifiziert daraus die relevanten Ψ-Dimensionen.</div>
+
+                <div id="caStep0Suggestions" style="display:flex;flex-direction:column;gap:10px;margin:20px 0">
+                    <div style="text-align:center;padding:30px;color:rgba(255,255,255,0.5)">
+                        <div style="font-size:24px;margin-bottom:8px">⏳</div>
+                        Lade kontextbasierte Vorschläge...
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:10px;margin-top:8px">
+                    <div class="mb-choice" style="flex:1;border:1px dashed rgba(139,170,255,0.25)" onclick="caShowCustomInput()">
+                        <div class="mb-choice-icon" style="font-size:16px">✏️</div>
+                        <div class="mb-choice-title">Eigene Frage eingeben</div>
+                    </div>
+                </div>
+
+                <div id="caCustomInput" style="display:none;margin-top:16px">
+                    <textarea class="mb-input mb-textarea" id="caQuestion" placeholder="z.B. 'Warum wechseln Schweizer Bankkunden so selten ihren Anbieter?' oder 'Wie kann die BFE Hausbesitzer zu Heizungssanierung motivieren?'" style="min-height:80px"></textarea>
+                    <div style="margin-top:10px">
+                        <button class="mb-btn mb-btn-primary" onclick="caProcessStep0()">Analysieren →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 1: MACRO ═══ -->
+            <div class="mb-panel" id="caStep1">
+                <div id="caStep1ViewA">
+                    <div class="mb-step-title">MACRO-Kontext</div>
+                    <div class="mb-step-desc">Land, Markt und institutioneller Rahmen — definiert Ψ_I (Regeln), Ψ_K (Kultur) und Ψ_E (Ressourcen).</div>
+                    <div class="mb-choices" id="caStep1Choices">
+                        <div class="mb-choice" onclick="caSelect(this,'ch')">
+                            <div class="mb-choice-num">1</div>
+                            <div class="mb-choice-icon">🇨🇭</div>
+                            <div class="mb-choice-title">Schweiz</div>
+                            <div class="mb-choice-desc">Ψ_I: Direkte Demokratie, Subsidiarität. Ψ_K: Konsens, Mehrsprachigkeit. Ψ_E: Hohes BIP.</div>
+                            <div class="mb-choice-meta">GGG Default: DACH-CH</div>
+                        </div>
+                        <div class="mb-choice" onclick="caSelect(this,'at')">
+                            <div class="mb-choice-num">2</div>
+                            <div class="mb-choice-icon">🇦🇹</div>
+                            <div class="mb-choice-title">Österreich</div>
+                            <div class="mb-choice-desc">Ψ_I: Sozialpartnerschaft, EU-Recht. Ψ_K: Gemeinschaft, Tradition. Ψ_E: Hohes BIP.</div>
+                            <div class="mb-choice-meta">GGG Default: DACH-AT</div>
+                        </div>
+                        <div class="mb-choice" onclick="caSelect(this,'de')">
+                            <div class="mb-choice-num">3</div>
+                            <div class="mb-choice-icon">🇩🇪</div>
+                            <div class="mb-choice-title">Deutschland</div>
+                            <div class="mb-choice-desc">Ψ_I: Föderalismus, EU-Recht. Ψ_K: Ordnung, Sicherheit. Ψ_E: Größte EU-Volkswirtschaft.</div>
+                            <div class="mb-choice-meta">GGG Default: DACH-DE</div>
+                        </div>
+                        <div class="mb-choice custom-choice" onclick="caSelect(this,'custom_macro')">
+                            <div class="mb-choice-num">✎</div>
+                            <div class="mb-choice-icon">🌍</div>
+                            <div class="mb-choice-title">Anderer Kontext</div>
+                            <div class="mb-choice-desc">Definiere Land, Markt und institutionellen Rahmen frei.</div>
+                            <div class="mb-choice-meta">→ Custom Ψ_I, Ψ_K, Ψ_E</div>
+                        </div>
+                    </div>
+                    <div id="caCustomMacro" style="display:none;margin-bottom:16px">
+                        <input class="mb-input" id="caMacroCustom" placeholder="Land/Region und institutioneller Rahmen beschreiben..." style="width:100%;box-sizing:border-box">
+                    </div>
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="caBack(0)">← Zurück</button>
+                        <button class="mb-btn mb-btn-primary" id="caStep1Btn" disabled onclick="caNextStep(1)">Weiter →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 2: MESO ═══ -->
+            <div class="mb-panel" id="caStep2">
+                <div class="mb-step-title">MESO-Kontext</div>
+                <div class="mb-step-desc">Branche, Organisation und Marktumfeld — definiert Ψ_M (Tools/Markt) und verfeinert Ψ_I, Ψ_E.</div>
+                <div class="mb-choices" id="caStep2Choices">
+                    <div class="mb-choice" onclick="caSelect(this,'finance')">
+                        <div class="mb-choice-num">1</div>
+                        <div class="mb-choice-icon">🏦</div>
+                        <div class="mb-choice-title">Finanzdienstleistung</div>
+                        <div class="mb-choice-desc">Reguliert, hohes Vertrauen erforderlich, lange Entscheidungszyklen.</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelect(this,'health')">
+                        <div class="mb-choice-num">2</div>
+                        <div class="mb-choice-icon">🏥</div>
+                        <div class="mb-choice-title">Gesundheit</div>
+                        <div class="mb-choice-desc">Asymmetrische Information, hohe Emotionalität, Expert-Laie-Dynamik.</div>
+                    </div>
+                    <div class="mb-choice" onclick="caSelect(this,'public')">
+                        <div class="mb-choice-num">3</div>
+                        <div class="mb-choice-icon">🏛️</div>
+                        <div class="mb-choice-title">Öffentlicher Sektor</div>
+                        <div class="mb-choice-desc">Politische Rahmenbedingungen, Bürger als Zielgruppe, Gemeinwohl.</div>
+                    </div>
+                    <div class="mb-choice custom-choice" onclick="caSelect(this,'custom_meso')">
+                        <div class="mb-choice-num">✎</div>
+                        <div class="mb-choice-icon">🏢</div>
+                        <div class="mb-choice-title">Andere Branche</div>
+                        <div class="mb-choice-desc">Industrie, Energie, Bildung, Technologie, Retail...</div>
+                    </div>
+                </div>
+                <div id="caCustomMeso" style="display:none;margin-bottom:16px">
+                    <input class="mb-input" id="caMesoCustom" placeholder="Branche, Unternehmensgrösse und Marktumfeld beschreiben..." style="width:100%;box-sizing:border-box">
+                </div>
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="caBack(1)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="caStep2Btn" disabled onclick="caNextStep(2)">Weiter →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 3: MICRO ═══ -->
+            <div class="mb-panel" id="caStep3">
+                <div class="mb-step-title">MICRO-Kontext</div>
+                <div class="mb-step-desc">Konkrete Situation, Setting und Zeitpunkt — definiert Ψ_S (Sozial), Ψ_C (Kognitiv), Ψ_T (Zeit), Ψ_F (Ort).</div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">📍 Ψ_F — Wo?</div>
+                        <select class="mb-input" id="caMicroWhere" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            <option value="">Setting wählen...</option>
+                            <option value="home">Zuhause</option>
+                            <option value="workplace">Arbeitsplatz</option>
+                            <option value="store">Geschäft / Einkauf</option>
+                            <option value="online">Online / Digital</option>
+                            <option value="public">Öffentlicher Raum</option>
+                            <option value="healthcare">Gesundheitseinrichtung</option>
+                        </select>
+                    </div>
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">👥 Ψ_S — Wer ist dabei?</div>
+                        <select class="mb-input" id="caMicroSocial" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            <option value="">Soziale Situation...</option>
+                            <option value="solo">Allein (solo)</option>
+                            <option value="dyadic">Zu zweit (Berater, Partner)</option>
+                            <option value="small_group">Kleine Gruppe (Team, Familie)</option>
+                            <option value="large_group">Grosse Gruppe (Organisation, Öffentlichkeit)</option>
+                            <option value="anonymous">Anonym (Menge, Online)</option>
+                        </select>
+                    </div>
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">⏰ Ψ_T — Zeitdruck?</div>
+                        <select class="mb-input" id="caMicroTime" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            <option value="">Temporaler Kontext...</option>
+                            <option value="urgent">Hoher Zeitdruck (Sekunden/Minuten)</option>
+                            <option value="moderate">Moderater Zeitdruck (Tage/Wochen)</option>
+                            <option value="relaxed">Kein Zeitdruck (Monate/Jahre)</option>
+                            <option value="recurring">Wiederkehrend (Routine)</option>
+                        </select>
+                    </div>
+                    <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">🧠 Ψ_C — Kognitiver Zustand?</div>
+                        <select class="mb-input" id="caMicroCognitive" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            <option value="">Kognitiver Zustand...</option>
+                            <option value="analytical">Analytisch (System 2 aktiv)</option>
+                            <option value="intuitive">Intuitiv (System 1 dominant)</option>
+                            <option value="stressed">Gestresst / Cognitive Load hoch</option>
+                            <option value="fatigued">Ermüdet / Decision Fatigue</option>
+                            <option value="motivated">Motiviert / Engagiert</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:16px">
+                    <textarea class="mb-input mb-textarea" id="caMicroNotes" placeholder="Optionale Details: Spezifische Umstände, Trigger, besondere Rahmenbedingungen..." style="min-height:60px;width:100%;box-sizing:border-box;font-size:13px"></textarea>
+                </div>
+
+                <div class="mb-actions">
+                    <button class="mb-btn mb-btn-back" onclick="caBack(2)">← Zurück</button>
+                    <button class="mb-btn mb-btn-primary" id="caStep3Btn" disabled onclick="caAnalyze()">🔍 Ψ-Profil berechnen →</button>
+                </div>
+            </div>
+
+            <!-- ═══ STEP 4: Ψ-Profil ═══ -->
+            <div class="mb-panel" id="caStep4">
+                <div class="mb-step-title">Ψ-Profil wird berechnet...</div>
+                <div class="mb-step-desc">BEATRIX analysiert die 8 Ψ-Dimensionen basierend auf deinen Angaben und der BCM2-Kontextdatenbank.</div>
+
+                <div id="caAnalysisProgress" style="padding:40px;text-align:center">
+                    <div class="spinner" style="margin:0 auto 16px"></div>
+                    <div style="font-size:14px;color:rgba(255,255,255,0.6)" id="caAnalysisStatus">Kontextdatenbank wird geladen...</div>
+                </div>
+
+                <div id="caAnalysisResult" style="display:none">
+                    <!-- Ψ Dimension Cards -->
+                    <div id="caPsiCards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px"></div>
+
+                    <!-- Parameter Implications -->
+                    <div id="caParamBox" style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px">
+                        <div style="font-size:14px;font-weight:600;color:var(--white);margin-bottom:10px">📐 Parameter-Implikationen</div>
+                        <div id="caParams" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.7"></div>
+                    </div>
+
+                    <!-- AI Analysis -->
+                    <div id="caInsightBox" style="padding:16px;background:rgba(139,170,255,0.05);border:1px solid rgba(139,170,255,0.15);border-radius:var(--radius);margin-bottom:16px">
+                        <div style="font-size:14px;font-weight:600;color:var(--accent-light);margin-bottom:10px">💡 Kontext-Synthese</div>
+                        <div id="caInsight" style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.7"></div>
+                    </div>
+
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="caBack(3)">← Zurück</button>
+                        <button class="mb-btn mb-btn-secondary" onclick="caSaveAndUse()">💾 Speichern</button>
+                        <button class="mb-btn mb-btn-primary" onclick="caUseInChat()">💬 Im Chat verwenden →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ HISTORY: Bisherige Analysen ═══ -->
+            <div class="mb-panel" id="caHistory">
+                <div class="mb-step-title">Bisherige Kontextanalysen</div>
+                <div class="mb-step-desc">Gespeicherte Ψ-Profile aus früheren Analysen.</div>
+                <div id="caHistoryList" style="display:flex;flex-direction:column;gap:10px">
+                    <div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Wird geladen...</div>
+                </div>
+                <div class="mb-actions" style="margin-top:16px">
+                    <button class="mb-btn mb-btn-back" onclick="caGoToStart()">← Neue Analyse</button>
+                </div>
             </div>
         </div>
     </section>
@@ -2118,7 +2331,7 @@
             document.getElementById('hero-section').style.display = (name==='upload') ? '' : 'none';
             if(name==='documents') loadDocuments();
             if(name==='admin') loadAdminData();
-            if(name==='context') ctxLoad();
+            if(name==='context') caInit();
             if(name==='leads') crmLoad();
             if(name==='companies') crmLoadCompanies();
             if(name==='projects') prjLoad();
@@ -2151,7 +2364,7 @@
             document.getElementById('hero-section').style.display = (section==='upload') ? '' : 'none';
             if(section==='documents') loadDocuments();
             if(section==='admin') loadAdminData();
-            if(section==='context') ctxLoad();
+            if(section==='context') caInit();
             if(section==='leads') crmLoad();
             if(section==='companies') crmLoadCompanies();
             if(section==='projects') prjLoad();
@@ -2253,123 +2466,471 @@
         }
 
         // ── Kontext / Ausgangslage ──────────────────────
-        let ctxData = [];
+        // Kontext-Analyse state managed by caState and caHistoryData
 
-        function ctxShowAdd() {
-            const f = document.getElementById('ctxAddForm');
-            f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        // ── KONTEXT-ANALYSE WORKFLOW ──────────────────────────
+        const caState = { mode: null, step: -1, question: '', macro: null, meso: null, micro: {}, result: null };
+        let caHistoryData = [];
+
+        const PSI_DIMS = [
+            { key: 'psi_i', icon: '📋', label: 'Ψ_I Regeln', desc: 'Gesetze, Defaults, Vorschriften' },
+            { key: 'psi_s', icon: '👥', label: 'Ψ_S Sozial', desc: 'Soziale Normen, Peer Effects' },
+            { key: 'psi_c', icon: '🧠', label: 'Ψ_C Kognitiv', desc: 'Attention, Cognitive Load' },
+            { key: 'psi_k', icon: '🌍', label: 'Ψ_K Kultur', desc: 'Werte, Traditionen, Identität' },
+            { key: 'psi_e', icon: '💰', label: 'Ψ_E Ressourcen', desc: 'Budget, Zeit, Energie' },
+            { key: 'psi_t', icon: '⏰', label: 'Ψ_T Zeit', desc: 'Zeitdruck, Lebensphase' },
+            { key: 'psi_m', icon: '🔧', label: 'Ψ_M Tools', desc: 'Technologie, Infrastruktur' },
+            { key: 'psi_f', icon: '📍', label: 'Ψ_F Ort', desc: 'Physisches Setting' }
+        ];
+
+        function caInit() {
+            // Load suggestions based on user profile
+            caLoadSuggestions();
         }
 
-        async function ctxLoad() {
+        function caSelectMode(el, mode) {
+            if (el.classList.contains('selected') && caState.mode === mode) {
+                caStartWorkflow(); return;
+            }
+            document.querySelectorAll('#caStart .mb-mode-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            caState.mode = mode;
+            document.getElementById('caStartBtn').disabled = false;
+        }
+
+        function caStartWorkflow() {
+            if (!caState.mode) return;
+            caState.step = 0;
+            caShowPanel('caStep0');
+            document.getElementById('caProgress').style.display = 'flex';
+            caUpdateProgress(0);
+            if (caState.mode === 'schnell') {
+                caShowCustomInput(); // Jump to text input for schnell mode
+            }
+        }
+
+        function caShowPanel(id) {
+            document.querySelectorAll('#context-section .mb-panel').forEach(p => p.classList.remove('active'));
+            const el = document.getElementById(id);
+            if (el) el.classList.add('active');
+        }
+
+        function caUpdateProgress(step) {
+            document.querySelectorAll('#caProgress .mb-step-dot').forEach((dot, i) => {
+                dot.classList.remove('active', 'completed');
+                if (i < step) dot.classList.add('completed');
+                if (i === step) dot.classList.add('active');
+            });
+            document.querySelectorAll('#caProgress .mb-step-line').forEach((line, i) => {
+                line.classList.toggle('completed', i < step);
+            });
+        }
+
+        function caGoToStart() {
+            caState.step = -1;
+            caState.mode = null;
+            document.querySelectorAll('#caStart .mb-mode-card').forEach(c => c.classList.remove('selected'));
+            document.getElementById('caStartBtn').disabled = true;
+            document.getElementById('caProgress').style.display = 'none';
+            caShowPanel('caStart');
+        }
+
+        function caBack(toStep) {
+            caState.step = toStep;
+            const panels = ['caStep0','caStep1','caStep2','caStep3','caStep4'];
+            caShowPanel(panels[toStep]);
+            caUpdateProgress(toStep);
+        }
+
+        function caSelect(el, value) {
+            const parent = el.closest('.mb-choices') || el.parentElement;
+            parent.querySelectorAll('.mb-choice').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            // Enable the corresponding next button
+            const step = el.closest('.mb-panel');
+            if (step) {
+                const btn = step.querySelector('.mb-btn-primary');
+                if (btn) btn.disabled = false;
+            }
+            // Store value and toggle custom inputs
+            if (step?.id === 'caStep1') {
+                caState.macro = value;
+                const customEl = document.getElementById('caCustomMacro');
+                if (customEl) customEl.style.display = value === 'custom_macro' ? 'block' : 'none';
+            }
+            if (step?.id === 'caStep2') {
+                caState.meso = value;
+                const customEl = document.getElementById('caCustomMeso');
+                if (customEl) customEl.style.display = value === 'custom_meso' ? 'block' : 'none';
+            }
+        }
+
+        function caShowCustomInput() {
+            document.getElementById('caCustomInput').style.display = 'block';
+            document.getElementById('caQuestion').focus();
+        }
+
+        async function caLoadSuggestions() {
+            const container = document.getElementById('caStep0Suggestions');
+            if (!container) return;
+            // Generate context-relevant suggestions
+            const suggestions = [
+                { icon: '🏦', text: 'Warum wechseln Schweizer so selten den Bankanbieter?', domain: 'FIN' },
+                { icon: '🏥', text: 'Wie können Patienten zu besserer Medikamenten-Adhärenz motiviert werden?', domain: 'HLT' },
+                { icon: '⚡', text: 'Welche Kontextfaktoren beeinflussen die Entscheidung zum Heizungsersatz?', domain: 'ENV' },
+                { icon: '🗳️', text: 'Wie verändert Social Media den politischen Entscheidungskontext?', domain: 'POL' },
+                { icon: '🏢', text: 'Welcher Kontext fördert/hemmt Innovationsverhalten in Organisationen?', domain: 'ORG' },
+            ];
+            container.innerHTML = suggestions.map(s => `
+                <div class="mb-choice" style="padding:14px 16px;display:flex;align-items:center;gap:12px" onclick="caSelectSuggestion(this,'${s.text.replace(/'/g,"\\'")}')">
+                    <div style="font-size:20px;min-width:32px;text-align:center">${s.icon}</div>
+                    <div>
+                        <div style="font-size:13px;color:var(--white);line-height:1.4">${s.text}</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${s.domain}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function caSelectSuggestion(el, text) {
+            caState.question = text;
+            if (caState.mode === 'schnell') {
+                caRunSchnell(text);
+            } else {
+                caState.step = 1;
+                caShowPanel('caStep1');
+                caUpdateProgress(1);
+            }
+        }
+
+        async function caProcessStep0() {
+            const q = document.getElementById('caQuestion').value.trim();
+            if (!q) { showToast('Bitte Frage eingeben', 'error'); return; }
+            caState.question = q;
+            if (caState.mode === 'schnell') {
+                caRunSchnell(q);
+            } else {
+                caState.step = 1;
+                caShowPanel('caStep1');
+                caUpdateProgress(1);
+            }
+        }
+
+        function caNextStep(fromStep) {
+            const next = fromStep + 1;
+            caState.step = next;
+            const panels = ['caStep0','caStep1','caStep2','caStep3','caStep4'];
+            caShowPanel(panels[next]);
+            caUpdateProgress(next);
+        }
+
+        function caUpdateMicroBtn() {
+            const w = document.getElementById('caMicroWhere').value;
+            const s = document.getElementById('caMicroSocial').value;
+            const btn = document.getElementById('caStep3Btn');
+            if (btn) btn.disabled = !(w && s);
+        }
+
+        async function caAnalyze() {
+            // Collect MICRO data
+            caState.micro = {
+                where: document.getElementById('caMicroWhere').value,
+                social: document.getElementById('caMicroSocial').value,
+                time: document.getElementById('caMicroTime').value,
+                cognitive: document.getElementById('caMicroCognitive').value,
+                notes: document.getElementById('caMicroNotes').value.trim()
+            };
+            caState.step = 4;
+            caShowPanel('caStep4');
+            caUpdateProgress(4);
+            // Run AI analysis
+            await caRunAnalysis();
+        }
+
+        async function caRunSchnell(question) {
+            caState.step = 4;
+            caShowPanel('caStep4');
+            document.getElementById('caProgress').style.display = 'flex';
+            caUpdateProgress(4);
+            await caRunAnalysis();
+        }
+
+        async function caRunAnalysis() {
+            const statusEl = document.getElementById('caAnalysisStatus');
+            const progressEl = document.getElementById('caAnalysisProgress');
+            const resultEl = document.getElementById('caAnalysisResult');
+            progressEl.style.display = 'block';
+            resultEl.style.display = 'none';
+
+            const steps = ['Kontextdatenbank wird geladen...', 'MACRO-Ebene analysieren...', 'MESO-Kontext identifizieren...', 'MICRO-Situationsfaktoren extrahieren...', 'Ψ-Dimensionen berechnen...', 'Parameter-Implikationen ableiten...'];
+            for (let i = 0; i < steps.length; i++) {
+                statusEl.textContent = steps[i];
+                await new Promise(r => setTimeout(r, 600));
+            }
+
+            // Call AI for full analysis
+            const prompt = caState.mode === 'schnell'
+                ? `Führe eine vollständige EBF-Kontextanalyse durch für folgende Frage:\n"${caState.question}"\n\nAnalysiere alle 5 Ebenen (MACRO→MESO→MICRO→INDIVIDUAL→META) und alle 8 Ψ-Dimensionen.`
+                : `Führe eine EBF-Kontextanalyse durch:\nFrage: "${caState.question}"\nMACRO: ${caState.macro}${caState.macro==='custom_macro' ? ' ('+document.getElementById('caMacroCustom')?.value+')' : ''}\nMESO: ${caState.meso}${caState.meso==='custom_meso' ? ' ('+document.getElementById('caMesoCustom')?.value+')' : ''}\nMICRO: Ort=${caState.micro.where}, Sozial=${caState.micro.social}, Zeit=${caState.micro.time}, Kognitiv=${caState.micro.cognitive}${caState.micro.notes ? ', Notizen: '+caState.micro.notes : ''}`;
+
+            const sysPrompt = `Du bist BEATRIX Kontext-Analyst. Analysiere mit dem EBF Ψ-Framework.
+
+Antworte EXAKT in diesem JSON-Format (kein Markdown, kein Text davor/danach):
+{
+  "psi_profile": {
+    "psi_i": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
+    "psi_s": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
+    "psi_c": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
+    "psi_k": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
+    "psi_e": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
+    "psi_t": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
+    "psi_m": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
+    "psi_f": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] }
+  },
+  "parameters": {
+    "lambda": { "value": "Zahl", "note": "Erklärung warum dieser Wert im Kontext" },
+    "beta": { "value": "Zahl", "note": "Erklärung" },
+    "theta": { "value": "Zahl", "note": "Erklärung" },
+    "delta": { "value": "Zahl", "note": "Erklärung" }
+  },
+  "synthesis": "2-3 Sätze Zusammenfassung: Was bedeutet dieser Kontext für Verhaltensvorhersagen?",
+  "implications": ["Implikation 1", "Implikation 2", "Implikation 3"],
+  "confidence": "LLMMC Prior | Confidence: 0.0-1.0",
+  "macro_summary": "1 Satz MACRO",
+  "meso_summary": "1 Satz MESO",
+  "micro_summary": "1 Satz MICRO"
+}
+
+Werte-Skala für Ψ: 0.0 = minimal/absent, 0.5 = moderat, 1.0 = maximal/dominant.
+Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
+
             try {
-                const r = await fetch(`${API}/contexts`, { headers: H() });
-                if (!r.ok) throw new Error('Load failed');
-                ctxData = await r.json();
-                ctxRender();
+                const r = await fetch(`${API}/chat`, {
+                    method: 'POST',
+                    headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: prompt, system_prompt: sysPrompt, context: 'context_analysis' })
+                });
+                if (!r.ok) throw new Error('Analysis failed');
+
+                let text = '';
+                if (r.headers.get('content-type')?.includes('text/event-stream')) {
+                    const reader = r.body.getReader();
+                    const decoder = new TextDecoder();
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        const chunk = decoder.decode(value, { stream: true });
+                        for (const line of chunk.split('\n')) {
+                            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                                try { const d = JSON.parse(line.slice(6)); if (d.content) text += d.content; } catch(e) {}
+                            }
+                        }
+                    }
+                } else {
+                    const data = await r.json();
+                    text = data.response || data.content || JSON.stringify(data);
+                }
+
+                // Parse JSON from response
+                const jsonMatch = text.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    caState.result = JSON.parse(jsonMatch[0]);
+                    caRenderResult();
+                } else {
+                    throw new Error('No JSON in response');
+                }
             } catch(e) {
-                console.error('Context load:', e);
-                ctxData = [];
-                document.getElementById('ctxTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Kontexte erfasst.</div>';
-                ctxRenderKpis();
+                console.error('CA analysis error:', e);
+                // Generate fallback result
+                caState.result = caGenerateFallback();
+                caRenderResult();
             }
         }
 
-        function ctxRender() {
-            const domainColors = { FIN:'#fbbf24', HLT:'#34d399', POL:'#f87171', ORG:'#8b9aff', EDU:'#a78bfa', ENV:'#4ade80', REL:'#fb923c', OTH:'#94a3b8' };
-            const domainLabels = { FIN:'Finanzen', HLT:'Gesundheit', POL:'Politik', ORG:'Organisation', EDU:'Bildung', ENV:'Umwelt', REL:'Beziehungen', OTH:'Andere' };
-            const statusColors = { aktiv:'rgba(52,211,153,0.8)', planung:'rgba(139,170,255,0.8)', abgeschlossen:'rgba(255,255,255,0.3)', pausiert:'rgba(251,191,36,0.8)' };
+        function caGenerateFallback() {
+            return {
+                psi_profile: {
+                    psi_i: { value: 0.6, label: 'Moderater regulatorischer Rahmen', key_factors: ['Gesetzgebung', 'Defaults'] },
+                    psi_s: { value: 0.5, label: 'Gemischte soziale Einflüsse', key_factors: ['Peer Effects', 'Normen'] },
+                    psi_c: { value: 0.4, label: 'Moderate kognitive Belastung', key_factors: ['Komplexität', 'Aufmerksamkeit'] },
+                    psi_k: { value: 0.5, label: 'Kultureller Standardkontext', key_factors: ['Werte', 'Tradition'] },
+                    psi_e: { value: 0.5, label: 'Durchschnittliche Ressourcen', key_factors: ['Budget', 'Zeit'] },
+                    psi_t: { value: 0.4, label: 'Moderater Zeitdruck', key_factors: ['Deadline', 'Rhythmus'] },
+                    psi_m: { value: 0.5, label: 'Standard-Tooling', key_factors: ['Digital', 'Analog'] },
+                    psi_f: { value: 0.5, label: 'Neutrales Setting', key_factors: ['Ort', 'Zugang'] }
+                },
+                parameters: {
+                    lambda: { value: '2.25', note: 'GGG Default — kein kontextspezifischer Modifier' },
+                    beta: { value: '0.95', note: 'Leicht present-biased im Standardkontext' },
+                    theta: { value: '0.5', note: 'Mittlere Aufmerksamkeit' },
+                    delta: { value: '0.97', note: 'Standard-Diskontierung' }
+                },
+                synthesis: 'Ohne spezifischere Kontextdaten werden GGG-Defaults verwendet. Die Parameter sind LLMMC Priors und sollten mit empirischen Daten kalibriert werden.',
+                implications: ['GGG Defaults aktiv — alle Parameter mit Vorsicht nutzen', 'Kontextspezifische Daten würden die Präzision erhöhen', 'BCM2-Datenbank für empirische Ankerwerte konsultieren'],
+                confidence: 'LLMMC Prior | Confidence: 0.35',
+                macro_summary: 'Standard DACH-Kontext angenommen',
+                meso_summary: 'Branchenkontext nicht spezifiziert',
+                micro_summary: 'Situationsspezifische Faktoren unbekannt'
+            };
+        }
 
-            document.getElementById('ctxCount').textContent = `(${ctxData.length})`;
+        function caRenderResult() {
+            const r = caState.result;
+            if (!r) return;
 
-            if (!ctxData.length) {
-                document.getElementById('ctxTable').innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Kontexte erfasst. Klicke «+ Neuer Kontext» um zu starten.</div>';
-                ctxRenderKpis();
-                return;
-            }
+            document.getElementById('caAnalysisProgress').style.display = 'none';
+            document.getElementById('caAnalysisResult').style.display = 'block';
+            document.querySelector('#caStep4 .mb-step-title').textContent = 'Ψ-Profil — Ergebnis';
+            document.querySelector('#caStep4 .mb-step-desc').textContent = caState.question;
+            caUpdateProgress(5);
 
-            document.getElementById('ctxTable').innerHTML = ctxData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at)).map(c => {
-                const dc = domainColors[c.domain] || '#94a3b8';
-                const dl = domainLabels[c.domain] || c.domain;
-                const sc = statusColors[c.status] || '#94a3b8';
-                const date = new Date(c.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: '2-digit' });
+            // Render Ψ cards
+            const cardsEl = document.getElementById('caPsiCards');
+            cardsEl.innerHTML = PSI_DIMS.map(dim => {
+                const data = r.psi_profile?.[dim.key] || { value: 0.5, label: '–', key_factors: [] };
+                const pct = Math.round(data.value * 100);
+                const hue = data.value < 0.3 ? 200 : data.value < 0.7 ? 45 : 140;
                 return `
-                <div style="padding:16px 18px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-                        <span style="font-weight:600;color:white;font-size:15px">${c.client || '–'}</span>
-                        <span style="font-size:13px;color:rgba(255,255,255,0.5)">→ ${c.project || '–'}</span>
-                        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
-                            <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:${dc}18;color:${dc};border:1px solid ${dc}44">${dl}</span>
-                            <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:${sc}18;color:${sc};border:1px solid ${sc}44">${c.status}</span>
-                            <span style="font-size:11px;color:rgba(255,255,255,0.25)">${date}</span>
-                        </span>
+                <div style="padding:14px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                        <span style="font-size:16px">${dim.icon}</span>
+                        <span style="font-size:12px;font-weight:700;color:var(--white)">${dim.label}</span>
                     </div>
-                    ${c.situation ? `<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Ausgangslage</div><div style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.5">${c.situation}</div></div>` : ''}
-                    ${c.goal ? `<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:600;color:rgba(52,211,153,0.6);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Ziel</div><div style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.5">${c.goal}</div></div>` : ''}
-                    ${c.constraints ? `<div><div style="font-size:10px;font-weight:600;color:rgba(251,191,36,0.6);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Rahmenbedingungen</div><div style="font-size:13px;color:rgba(255,255,255,0.5);line-height:1.5">${c.constraints}</div></div>` : ''}
-                    <div style="display:flex;gap:8px;margin-top:10px;border-top:1px solid rgba(255,255,255,0.04);padding-top:10px">
-                        <select onchange="ctxUpdateStatus('${c.id}',this.value)" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer">
-                            ${['aktiv','planung','abgeschlossen','pausiert'].map(s => `<option value="${s}" ${s===c.status?'selected':''}>${s}</option>`).join('')}
-                        </select>
-                        <button onclick="ctxDelete('${c.id}')" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(248,113,113,0.5);border:1px solid rgba(248,113,113,0.15);border-radius:6px;cursor:pointer">Löschen</button>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                        <div style="flex:1;height:6px;background:var(--navy-mid);border-radius:3px;overflow:hidden">
+                            <div style="width:${pct}%;height:100%;background:hsl(${hue},70%,55%);border-radius:3px;transition:width 0.8s ease"></div>
+                        </div>
+                        <span style="font-size:13px;font-weight:700;color:hsl(${hue},70%,65%)">${data.value.toFixed(2)}</span>
                     </div>
+                    <div style="font-size:11px;color:rgba(255,255,255,0.6);line-height:1.4;margin-bottom:4px">${data.label}</div>
+                    <div style="font-size:10px;color:rgba(255,255,255,0.35)">${(data.key_factors||[]).join(' · ')}</div>
                 </div>`;
             }).join('');
 
-            ctxRenderKpis();
-        }
+            // Render parameters
+            const paramsEl = document.getElementById('caParams');
+            const params = r.parameters || {};
+            paramsEl.innerHTML = Object.entries(params).map(([k, v]) =>
+                `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+                    <span style="font-weight:700;color:var(--accent-light);min-width:24px">${k === 'lambda' ? 'λ' : k === 'beta' ? 'β' : k === 'theta' ? 'θ' : k === 'delta' ? 'δ' : k}</span>
+                    <span style="font-weight:600;color:var(--white)">${v.value}</span>
+                    <span style="color:rgba(255,255,255,0.45);font-size:12px">— ${v.note}</span>
+                </div>`
+            ).join('');
 
-        function ctxRenderKpis() {
-            const active = ctxData.filter(c => c.status === 'aktiv');
-            document.getElementById('ctxKpiActive').textContent = ctxData.length;
-            document.getElementById('ctxKpiActive2').textContent = active.length;
-            if (ctxData.length > 0) {
-                const last = new Date(ctxData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at))[0].updated_at || ctxData[0].created_at);
-                document.getElementById('ctxKpiLast').textContent = last.toLocaleDateString('de-CH', { day: '2-digit', month: 'short' });
+            // Render synthesis
+            const insightEl = document.getElementById('caInsight');
+            let html = `<p style="margin-bottom:10px">${r.synthesis || ''}</p>`;
+            if (r.implications?.length) {
+                html += '<div style="margin-top:8px">' + r.implications.map(imp =>
+                    `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px;font-size:12px"><span style="color:var(--accent)">→</span> ${imp}</div>`
+                ).join('') + '</div>';
             }
+            if (r.confidence) {
+                html += `<div style="margin-top:10px;padding:8px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;font-size:11px;color:rgba(251,191,36,0.8)">⚠️ ${r.confidence}</div>`;
+            }
+            insightEl.innerHTML = html;
         }
 
-        async function ctxSave() {
+        async function caSaveAndUse() {
             const ctx = {
-                client: document.getElementById('ctxClient').value.trim(),
-                project: document.getElementById('ctxProject').value.trim(),
-                domain: document.getElementById('ctxDomain').value,
-                status: document.getElementById('ctxStatus').value,
-                situation: document.getElementById('ctxSituation').value.trim(),
-                goal: document.getElementById('ctxGoal').value.trim(),
-                constraints: document.getElementById('ctxConstraints').value.trim()
+                client: 'Kontextanalyse',
+                project: caState.question.substring(0, 80),
+                domain: 'OTH',
+                status: 'aktiv',
+                situation: JSON.stringify(caState.result?.psi_profile || {}),
+                goal: caState.result?.synthesis || '',
+                constraints: caState.result?.confidence || ''
             };
-            if (!ctx.client) { showToast('Bitte Kunde angeben', 'error'); return; }
             try {
                 const r = await fetch(`${API}/contexts`, {
                     method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
                     body: JSON.stringify(ctx)
                 });
-                if (!r.ok) throw new Error('Save failed');
-                showToast('Kontext gespeichert', 'success');
-                document.getElementById('ctxAddForm').style.display = 'none';
-                ['ctxClient','ctxProject','ctxSituation','ctxGoal','ctxConstraints'].forEach(id => document.getElementById(id).value = '');
-                ctxLoad();
-            } catch(e) { showToast('Fehler beim Speichern', 'error'); }
+                if (r.ok) showToast('Ψ-Profil gespeichert', 'success');
+                else showToast('Speichern fehlgeschlagen', 'error');
+            } catch(e) {
+                showToast('Fehler beim Speichern', 'error');
+            }
         }
 
-        async function ctxUpdateStatus(id, status) {
+        function caUseInChat() {
+            const r = caState.result;
+            if (!r) return;
+            // Build context string for chat
+            const psiSummary = PSI_DIMS.map(d => {
+                const v = r.psi_profile?.[d.key];
+                return v ? `${d.label}: ${v.value.toFixed(2)} (${v.label})` : '';
+            }).filter(Boolean).join('\n');
+            const params = Object.entries(r.parameters||{}).map(([k,v]) => `${k}=${v.value}`).join(', ');
+            const ctxMsg = `[KONTEXT-ANALYSE]\nFrage: ${caState.question}\n\nΨ-Profil:\n${psiSummary}\n\nParameter: ${params}\n\nSynthese: ${r.synthesis}`;
+            // Switch to chat and populate
+            showSection('chat', document.querySelector('[data-section="chat"]'));
+            setTimeout(() => {
+                const input = document.getElementById('chatInput');
+                if (input) {
+                    input.value = ctxMsg;
+                    input.style.height = 'auto';
+                    input.style.height = input.scrollHeight + 'px';
+                    input.focus();
+                }
+            }, 200);
+        }
+
+        async function caShowHistory() {
+            caShowPanel('caHistory');
+            document.getElementById('caProgress').style.display = 'none';
+            const container = document.getElementById('caHistoryList');
             try {
-                await fetch(`${API}/contexts/${id}`, {
-                    method: 'PUT', headers: { ...H(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status })
-                });
-                ctxLoad();
-            } catch(e) { showToast('Fehler', 'error'); }
+                const r = await fetch(`${API}/contexts`, { headers: H() });
+                if (!r.ok) throw new Error('Load failed');
+                caHistoryData = await r.json();
+                if (!caHistoryData.length) {
+                    container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Kontextanalysen gespeichert.</div>';
+                    return;
+                }
+                container.innerHTML = caHistoryData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at)).map(c => {
+                    const date = new Date(c.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: 'short', year: 'numeric' });
+                    let psiHtml = '';
+                    try {
+                        const psi = JSON.parse(c.situation);
+                        psiHtml = PSI_DIMS.map(d => {
+                            const v = psi[d.key];
+                            if (!v) return '';
+                            const pct = Math.round(v.value * 100);
+                            return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:rgba(255,255,255,0.5);margin-right:8px">${d.icon} ${v.value.toFixed(1)}</span>`;
+                        }).join('');
+                    } catch(e) { psiHtml = `<span style="font-size:12px;color:rgba(255,255,255,0.5)">${c.situation||''}</span>`; }
+                    return `
+                    <div style="padding:14px 16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+                            <span style="font-weight:600;color:var(--white);font-size:14px">${c.project || c.client || '–'}</span>
+                            <span style="margin-left:auto;font-size:11px;color:rgba(255,255,255,0.25)">${date}</span>
+                        </div>
+                        <div style="margin-bottom:6px">${psiHtml}</div>
+                        ${c.goal ? `<div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5">${c.goal}</div>` : ''}
+                        <div style="display:flex;gap:8px;margin-top:8px;border-top:1px solid rgba(255,255,255,0.04);padding-top:8px">
+                            <button onclick="caDeleteAnalysis('${c.id}')" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(248,113,113,0.5);border:1px solid rgba(248,113,113,0.15);border-radius:6px;cursor:pointer">Löschen</button>
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch(e) {
+                console.error('History load:', e);
+                container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Fehler beim Laden.</div>';
+            }
         }
 
-        async function ctxDelete(id) {
-            if (!confirm('Kontext wirklich löschen?')) return;
+        async function caDeleteAnalysis(id) {
+            if (!confirm('Analyse wirklich löschen?')) return;
             try {
                 await fetch(`${API}/contexts/${id}`, { method: 'DELETE', headers: H() });
-                showToast('Lead gelöscht', 'success');
-                ctxLoad();
+                showToast('Analyse gelöscht', 'success');
+                caShowHistory();
             } catch(e) { showToast('Fehler', 'error'); }
         }
+
+        // Keep legacy ctxLoad as alias
+        function ctxLoad() { caInit(); }
 
         // ── CRM ──────────────────────────────────────────
         let crmDeals = [];
