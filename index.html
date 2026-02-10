@@ -2310,16 +2310,23 @@
                         <div id="prjLandingOther" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
                     </div>
 
-                    <!-- Project Chat -->
+                    <!-- Project Chat (identical to main chat) -->
                     <div style="margin-top:24px">
                         <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">💬 Frage zu diesem Projekt</div>
-                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden">
-                            <div id="prjChatMessages" style="max-height:400px;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
-                                <div style="font-size:12px;color:rgba(255,255,255,0.25);text-align:center;padding:12px">BEATRIX kennt den Projektkontext — stelle Fragen, Ergebnisse werden im Projekt gespeichert.</div>
+                        <div style="background:var(--navy-deep);border:1px solid var(--border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;max-height:600px">
+                            <div class="chat-messages" id="prjChatMessages" style="flex:1;min-height:120px;max-height:460px;padding:16px">
+                                <div id="prjChatWelcome" style="text-align:center;padding:24px 20px">
+                                    <div style="font-size:24px;margin-bottom:8px">🧠</div>
+                                    <div style="font-size:13px;color:var(--text-secondary);line-height:1.6">BEATRIX kennt den Projektkontext.<br>Stelle Fragen — Ergebnisse werden im Projekt gespeichert.</div>
+                                </div>
                             </div>
-                            <div style="display:flex;align-items:flex-end;gap:8px;padding:12px;border-top:1px solid var(--border)">
-                                <textarea id="prjChatInput" placeholder="z.B. Erstelle eine Kontext-Analyse für dieses Projekt..." rows="1" style="flex:1;padding:10px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;resize:none;font-family:inherit;line-height:1.5" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();prjChatSend()}" oninput="autoResize(this)"></textarea>
-                                <button onclick="prjChatSend()" id="prjChatSendBtn" style="padding:10px 16px;background:var(--accent);border:none;border-radius:8px;color:white;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Senden</button>
+                            <div class="chat-input-area" style="padding:12px 16px 16px">
+                                <div class="chat-input-wrap">
+                                    <textarea class="chat-input" id="prjChatInput" placeholder="z.B. Erstelle eine Kontext-Analyse für dieses Projekt..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();prjChatSend()}" oninput="autoResize(this)"></textarea>
+                                    <button class="chat-send-btn" onclick="prjChatSend()" id="prjChatSendBtn" title="Senden">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -5497,7 +5504,10 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             document.getElementById('prjLandingData').innerHTML = '';
             // Clear project chat
             const chatMsgs = document.getElementById('prjChatMessages');
-            if (chatMsgs) chatMsgs.innerHTML = '<div style="font-size:12px;color:rgba(255,255,255,0.25);text-align:center;padding:12px">BEATRIX kennt den Projektkontext — stelle Fragen, Ergebnisse werden im Projekt gespeichert.</div>';
+            if (chatMsgs) chatMsgs.innerHTML = `<div id="prjChatWelcome" style="text-align:center;padding:24px 20px">
+                <div style="font-size:24px;margin-bottom:8px">🧠</div>
+                <div style="font-size:13px;color:var(--text-secondary);line-height:1.6">BEATRIX kennt den Projektkontext.<br>Stelle Fragen — Ergebnisse werden im Projekt gespeichert.</div>
+            </div>`;
             prjChatHistory = [];
             prjChatDraft = {};
             prjChatIntent = '';
@@ -5844,34 +5854,64 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             showToast(`🔗 ${code || slug} → ${module.charAt(0).toUpperCase() + module.slice(1)}`, 'success');
         }
 
-        // ── PROJECT CHAT (uses same bxCmd pipeline) ──
+        // ── PROJECT CHAT (100% identical format to main chat) ──
         let prjChatHistory = [];
         let prjChatDraft = {};
         let prjChatIntent = '';
 
+        function prjAppendMessage(role, content, sources) {
+            const welcome = document.getElementById('prjChatWelcome');
+            if (welcome) welcome.style.display = 'none';
+            const container = document.getElementById('prjChatMessages');
+            const initials = role === 'user' ? (currentUser?.name || currentUser?.email || 'U').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2) : 'B';
+            let html = `<div class="chat-msg ${role}">
+                <div class="chat-msg-avatar">${initials}</div>
+                <div class="chat-msg-body">${formatMessage(content)}`;
+            if (sources && sources.length > 0) {
+                html += `<div class="chat-sources">${sources.map(s => `<span class="chat-source-tag">${s.title || s}</span>`).join('')}</div>`;
+            }
+            html += `</div></div>`;
+            container.insertAdjacentHTML('beforeend', html);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function prjShowTyping(message) {
+            const container = document.getElementById('prjChatMessages');
+            const existing = document.getElementById('prjTypingIndicator');
+            if (existing) existing.remove();
+            container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant" id="prjTypingIndicator">
+                <div class="chat-msg-avatar">B</div>
+                <div class="chat-msg-body">
+                    <div style="display:flex;align-items:center;gap:10px;color:var(--text-muted);">
+                        <div class="chat-typing"><span></span><span></span><span></span></div>
+                        <span id="prjTypingText">${message || 'BEATRIX denkt nach...'}</span>
+                    </div>
+                </div>
+            </div>`);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function prjRemoveTyping() {
+            const el = document.getElementById('prjTypingIndicator');
+            if (el) el.remove();
+        }
+
         async function prjChatSend() {
             const input = document.getElementById('prjChatInput');
             const btn = document.getElementById('prjChatSendBtn');
-            const msgsEl = document.getElementById('prjChatMessages');
             const question = input.value.trim();
             if (!question || !prjCurrentSlug) return;
 
             input.value = ''; autoResize(input);
             btn.disabled = true;
-            btn.textContent = '⏳';
 
-            // User message bubble
-            msgsEl.insertAdjacentHTML('beforeend', `<div class="chat-msg user" style="justify-content:flex-end">
-                <div class="chat-msg-body" style="background:rgba(42,127,142,0.1);border:1px solid rgba(42,127,142,0.2);border-radius:12px 12px 4px 12px;padding:10px 14px;max-width:80%">
-                    <div style="font-size:13px;color:rgba(255,255,255,0.85);line-height:1.5">${question.replace(/</g,'&lt;')}</div>
-                </div>
-            </div>`);
-
+            // User message — identical to main chat
+            prjAppendMessage('user', question);
             prjChatHistory.push({role:'user', content: question});
 
-            // Typing indicator
-            msgsEl.insertAdjacentHTML('beforeend', `<div id="prjChatTyping" style="padding:10px 14px;font-size:12px;color:rgba(255,255,255,0.3)">🧠 BEATRIX analysiert (mit Projektkontext)...</div>`);
-            msgsEl.scrollTop = msgsEl.scrollHeight;
+            // Typing indicator — identical to main chat
+            const intentLabels = {project:'Projekt analysieren',lead:'Lead analysieren',model:'Modell bauen',context:'Kontext erfassen'};
+            prjShowTyping(prjChatIntent ? `BEATRIX: ${intentLabels[prjChatIntent]||'analysiert'}...` : 'BEATRIX analysiert (mit Projektkontext)...');
 
             try {
                 // ── Same endpoint as bxCmd: /api/chat/intent ──
@@ -5887,42 +5927,38 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                     })
                 });
                 const d = await r.json();
-                const typing = document.getElementById('prjChatTyping');
-                if (typing) typing.remove();
+                prjRemoveTyping();
 
                 if (!r.ok || !d.ok) {
-                    msgsEl.insertAdjacentHTML('beforeend', `<div style="padding:10px;font-size:12px;color:var(--error)">${d.error || 'Fehler'}</div>`);
-                    btn.disabled = false; btn.textContent = 'Senden'; return;
+                    prjAppendMessage('assistant', d.error || 'Fehler bei der Verarbeitung.');
+                    btn.disabled = false; input.focus(); return;
                 }
 
-                // If redirect to KB → use project-scoped chat instead
+                // If redirect to KB → use project-scoped chat
                 if (d.status === 'redirect_kb') {
-                    msgsEl.insertAdjacentHTML('beforeend', `<div style="padding:10px;font-size:12px;color:rgba(255,255,255,0.3)">Suche in der Wissensbasis...</div>`);
+                    prjShowTyping('BEATRIX sucht in der Wissensbasis...');
                     try {
                         const kr = await fetch(`${API}/chat/project/${prjCurrentSlug}`, {
                             method: 'POST',
                             headers: {...H(), 'Content-Type': 'application/json'},
                             body: JSON.stringify({ question })
                         });
+                        prjRemoveTyping();
                         const kd = await kr.json();
-                        msgsEl.lastElementChild.remove(); // remove "Suche..."
 
-                        const bi = {icon:'📚', color:'42,127,142'};
-                        let ansHtml = kd.answer || '';
-                        ansHtml = ansHtml.replace(/</g,'&lt;').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                        ansHtml = ansHtml.replace(/\n\n/g, '<br><br>').replace(/\n- /g, '<br>• ').replace(/\n(\d+)\. /g, '<br>$1. ');
-
-                        msgsEl.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
-                            <div class="chat-msg-avatar" style="background:linear-gradient(135deg,rgba(${bi.color},0.8),rgba(${bi.color},0.4));font-size:12px">${bi.icon}</div>
-                            <div class="chat-msg-body">
-                                <div style="font-size:13px;color:rgba(255,255,255,0.8);line-height:1.7">${ansHtml}</div>
-                                ${kd.github_saved ? '<div style="font-size:10px;color:rgba(52,211,153,0.5);margin-top:6px">✓ Auf GitHub gespeichert</div>' : ''}
-                            </div>
-                        </div>`);
-                        prjChatHistory.push({role:'assistant', content: kd.answer});
+                        if (kr.ok && kd.answer) {
+                            prjAppendMessage('assistant', kd.answer, kd.sources);
+                            if (kd.github_saved) {
+                                const container = document.getElementById('prjChatMessages');
+                                container.insertAdjacentHTML('beforeend', `<div style="text-align:right;font-size:10px;color:rgba(52,211,153,0.5);padding:0 48px 4px 0">✓ Auf GitHub gespeichert</div>`);
+                            }
+                        } else {
+                            prjAppendMessage('assistant', kd.detail || kd.answer || 'Keine Antwort erhalten.');
+                        }
+                        prjChatHistory.push({role:'assistant', content: kd.answer || ''});
                     } catch(e) {
-                        msgsEl.lastElementChild.remove();
-                        msgsEl.insertAdjacentHTML('beforeend', `<div style="padding:10px;font-size:12px;color:var(--error)">KB-Fehler: ${e.message}</div>`);
+                        prjRemoveTyping();
+                        prjAppendMessage('assistant', 'Fehler: ' + e.message);
                     }
                 } else {
                     // ── Structured card response (SAME as bxCmd) ──
@@ -5930,7 +5966,6 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                     prjChatIntent = intent;
 
                     if (d.data && Object.keys(d.data).length > 0) {
-                        // Inject project_slug into draft
                         d.data.project_slug = prjCurrentSlug;
                         prjChatDraft = {...prjChatDraft, ...d.data};
                     }
@@ -5949,21 +5984,21 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                     const textHtml = (!cardHtml && d.message) ? formatMessage(d.message) : '';
                     const bi = BX_INTENTS[intent] || {icon:'💡', color:'42,127,142'};
 
-                    msgsEl.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
+                    // Render in same format as main chat bxCmd
+                    const container = document.getElementById('prjChatMessages');
+                    container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
                         <div class="chat-msg-avatar" style="background:linear-gradient(135deg,rgba(${bi.color},0.8),rgba(${bi.color},0.4));font-size:12px">${bi.icon}</div>
                         <div class="chat-msg-body">${cardHtml}${textHtml}</div>
                     </div>`);
+                    container.scrollTop = container.scrollHeight;
                     prjChatHistory.push({role:'assistant', content: d.message || JSON.stringify(d.data)});
                 }
             } catch(e) {
-                const typing = document.getElementById('prjChatTyping');
-                if (typing) typing.remove();
-                msgsEl.insertAdjacentHTML('beforeend', `<div style="padding:10px;font-size:12px;color:var(--error)">Verbindungsfehler: ${e.message}</div>`);
+                prjRemoveTyping();
+                prjAppendMessage('assistant', 'Verbindungsfehler: ' + e.message);
             }
 
             btn.disabled = false;
-            btn.textContent = 'Senden';
-            msgsEl.scrollTop = msgsEl.scrollHeight;
             input.focus();
         }
 
