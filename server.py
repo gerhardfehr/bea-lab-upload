@@ -3070,82 +3070,157 @@ class ChatRequest(BaseModel):
 # If PDF is a scientific paper → runs full paper pipeline (KB + GitHub + Embedding)
 
 def detect_scientific_paper(text: str, filename: str = "") -> dict:
-    """Content-based detection: Is this a scientific paper?
-    Filename is ignored — only the extracted text content matters.
+    """Content-based detection: Is this an academic/scientific document?
+    
+    Logic: TWO-PASS approach
+    1. Check for NON-paper signals (invoice, report, slides, letter) → if strong → NOT paper
+    2. Check for ANY academic signals → if found → paper
+    3. If ambiguous: PDF with 3+ pages of prose → lean toward paper
+    
     Returns {is_paper: bool, confidence: float, signals: [str], score: int}"""
-    if not text or len(text) < 500:
-        return {"is_paper": False, "confidence": 0, "signals": [], "score": 0}
+    if not text or len(text) < 300:
+        return {"is_paper": False, "confidence": 0, "signals": ["too_short"], "score": 0}
 
-    # Scan first 8000 chars AND last 4000 chars (References section is at the end)
-    text_start = text[:8000].lower()
+    text_start = text[:10000].lower()
     text_end = text[-4000:].lower() if len(text) > 4000 else ""
     text_lower = text_start + " " + text_end
     signals = []
-    score = 0
+    paper_score = 0
+    not_paper_score = 0
 
-    # ── STRONG signals (2 points) — highly specific to academic papers ──
-    strong = {
-        "abstract": ["abstract\n", "abstract:", "abstract ", "\nabstract", "zusammenfassung\n"],
-        "references_section": ["references\n", "\nreferences", "bibliography\n", "\nbibliography",
-                               "literaturverzeichnis", "quellenverzeichnis", "works cited"],
-        "doi": ["doi:", "doi.org/", "https://doi", "10.1016/", "10.1038/", "10.1111/",
-                "10.1257/", "10.2139/", "10.1007/"],
-        "journal_venue": ["journal of ", "proceedings of ", "conference on ", "zeitschrift für",
-                          "quarterly journal", "economic review", "annual review",
-                          "review of ", "american economic", "econometrica"],
-        "peer_review": ["peer-review", "submitted to", "accepted for publication",
-                        "forthcoming in", "under review", "revised version", "working paper"],
-        "preprint_repo": ["ssrn.com", "arxiv.org", "nber.org", "repec.org",
-                          "social science research network", "electronic copy available at",
-                          "available at ssrn"],
+    # ══════════════════════════════════════════════
+    # PASS 1: Is this clearly NOT a paper?
+    # ══════════════════════════════════════════════
+    not_paper_signals = {
+        "invoice": ["rechnung", "invoice", "rechnungsnummer", "zahlungsziel", "mwst",
+                     "ust-id", "bankverbindung", "iban"],
+        "slides": ["slide ", "folie ", "powerpoint", "präsentation erstellt"],
+        "email": ["betreff:", "subject:", "von:", "an:", "gesendet:", "weitergeleitet"],
+        "contract": ["vertrag", "vertragspartner", "kündigungsfrist", "laufzeit",
+                      "vertragsgegenstand", "allgemeine geschäftsbedingungen"],
+        "marketing": ["call to action", "landing page", "conversion rate",
+                       "jetzt kaufen", "unverbindliches angebot"],
+        "internal_report": ["protokoll der", "tagesordnung", "nächste schritte",
+                            "action items", "meeting notes", "besprechungsprotokoll"],
     }
 
-    # ── MEDIUM signals (1 point) — common in papers but not exclusive ──
+    for name, patterns in not_paper_signals.items():
+        if sum(1 for p in patterns if p in text_lower) >= 2:
+            signals.append(f"NOT_PAPER:{name}")
+            not_paper_score += 3
+
+    # If clearly not a paper → stop early
+    if not_paper_score >= 3:
+        return {"is_paper": False, "confidence": 0.9, "signals": signals, "score": 0,
+                "reason": "non-academic document detected"}
+
+    # ══════════════════════════════════════════════
+    # PASS 2: Academic content signals
+    # ══════════════════════════════════════════════
+
+    # ── STRONG (2 points) ──
+    strong = {
+        "abstract": ["abstract\n", "abstract:", "abstract ", "\nabstract",
+                      "zusammenfassung\n", "zusammenfassung:", "\nzusammenfassung"],
+        "references_section": ["references\n", "\nreferences", "bibliography\n",
+                               "\nbibliography", "literaturverzeichnis", "quellenverzeichnis",
+                               "works cited", "literatur\n", "\nliteratur"],
+        "doi": ["doi:", "doi.org/", "https://doi", "10.1016/", "10.1038/",
+                "10.1111/", "10.1257/", "10.2139/", "10.1007/"],
+        "journal_venue": ["journal of ", "proceedings of ", "conference on ",
+                          "zeitschrift für", "quarterly journal", "economic review",
+                          "annual review", "review of ", "american economic",
+                          "econometrica", "published in", "erschienen in"],
+        "peer_review": ["peer-review", "submitted to", "accepted for publication",
+                        "forthcoming in", "under review", "revised version",
+                        "working paper", "discussion paper", "arbeitspapier"],
+        "preprint_repo": ["ssrn.com", "arxiv.org", "nber.org", "repec.org",
+                          "social science research network",
+                          "electronic copy available", "available at ssrn"],
+    }
+
+    # ── MEDIUM (1 point) ──
     medium = {
         "et_al": ["et al.", "et al,", "et al "],
-        "methodology": ["methodology", "research method", "empirical study", "empirische studie",
-                        "randomized controlled", "experimental design", "field experiment",
-                        "natural experiment", "quasi-experiment", "research design"],
-        "hypothesis": ["hypothesis", "hypothes", "h1:", "h2:", "hypothese"],
+        "methodology": ["methodology", "research method", "empirical study",
+                        "empirische studie", "randomized controlled",
+                        "experimental design", "field experiment",
+                        "natural experiment", "quasi-experiment", "research design",
+                        "methodik", "forschungsdesign", "untersuchungsmethode"],
+        "hypothesis": ["hypothesis", "hypothes", "h1:", "h2:", "hypothese",
+                        "forschungsfrage", "research question"],
         "findings": ["findings", "results show", "ergebnisse zeigen", "we find that",
-                     "our results", "the evidence suggests", "our findings"],
+                     "our results", "the evidence suggests", "our findings",
+                     "befunde", "resultate"],
         "literature": ["literature review", "related work", "prior research",
-                       "literaturüberblick", "previous studies", "existing literature"],
-        "academic_citations": ["(20", "(19", "pp.", "vol.", "no.", "p. ", "ibid"],
+                       "literaturüberblick", "previous studies", "existing literature",
+                       "forschungsstand", "stand der forschung"],
+        "academic_citations": ["(20", "(19", "(18", "pp.", "vol.", "no.", "p. ", "ibid",
+                                "vgl.", "ebd.", "a.a.o."],
         "keywords": ["keywords:", "key words:", "schlüsselwörter", "jel classification",
-                     "jel codes"],
+                     "jel codes", "schlagworte:"],
         "acknowledgments": ["acknowledgment", "acknowledgement", "danksagung",
-                            "we thank", "we are grateful", "financial support from"],
+                            "we thank", "we are grateful", "financial support from",
+                            "förderung durch"],
         "author_affiliation": ["university", "universität", "institute", "institut",
-                               "department of", "school of", "faculty of", "business school",
-                               "hochschule", "eth zurich", "mit ", "stanford"],
-        "statistical": ["p < ", "p<0.", "p=0.", "n = ", "sd = ", "statistically significant",
-                        "regression", "correlation", "standard error", "confidence interval",
-                        "treatment effect", "coefficient", "t-stat", "robust"],
-        "academic_sections": ["introduction\n", "\n1. introduction", "\n1 introduction",
-                              "conclusion\n", "\nconclusion", "discussion\n", "\ndiscussion",
-                              "appendix\n", "\nappendix", "supplementary material"],
-        "data_sources": ["dataset", "data set", "survey data", "panel data", "cross-section",
-                         "time series", "sample size", "observations"],
-        "contribution": ["contribution", "we contribute", "this paper", "in this paper",
-                         "this study", "we show that", "we argue", "we propose",
-                         "in dieser arbeit", "diese studie"],
+                               "department of", "school of", "faculty of",
+                               "business school", "hochschule", "akademie",
+                               "forschungsinstitut", "max-planck", "fraunhofer"],
+        "statistical": ["p < ", "p<0.", "p=0.", "n = ", "sd = ",
+                        "statistically significant", "regression", "correlation",
+                        "standard error", "confidence interval", "treatment effect",
+                        "coefficient", "t-stat", "robust", "signifikant"],
+        "academic_sections": ["introduction\n", "\n1. introduction",
+                              "\n1 introduction", "conclusion\n", "\nconclusion",
+                              "discussion\n", "\ndiscussion", "appendix\n",
+                              "\nappendix", "supplementary material",
+                              "einleitung\n", "\neinleitung", "schluss\n",
+                              "schlussbemerkung", "fazit\n", "\nfazit",
+                              "kapitel ", "abschnitt "],
+        "data_sources": ["dataset", "data set", "survey data", "panel data",
+                         "cross-section", "time series", "sample size",
+                         "observations", "stichprobe", "datensatz", "erhebung"],
+        "contribution": ["contribution", "we contribute", "this paper",
+                         "in this paper", "this study", "we show that",
+                         "we argue", "we propose", "in dieser arbeit",
+                         "diese studie", "vorliegende arbeit", "diese arbeit",
+                         "der vorliegende beitrag", "dieser beitrag",
+                         "diese untersuchung", "gegenstand dieser"],
+        "academic_language": ["furthermore", "moreover", "nevertheless",
+                              "notwithstanding", "henceforth", "thereby",
+                              "thereof", "insofar", "darüber hinaus",
+                              "nichtsdestotrotz", "indes", "mithin",
+                              "gleichwohl", "insbesondere", "hingegen"],
+        "theoretical": ["theory", "theorem", "proposition", "framework",
+                        "paradigm", "theorie", "paradigma", "modell",
+                        "konzept", "ansatz", "these", "antithese"],
+        "footnotes_endnotes": ["footnote", "endnote", "fußnote", "anmerkung",
+                                "fn.", "fn "],
     }
 
     for name, patterns in strong.items():
         if any(p in text_lower for p in patterns):
             signals.append(name)
-            score += 2
+            paper_score += 2
     for name, patterns in medium.items():
         if any(p in text_lower for p in patterns):
             signals.append(name)
-            score += 1
+            paper_score += 1
 
-    # Decision: score >= 4 = paper
-    is_paper = score >= 4
-    confidence = min(score / 10.0, 1.0)
+    # ══════════════════════════════════════════════
+    # PASS 3: Structural heuristic for ambiguous cases
+    # ══════════════════════════════════════════════
+    # Long prose document (>5000 chars) with at least SOME academic flavor
+    if paper_score >= 2 and len(text) > 5000:
+        signals.append("long_prose_with_signals")
+        paper_score += 1
 
-    return {"is_paper": is_paper, "confidence": round(confidence, 2), "signals": signals, "score": score}
+    # Decision: score >= 3 = paper (aggressive: better to index than to miss)
+    is_paper = paper_score >= 3
+    confidence = min(paper_score / 10.0, 1.0)
+
+    return {"is_paper": is_paper, "confidence": round(confidence, 2),
+            "signals": signals, "score": paper_score}
 
 
 def run_paper_pipeline(filename: str, content_bytes: bytes, text_content: str, user_email: str) -> dict:
