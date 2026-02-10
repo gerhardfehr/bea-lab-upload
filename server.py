@@ -434,10 +434,34 @@ def get_db():
     return _SessionLocal()
 
 def push_to_github(filename, content_bytes):
+    """Push uploaded file to GitHub papers/evaluated/integrated/ in the context repo."""
     if not GH_TOKEN:
         logger.warning("GH_TOKEN not set, skipping GitHub push")
         return {"error": "GH_TOKEN not configured"}
     import urllib.request, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    path = f"{GH_UPLOAD_PATH}/{filename}"
+    url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+    headers = {"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json",
+               "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
+    sha = None
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+        sha = resp.get("sha")
+    except: pass
+    payload = {"message": f"Upload via BEA Lab: {filename}",
+               "content": base64.b64encode(content_bytes).decode(), "branch": "main"}
+    if sha: payload["sha"] = sha
+    try:
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="PUT", headers=headers)
+        resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=30).read())
+        logger.info(f"GitHub push OK: {path}")
+        return {"url": resp.get("content", {}).get("html_url", ""),
+                "sha": resp.get("content", {}).get("sha", ""), "path": path}
+    except Exception as e:
+        logger.error(f"GitHub push failed: {e}")
+        return {"error": str(e)}
 
 # ========== VECTOR EMBEDDING (AlphaGo Neural Network) ==========
 
@@ -1608,25 +1632,6 @@ def fulltext_search(db, query: str, limit: int = 8) -> list:
         return []
 
 # ========== END VECTOR EMBEDDING ==========
-    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-    path = f"{GH_UPLOAD_PATH}/{filename}"
-    url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
-    sha = None
-    try:
-        req = urllib.request.Request(url, headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"})
-        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
-        sha = resp.get("sha")
-    except: pass
-    payload = {"message": f"Upload via BEA Lab: {filename}", "content": base64.b64encode(content_bytes).decode(), "branch": "main"}
-    if sha: payload["sha"] = sha
-    try:
-        req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="PUT", headers={"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json"})
-        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
-        logger.info(f"GitHub push OK: {path}")
-        return {"url": resp.get("content", {}).get("html_url", ""), "sha": resp.get("content", {}).get("sha", ""), "path": path}
-    except Exception as e:
-        logger.error(f"GitHub push failed: {e}")
-        return {"error": str(e)}
 
 app = FastAPI(title="BEA Lab Upload API", version="3.7.0")
 
