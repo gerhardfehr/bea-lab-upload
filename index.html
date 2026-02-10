@@ -1050,13 +1050,13 @@
             <div class="mb-progress" id="caProgress" style="display:none">
                 <div class="mb-step-dot active" data-castep="0"><div class="mb-step-num">1</div><div class="mb-step-label">Thema</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="1"><div class="mb-step-num">2</div><div class="mb-step-label">MACRO</div></div>
+                <div class="mb-step-dot" data-castep="1"><div class="mb-step-num">2</div><div class="mb-step-label">Land</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="2"><div class="mb-step-num">3</div><div class="mb-step-label">MESO</div></div>
+                <div class="mb-step-dot" data-castep="2"><div class="mb-step-num">3</div><div class="mb-step-label">Branche</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="3"><div class="mb-step-num">4</div><div class="mb-step-label">MICRO</div></div>
+                <div class="mb-step-dot" data-castep="3"><div class="mb-step-num">4</div><div class="mb-step-label">Situation</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="4"><div class="mb-step-num">5</div><div class="mb-step-label">Ψ-Profil</div></div>
+                <div class="mb-step-dot" data-castep="4"><div class="mb-step-num">5</div><div class="mb-step-label">Analyse</div></div>
                 <div class="mb-step-line"></div>
                 <div class="mb-step-dot" data-castep="5"><div class="mb-step-num">6</div><div class="mb-step-label">Ergebnis</div></div>
             </div>
@@ -1077,7 +1077,7 @@
                         <div class="mb-mode-icon">🎯</div>
                         <div class="mb-mode-name">Geführt</div>
                         <div class="mb-mode-time">~15 Minuten</div>
-                        <div class="mb-mode-desc">Schritt für Schritt durch MACRO → MESO → MICRO mit 3+1 Optionen</div>
+                        <div class="mb-mode-desc">Schritt für Schritt: Land → Branche → Situation, mit Auswahlhilfen</div>
                     </div>
                     <div class="mb-mode-card" onclick="caSelectMode(this,'projekt')">
                         <div class="mb-mode-icon">📊</div>
@@ -1128,36 +1128,36 @@
             <!-- ═══ STEP 1: MACRO ═══ -->
             <div class="mb-panel" id="caStep1">
                 <div id="caStep1ViewA">
-                    <div class="mb-step-title">MACRO-Kontext</div>
-                    <div class="mb-step-desc">Land, Markt und institutioneller Rahmen — definiert Ψ_I (Regeln), Ψ_K (Kultur) und Ψ_E (Ressourcen).</div>
+                    <div class="mb-step-title">Land & Rahmenbedingungen</div>
+                    <div class="mb-step-desc">In welchem Land und regulatorischen Umfeld findet die Entscheidung statt?</div>
                     <div class="mb-choices" id="caStep1Choices">
                         <div class="mb-choice" onclick="caSelect(this,'ch')">
                             <div class="mb-choice-num">1</div>
                             <div class="mb-choice-icon">🇨🇭</div>
                             <div class="mb-choice-title">Schweiz</div>
-                            <div class="mb-choice-desc">Ψ_I: Direkte Demokratie, Subsidiarität. Ψ_K: Konsens, Mehrsprachigkeit. Ψ_E: Hohes BIP.</div>
-                            <div class="mb-choice-meta">GGG Default: DACH-CH</div>
+                            <div class="mb-choice-desc">Direkte Demokratie, hohe Eigenverantwortung, Konsenskultur, wohlhabend.</div>
+                            <div class="mb-choice-meta">DACH-CH</div>
                         </div>
                         <div class="mb-choice" onclick="caSelect(this,'at')">
                             <div class="mb-choice-num">2</div>
                             <div class="mb-choice-icon">🇦🇹</div>
                             <div class="mb-choice-title">Österreich</div>
-                            <div class="mb-choice-desc">Ψ_I: Sozialpartnerschaft, EU-Recht. Ψ_K: Gemeinschaft, Tradition. Ψ_E: Hohes BIP.</div>
-                            <div class="mb-choice-meta">GGG Default: DACH-AT</div>
+                            <div class="mb-choice-desc">Sozialpartnerschaft, EU-Recht, Gemeinschaftskultur, starke Traditionen.</div>
+                            <div class="mb-choice-meta">DACH-AT</div>
                         </div>
                         <div class="mb-choice" onclick="caSelect(this,'de')">
                             <div class="mb-choice-num">3</div>
                             <div class="mb-choice-icon">🇩🇪</div>
                             <div class="mb-choice-title">Deutschland</div>
-                            <div class="mb-choice-desc">Ψ_I: Föderalismus, EU-Recht. Ψ_K: Ordnung, Sicherheit. Ψ_E: Größte EU-Volkswirtschaft.</div>
-                            <div class="mb-choice-meta">GGG Default: DACH-DE</div>
+                            <div class="mb-choice-desc">Föderalismus, EU-Recht, Sicherheitskultur, grösste EU-Volkswirtschaft.</div>
+                            <div class="mb-choice-meta">DACH-DE</div>
                         </div>
                         <div class="mb-choice custom-choice" onclick="caSelect(this,'custom_macro')">
                             <div class="mb-choice-num">✎</div>
                             <div class="mb-choice-icon">🌍</div>
-                            <div class="mb-choice-title">Anderer Kontext</div>
-                            <div class="mb-choice-desc">Definiere Land, Markt und institutionellen Rahmen frei.</div>
-                            <div class="mb-choice-meta">→ Custom Ψ_I, Ψ_K, Ψ_E</div>
+                            <div class="mb-choice-title">Anderes Land</div>
+                            <div class="mb-choice-desc">Land, Regeln und kulturellen Rahmen frei beschreiben.</div>
+                            <div class="mb-choice-meta">→ Freitext</div>
                         </div>
                     </div>
                     <div id="caCustomMacro" style="display:none;margin-bottom:16px">
@@ -1172,8 +1172,8 @@
 
             <!-- ═══ STEP 2: MESO ═══ -->
             <div class="mb-panel" id="caStep2">
-                <div class="mb-step-title">MESO-Kontext</div>
-                <div class="mb-step-desc">Branche, Organisation und Marktumfeld — definiert Ψ_M (Tools/Markt) und verfeinert Ψ_I, Ψ_E.</div>
+                <div class="mb-step-title">Branche & Umfeld</div>
+                <div class="mb-step-desc">In welcher Branche und welchem organisatorischen Umfeld bewegt sich die Person?</div>
                 <div class="mb-choices" id="caStep2Choices">
                     <div class="mb-choice" onclick="caSelect(this,'finance')">
                         <div class="mb-choice-num">1</div>
@@ -1211,58 +1211,62 @@
 
             <!-- ═══ STEP 3: MICRO ═══ -->
             <div class="mb-panel" id="caStep3">
-                <div class="mb-step-title">MICRO-Kontext</div>
-                <div class="mb-step-desc">Konkrete Situation, Setting und Zeitpunkt — definiert Ψ_S (Sozial), Ψ_C (Kognitiv), Ψ_T (Zeit), Ψ_F (Ort).</div>
+                <div class="mb-step-title">Die konkrete Situation</div>
+                <div class="mb-step-desc">In welcher Situation befindet sich die Person, wenn sie die Entscheidung trifft?</div>
 
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
                     <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
-                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">📍 Ψ_F — Wo?</div>
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:4px">📍 Wo passiert es?</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Der physische oder digitale Ort der Entscheidung</div>
                         <select class="mb-input" id="caMicroWhere" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
-                            <option value="">Setting wählen...</option>
-                            <option value="home">Zuhause</option>
-                            <option value="workplace">Arbeitsplatz</option>
-                            <option value="store">Geschäft / Einkauf</option>
-                            <option value="online">Online / Digital</option>
-                            <option value="public">Öffentlicher Raum</option>
-                            <option value="healthcare">Gesundheitseinrichtung</option>
+                            <option value="">Ort wählen...</option>
+                            <option value="home">🏠 Zuhause — entspannte Umgebung</option>
+                            <option value="workplace">🏢 Am Arbeitsplatz — professionelles Umfeld</option>
+                            <option value="store">🛒 Im Geschäft — beim Einkaufen</option>
+                            <option value="online">💻 Online / App — am Bildschirm</option>
+                            <option value="public">🚶 Unterwegs / öffentlicher Raum</option>
+                            <option value="healthcare">🏥 Arztpraxis / Behörde — formelles Setting</option>
                         </select>
                     </div>
                     <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
-                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">👥 Ψ_S — Wer ist dabei?</div>
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:4px">👥 Wer ist dabei?</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Sozialer Druck beeinflusst Entscheidungen massiv</div>
                         <select class="mb-input" id="caMicroSocial" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
-                            <option value="">Soziale Situation...</option>
-                            <option value="solo">Allein (solo)</option>
-                            <option value="dyadic">Zu zweit (Berater, Partner)</option>
-                            <option value="small_group">Kleine Gruppe (Team, Familie)</option>
-                            <option value="large_group">Grosse Gruppe (Organisation, Öffentlichkeit)</option>
-                            <option value="anonymous">Anonym (Menge, Online)</option>
+                            <option value="">Situation wählen...</option>
+                            <option value="solo">🙋 Allein — niemand schaut zu</option>
+                            <option value="dyadic">🤝 Zu zweit — Berater, Partner, Kollege</option>
+                            <option value="small_group">👨‍👩‍👧 Kleine Gruppe — Team, Familie, Freunde</option>
+                            <option value="large_group">🏛️ Grosse Gruppe — Organisation, Gremium</option>
+                            <option value="anonymous">🌐 Anonym — Online-Community, Masse</option>
                         </select>
                     </div>
                     <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
-                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">⏰ Ψ_T — Zeitdruck?</div>
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:4px">⏰ Wie viel Zeit bleibt?</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Zeitdruck verändert wie Menschen entscheiden</div>
                         <select class="mb-input" id="caMicroTime" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
-                            <option value="">Temporaler Kontext...</option>
-                            <option value="urgent">Hoher Zeitdruck (Sekunden/Minuten)</option>
-                            <option value="moderate">Moderater Zeitdruck (Tage/Wochen)</option>
-                            <option value="relaxed">Kein Zeitdruck (Monate/Jahre)</option>
-                            <option value="recurring">Wiederkehrend (Routine)</option>
+                            <option value="">Zeitrahmen wählen...</option>
+                            <option value="urgent">⚡ Sofort — muss jetzt entschieden werden</option>
+                            <option value="moderate">📅 Tage bis Wochen — etwas Bedenkzeit</option>
+                            <option value="relaxed">🌿 Viel Zeit — Monate, kein Druck</option>
+                            <option value="recurring">🔄 Wiederkehrend — Routine-Entscheidung</option>
                         </select>
                     </div>
                     <div style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
-                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:10px">🧠 Ψ_C — Kognitiver Zustand?</div>
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:4px">🧠 In welchem Zustand?</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Der mentale Zustand bestimmt die Entscheidungsqualität</div>
                         <select class="mb-input" id="caMicroCognitive" onchange="caUpdateMicroBtn()" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 12px;background:var(--navy-card);color:white;border:1px solid var(--border)">
-                            <option value="">Kognitiver Zustand...</option>
-                            <option value="analytical">Analytisch (System 2 aktiv)</option>
-                            <option value="intuitive">Intuitiv (System 1 dominant)</option>
-                            <option value="stressed">Gestresst / Cognitive Load hoch</option>
-                            <option value="fatigued">Ermüdet / Decision Fatigue</option>
-                            <option value="motivated">Motiviert / Engagiert</option>
+                            <option value="">Zustand wählen...</option>
+                            <option value="analytical">🔬 Aufmerksam — denkt gründlich nach</option>
+                            <option value="intuitive">💨 Auf Autopilot — entscheidet aus dem Bauch</option>
+                            <option value="stressed">😰 Gestresst — viel um die Ohren</option>
+                            <option value="fatigued">😴 Erschöpft — am Ende eines langen Tages</option>
+                            <option value="motivated">🔥 Motiviert — will aktiv etwas verändern</option>
                         </select>
                     </div>
                 </div>
 
                 <div style="margin-bottom:16px">
-                    <textarea class="mb-input mb-textarea" id="caMicroNotes" placeholder="Optionale Details: Spezifische Umstände, Trigger, besondere Rahmenbedingungen..." style="min-height:60px;width:100%;box-sizing:border-box;font-size:13px"></textarea>
+                    <textarea class="mb-input mb-textarea" id="caMicroNotes" placeholder="Optional: Gibt es besondere Umstände? Z.B. 'Kurz vor Pensionierung', 'Gerade Kinder bekommen', 'Neuer Job'..." style="min-height:60px;width:100%;box-sizing:border-box;font-size:13px"></textarea>
                 </div>
 
                 <div class="mb-actions">
@@ -2621,7 +2625,7 @@
             // Switch to tief mode, keep question + lineage
             const keepQuestion = caState.question;
             const keepLineage = caState.lineageId;
-            caState.mode = 'tief';
+            caState.mode = 'gefuehrt';
             caState.result = null;
             caState.step = 1;
             // Reset context selections
@@ -2762,7 +2766,7 @@
             progressEl.style.display = 'block';
             resultEl.style.display = 'none';
 
-            const steps = ['Kontextdatenbank wird geladen...', 'MACRO-Ebene analysieren...', 'MESO-Kontext identifizieren...', 'MICRO-Situationsfaktoren extrahieren...', 'Ψ-Dimensionen berechnen...', 'Parameter-Implikationen ableiten...'];
+            const steps = ['Wissen wird geladen...', 'Landeskontext analysieren...', 'Branchenumfeld einordnen...', 'Situation verstehen...', 'Kontextprofil erstellen...', 'Auswirkungen ableiten...'];
             for (let i = 0; i < steps.length; i++) {
                 statusEl.textContent = steps[i];
                 await new Promise(r => setTimeout(r, 600));
