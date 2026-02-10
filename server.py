@@ -380,6 +380,28 @@ def get_db():
                         created_by VARCHAR(320),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    # Ψ-Analyses: versioned context analyses per user
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS psi_analyses (
+                        id VARCHAR(20) PRIMARY KEY,
+                        lineage_id VARCHAR(20) NOT NULL,
+                        version INTEGER NOT NULL DEFAULT 1,
+                        question TEXT NOT NULL,
+                        mode VARCHAR(20) DEFAULT 'schnell',
+                        macro_context JSONB,
+                        meso_context JSONB,
+                        micro_context JSONB,
+                        psi_profile JSONB,
+                        parameters JSONB,
+                        synthesis TEXT,
+                        implications JSONB,
+                        confidence VARCHAR(200),
+                        customer_code VARCHAR(20),
+                        project_slug VARCHAR(200),
+                        parent_version_id VARCHAR(20),
+                        created_by VARCHAR(320) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_psi_lineage ON psi_analyses(lineage_id)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_psi_user ON psi_analyses(created_by)"))
                     # Feedback table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS feedback (
                         id VARCHAR PRIMARY KEY,
@@ -5662,6 +5684,225 @@ async def delete_context(ctx_id: str, user=Depends(require_auth)):
         db.rollback()
         raise HTTPException(500, str(e))
     finally: db.close()
+
+# ── Ψ-Analysis API ─────────────────────────────────
+@app.get("/api/psi-analyses")
+async def get_psi_analyses(user=Depends(require_auth)):
+    """Get all Ψ-analyses for current user, grouped by lineage with latest version first."""
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        rows = db.execute(text("""
+            SELECT id, lineage_id, version, question, mode, psi_profile, parameters,
+                   synthesis, confidence, customer_code, project_slug, created_by, created_at
+            FROM psi_analyses
+            WHERE created_by = :email
+            ORDER BY created_at DESC
+        """), {"email": user["sub"]}).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except Exception as e:
+        logger.error(f"Psi analyses fetch error: {e}")
+        return []
+    finally: db.close()
+
+@app.get("/api/psi-analyses/all")
+async def get_all_psi_analyses(user=Depends(require_auth)):
+    """Admin: Get all Ψ-analyses across all users for calibration comparison."""
+    if not user.get("admin"):
+        raise HTTPException(403, "Admin only")
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        rows = db.execute(text("""
+            SELECT id, lineage_id, version, question, mode, psi_profile, parameters,
+                   synthesis, confidence, customer_code, project_slug, created_by, created_at
+            FROM psi_analyses ORDER BY created_at DESC LIMIT 200
+        """)).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except Exception as e:
+        logger.error(f"Psi analyses admin fetch: {e}")
+        return []
+    finally: db.close()
+
+@app.get("/api/psi-analyses/lineage/{lineage_id}")
+async def get_psi_lineage(lineage_id: str, user=Depends(require_auth)):
+    """Get all versions of a specific analysis lineage (all users for comparison)."""
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        rows = db.execute(text("""
+            SELECT pa.*, u.name as user_name
+            FROM psi_analyses pa LEFT JOIN users u ON pa.created_by = u.email
+            WHERE pa.lineage_id = :lid ORDER BY pa.version DESC
+        """), {"lid": lineage_id}).fetchall()
+        return [dict(r._mapping) for r in rows]
+    except Exception as e:
+        logger.error(f"Psi lineage fetch error: {e}")
+        return []
+    finally: db.close()
+
+@app.post("/api/psi-analyses")
+async def create_psi_analysis(request: Request, user=Depends(require_auth)):
+    """Create a new Ψ-analysis. Auto-detects lineage from question similarity."""
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        import uuid, hashlib
+        data = await request.json()
+
+        question = data.get("question", "").strip()
+        if not question:
+            raise HTTPException(400, "Question required")
+
+        # Determine lineage: check if same user has existing analysis with similar question
+        lineage_id = data.get("lineage_id")  # explicit re-version
+        version = 1
+
+        if lineage_id:
+            # Explicit new version of existing lineage
+            existing = db.execute(text("""
+                SELECT MAX(version) as max_v, id FROM psi_analyses
+                WHERE lineage_id = :lid AND created_by = :email
+                GROUP BY id ORDER BY max_v DESC LIMIT 1
+            """), {"lid": lineage_id, "email": user["sub"]}).fetchone()
+            if existing:
+                version = (existing[0] or 0) + 1
+        else:
+            # Check for similar question by same user → auto-detect lineage
+            existing = db.execute(text("""
+                SELECT lineage_id, MAX(version) as max_v FROM psi_analyses
+                WHERE created_by = :email AND LOWER(question) = LOWER(:q)
+                GROUP BY lineage_id ORDER BY max_v DESC LIMIT 1
+            """), {"email": user["sub"], "q": question}).fetchone()
+            if existing:
+                lineage_id = existing[0]
+                version = (existing[1] or 0) + 1
+            else:
+                # New lineage: create ID from date + sequence
+                today = datetime.utcnow().strftime("%Y-%m-%d")
+                seq = db.execute(text("""
+                    SELECT COUNT(*) FROM psi_analyses WHERE lineage_id LIKE :pattern
+                """), {"pattern": f"PSI-{today}%"}).fetchone()[0]
+                lineage_id = f"PSI-{today}-{seq+1:03d}"
+
+        # Generate analysis ID
+        analysis_id = f"{lineage_id}-v{version}"
+
+        db.execute(text("""
+            INSERT INTO psi_analyses (id, lineage_id, version, question, mode,
+                macro_context, meso_context, micro_context, psi_profile, parameters,
+                synthesis, implications, confidence, customer_code, project_slug,
+                parent_version_id, created_by)
+            VALUES (:id, :lid, :ver, :q, :mode, :macro::jsonb, :meso::jsonb,
+                :micro::jsonb, :psi::jsonb, :params::jsonb, :synth,
+                :impl::jsonb, :conf, :cust, :proj, :parent, :email)
+        """), {
+            "id": analysis_id,
+            "lid": lineage_id,
+            "ver": version,
+            "q": question,
+            "mode": data.get("mode", "schnell"),
+            "macro": json.dumps(data.get("macro_context")) if data.get("macro_context") else None,
+            "meso": json.dumps(data.get("meso_context")) if data.get("meso_context") else None,
+            "micro": json.dumps(data.get("micro_context")) if data.get("micro_context") else None,
+            "psi": json.dumps(data.get("psi_profile")) if data.get("psi_profile") else None,
+            "params": json.dumps(data.get("parameters")) if data.get("parameters") else None,
+            "synth": data.get("synthesis", ""),
+            "impl": json.dumps(data.get("implications")) if data.get("implications") else None,
+            "conf": data.get("confidence", ""),
+            "cust": data.get("customer_code"),
+            "proj": data.get("project_slug"),
+            "parent": data.get("parent_version_id"),
+            "email": user["sub"]
+        })
+        db.commit()
+
+        # Async GitHub sync
+        try:
+            _sync_psi_to_github(analysis_id, lineage_id, version, question, data, user["sub"])
+        except Exception as gh_err:
+            logger.warning(f"Psi GitHub sync failed: {gh_err}")
+
+        logger.info(f"Ψ-Analysis saved: {analysis_id} (lineage={lineage_id}, v{version}) by {user['sub']}")
+        return {"id": analysis_id, "lineage_id": lineage_id, "version": version, "status": "created"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Psi analysis create error: {e}")
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.delete("/api/psi-analyses/{analysis_id}")
+async def delete_psi_analysis(analysis_id: str, user=Depends(require_auth)):
+    db = get_db()
+    try:
+        from sqlalchemy import text
+        db.execute(text("DELETE FROM psi_analyses WHERE id = :id AND created_by = :email"),
+                   {"id": analysis_id, "email": user["sub"]})
+        db.commit()
+        return {"status": "deleted"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+def _sync_psi_to_github(analysis_id, lineage_id, version, question, data, user_email):
+    """Push Ψ-analysis to GitHub as YAML."""
+    import yaml, re as _re
+    if not GH_TOKEN: return
+
+    user_slug = _re.sub(r'[^a-z0-9]+', '-', user_email.split('@')[0].lower()).strip('-')
+    yaml_content = {
+        "id": analysis_id,
+        "lineage_id": lineage_id,
+        "version": version,
+        "question": question,
+        "mode": data.get("mode", "schnell"),
+        "created_by": user_email,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "macro_context": data.get("macro_context"),
+        "meso_context": data.get("meso_context"),
+        "micro_context": data.get("micro_context"),
+        "psi_profile": data.get("psi_profile"),
+        "parameters": data.get("parameters"),
+        "synthesis": data.get("synthesis"),
+        "implications": data.get("implications"),
+        "confidence": data.get("confidence"),
+        "customer_code": data.get("customer_code"),
+        "project_slug": data.get("project_slug"),
+    }
+
+    yaml_str = yaml.dump(yaml_content, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    file_path = f"data/psi-analyses/{user_slug}/{lineage_id}-v{version}.yaml"
+
+    import urllib.request, ssl, base64
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    gh_repo = os.environ.get("GH_REPO", "FehrAdvice-Partners-AG/complementarity-context-framework")
+    headers = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab/3.7", "Content-Type": "application/json"}
+
+    # Check if file exists (get SHA for update)
+    sha = None
+    try:
+        req = urllib.request.Request(f"https://api.github.com/repos/{gh_repo}/contents/{file_path}", headers=headers)
+        resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
+        sha = resp.get("sha")
+    except: pass
+
+    payload = {
+        "message": f"Ψ-Analysis: {lineage_id} v{version} by {user_slug}",
+        "content": base64.b64encode(yaml_str.encode()).decode(),
+        "branch": "main"
+    }
+    if sha: payload["sha"] = sha
+
+    try:
+        req = urllib.request.Request(f"https://api.github.com/repos/{gh_repo}/contents/{file_path}",
+            data=json.dumps(payload).encode(), method="PUT", headers=headers)
+        urllib.request.urlopen(req, context=ctx)
+        logger.info(f"Ψ-Analysis synced to GitHub: {file_path}")
+    except Exception as e:
+        logger.warning(f"Ψ GitHub push failed for {file_path}: {e}")
 
 # ── Feedback API ────────────────────────────────────
 @app.post("/api/feedback")
