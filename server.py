@@ -5793,9 +5793,9 @@ async def create_psi_analysis(request: Request, user=Depends(require_auth)):
                 macro_context, meso_context, micro_context, psi_profile, parameters,
                 synthesis, implications, confidence, customer_code, project_slug,
                 parent_version_id, created_by)
-            VALUES (:id, :lid, :ver, :q, :mode, :macro::jsonb, :meso::jsonb,
-                :micro::jsonb, :psi::jsonb, :params::jsonb, :synth,
-                :impl::jsonb, :conf, :cust, :proj, :parent, :email)
+            VALUES (:id, :lid, :ver, :q, :mode, CAST(:macro AS jsonb), CAST(:meso AS jsonb),
+                CAST(:micro AS jsonb), CAST(:psi AS jsonb), CAST(:params AS jsonb), :synth,
+                CAST(:impl AS jsonb), :conf, :cust, :proj, :parent, :email)
         """), {
             "id": analysis_id,
             "lid": lineage_id,
