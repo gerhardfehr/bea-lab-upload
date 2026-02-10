@@ -307,21 +307,13 @@ def get_db():
                     conn.execute(text("UPDATE users SET role = 'sales' WHERE email IN ('nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com') AND (role IS NULL OR role = 'researcher')"))
                     # Leads table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS leads (
-                        id VARCHAR PRIMARY KEY, lead_code VARCHAR(30),
-                        company VARCHAR(500), customer_code VARCHAR(50),
-                        is_new_customer BOOLEAN DEFAULT TRUE,
+                        id VARCHAR PRIMARY KEY, company VARCHAR(500),
                         contact VARCHAR(200), email VARCHAR(320),
                         stage VARCHAR(50) DEFAULT 'kontakt',
                         value REAL DEFAULT 0, source VARCHAR(200),
                         notes TEXT, created_by VARCHAR(320),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
-                    # Migrate: add lead_code column if missing
-                    try:
-                        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS lead_code VARCHAR(30)"))
-                        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS customer_code VARCHAR(50)"))
-                        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS is_new_customer BOOLEAN DEFAULT TRUE"))
-                    except: pass
                     # ── CRM Tables ──
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS crm_companies (
                         id VARCHAR PRIMARY KEY,
@@ -3070,6 +3062,7 @@ class ChatMessage(Base):
 class ChatRequest(BaseModel):
     question: str
     database: Optional[str] = None
+    project_slug: Optional[str] = None
 
 def search_knowledge_base(db, query: str, database: Optional[str] = None, limit: int = 8):
     """Three-tier hybrid search: Vector (if available) + PostgreSQL Fulltext + Keyword fallback."""
@@ -3319,9 +3312,8 @@ REGELN:
 Der User möchte einen Lead/eine Opportunity erfassen oder die Sales-Pipeline bearbeiten.
 
 FELDER:
-- customer_code: Kundencode (z.B. "ubs", "lukb") — MUSS aus CRM-Liste stammen oder neu sein
+- customer_code: Kundencode (z.B. "ubs", "lukb")
 - customer_name: Voller Firmenname
-- is_new_customer: true = Neukunde (noch nie gearbeitet), false = Bestandskunde (bereits in CRM)
 - contact_person: Ansprechpartner (Name)
 - contact_email: E-Mail
 - contact_role: Position/Rolle
@@ -3336,16 +3328,12 @@ FELDER:
 - source: Woher kam der Lead (referral, event, inbound, outbound, existing_client)
 - notes: Zusätzliche Infos
 
-LEAD-SUPERKEY: Wird automatisch generiert als L-{KUNDE}-{B/N}-{JJ}-{NNN}
-  B = Bestandskunde, N = Neukunde. Beispiel: L-UBS-B-26-003
-  Setze is_new_customer korrekt basierend auf der Kundenliste!
-
 KUNDEN: """ + CUSTOMERS_LIST + """
 
 REGELN:
 1. Antworte mit JSON in ```json ... ``` Tags
 2. JSON: {"intent":"lead", "action":"create"|"update", "status":"complete"|"need_info", "data":{...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
-3. Pflichtfelder: customer_name, customer_code, opportunity, stage, is_new_customer
+3. Pflichtfelder: customer_name, opportunity, stage
 4. Defaults: stage="initial_contact", fa_owner="GF", source="inbound"
 5. Frage gezielt nach fehlenden Infos – nicht alles auf einmal
 6. Deutsch, professionell""",
@@ -3816,7 +3804,8 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
                 logger.info(f"FAST PATH answer for: {question[:50]}")
                 # 💬→📚 Auto-save to Knowledge Base
                 try:
-                    doc_id = auto_save_chat_to_kb(question, answer, user["sub"], intent="knowledge")
+                    doc_id = auto_save_chat_to_kb(question, answer, user["sub"], intent="knowledge",
+                                                     metadata={"project_slug": request.project_slug} if request.project_slug else None)
                     # 🔍 Fact-check user claims (background)
                     try:
                         fact_check_user_claims(question, user["sub"], chat_doc_id=doc_id)
@@ -3856,6 +3845,211 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
         logger.error(f"Chat error: {e}")
         raise HTTPException(500, f"Konnte Frage nicht verarbeiten: {str(e)}")
     finally: db.close()
+
+
+# ── PROJECT-SCOPED CHAT: Chat within project context, save to GitHub ──
+
+def load_project_context_from_github(slug: str) -> dict:
+    """Load project.yaml + any existing insights from GitHub."""
+    import urllib.request, ssl, yaml as _yaml
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab", "Accept": "application/vnd.github.v3.raw"}
+
+    result = {"project": {}, "insights": [], "customer_context": ""}
+
+    # 1. Load project.yaml
+    try:
+        url = f"https://api.github.com/repos/{GH_CONTEXT_REPO}/contents/data/projects/{slug}/project.yaml"
+        req = urllib.request.Request(url, headers=gh)
+        result["project"] = _yaml.safe_load(urllib.request.urlopen(req, context=ctx, timeout=15).read().decode()) or {}
+    except Exception as e:
+        logger.warning(f"Project context load failed for {slug}: {e}")
+
+    # 2. Load existing insights
+    try:
+        url = f"https://api.github.com/repos/{GH_CONTEXT_REPO}/contents/data/projects/{slug}/insights"
+        req = urllib.request.Request(url, headers={"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"})
+        items = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+        for item in items[-5:]:
+            try:
+                req2 = urllib.request.Request(item["download_url"], headers=gh)
+                content = urllib.request.urlopen(req2, context=ctx, timeout=10).read().decode()
+                data = _yaml.safe_load(content) or {}
+                result["insights"].append({"file": item["name"], "question": data.get("question", ""), "answer": data.get("answer", "")[:500]})
+            except: pass
+    except: pass
+
+    # 3. Load customer context if available
+    try:
+        client = result["project"].get("client", {})
+        cust_code = (client.get("short_name") or client.get("customer_code") or "").lower()
+        if cust_code:
+            url = f"https://api.github.com/repos/{GH_CONTEXT_REPO}/contents/data/customers/{cust_code}"
+            req = urllib.request.Request(url, headers={"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"})
+            items = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+            ctx_files = [i for i in items if i["name"].endswith(".yaml") and "context" in i["name"].lower()]
+            for cf in ctx_files[:3]:
+                try:
+                    req2 = urllib.request.Request(cf["download_url"], headers=gh)
+                    result["customer_context"] += urllib.request.urlopen(req2, context=ctx, timeout=10).read().decode()[:2000] + "\n"
+                except: pass
+    except: pass
+
+    return result
+
+
+def build_project_system_prompt(project_ctx: dict, slug: str) -> str:
+    """Build a system prompt enriched with project context."""
+    p = project_ctx.get("project", {})
+    client = p.get("client", {})
+    project = p.get("project", {})
+    objective = p.get("objective", {})
+    scope = p.get("scope", {})
+    fehradvice_scope = p.get("fehradvice_scope", {})
+    meta = p.get("metadata", {})
+
+    ctx_parts = []
+    ctx_parts.append(f"PROJEKT: {meta.get('project_code', slug)} - {project.get('name', '')}")
+    if client.get("name"): ctx_parts.append(f"KUNDE: {client['name']}")
+    if client.get("industry"): ctx_parts.append(f"BRANCHE: {client['industry']}")
+    if client.get("country"): ctx_parts.append(f"LAND: {client['country']}")
+    if objective.get("summary"): ctx_parts.append(f"ZIEL: {objective['summary']}")
+    if project.get("description"): ctx_parts.append(f"BESCHREIBUNG: {project['description']}")
+    if project.get("type"): ctx_parts.append(f"TYP: {project['type']}")
+    if scope.get("in_scope"):
+        in_s = scope["in_scope"]
+        ctx_parts.append(f"IN SCOPE: {', '.join(in_s) if isinstance(in_s, list) else in_s}")
+    beh_obj = fehradvice_scope.get("behavioral_objectives", [])
+    if beh_obj: ctx_parts.append(f"BEHAVIORAL OBJECTIVES: {', '.join(beh_obj) if isinstance(beh_obj, list) else beh_obj}")
+    ten_c = fehradvice_scope.get("ten_c_focus", [])
+    if ten_c: ctx_parts.append(f"10C FOKUS: {', '.join(ten_c) if isinstance(ten_c, list) else ten_c}")
+
+    insights = project_ctx.get("insights", [])
+    insights_text = ""
+    if insights:
+        insights_text = "\n\nBISHERIGE ERKENNTNISSE ZU DIESEM PROJEKT:\n"
+        for ins in insights:
+            insights_text += f"- {ins.get('question', '')[:100]}: {ins.get('answer', '')[:200]}...\n"
+
+    cust_ctx = project_ctx.get("customer_context", "")
+    cust_text = ""
+    if cust_ctx:
+        cust_text = f"\n\nKUNDEN-KONTEXT:\n{cust_ctx[:3000]}"
+
+    return f"""Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
+
+Du arbeitest gerade im Kontext eines spezifischen Kundenprojekts. Alle deine Antworten sollen sich auf dieses Projekt beziehen.
+
+PROJEKTKONTEXT:
+{chr(10).join(ctx_parts)}
+{insights_text}{cust_text}
+
+Deine Aufgabe:
+- Beantworte Fragen im Kontext dieses Projekts
+- Nutze dein Wissen ueber Behavioral Economics, EBF, BCM, Decision Architecture
+- Wenn du Kontext-Analysen, Segment-Analysen oder Modelle erstellst, strukturiere sie klar
+- Gib praxisorientierte, auf den Kunden zugeschnittene Antworten
+- Antworte auf Deutsch, es sei denn die Frage ist auf Englisch
+
+Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
+
+
+@app.post("/api/chat/project/{slug}")
+async def chat_project(slug: str, request: ChatRequest, user=Depends(require_auth)):
+    """Project-scoped chat: enriched with project context, saves insights to GitHub."""
+    import urllib.request, ssl, yaml as _yaml
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(400, "Bitte stelle eine Frage")
+
+    project_ctx = load_project_context_from_github(slug)
+    if not project_ctx.get("project"):
+        raise HTTPException(404, f"Projekt '{slug}' nicht gefunden")
+
+    db = get_db()
+    try:
+        results = search_knowledge_base(db, question)
+        kb_context = build_context(results) if results else ""
+        sources = [{"title": doc.title, "id": doc.id, "type": doc.source_type, "category": doc.category}
+                   for _, doc in results[:5]] if results else []
+
+        system_prompt = build_project_system_prompt(project_ctx, slug)
+        if kb_context:
+            system_prompt += f"\n\nZUSAETZLICHES WISSEN AUS DER BEATRIX KNOWLEDGE BASE:\n{kb_context[:4000]}"
+
+        ctx_ssl = ssl.create_default_context(); ctx_ssl.check_hostname = False; ctx_ssl.verify_mode = ssl.CERT_NONE
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4000,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": question}]
+        }).encode()
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+                "User-Agent": "BEATRIXLab/3.8"
+            })
+        resp = json.loads(urllib.request.urlopen(req, context=ctx_ssl, timeout=60).read())
+        answer = resp["content"][0]["text"]
+
+        user_msg = ChatMessage(user_email=user["sub"], role="user", content=f"[{slug}] {question}")
+        db.add(user_msg); db.commit()
+        assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=answer, sources=sources)
+        db.add(assistant_msg); db.commit()
+
+        # Save insight to GitHub
+        try:
+            import re as _re
+            now = datetime.utcnow()
+            q_slug = _re.sub(r'[^a-z0-9]+', '-', question.strip()[:60].lower()).strip('-')[:40]
+            insight_path = f"data/projects/{slug}/insights/{now.strftime('%Y-%m')}_{q_slug}.yaml"
+            insight_yaml = _yaml.dump({
+                "question": question,
+                "answer": answer,
+                "user": user.get("email", user.get("sub", "")),
+                "timestamp": now.isoformat(),
+                "project_slug": slug,
+                "project_code": project_ctx["project"].get("metadata", {}).get("project_code", ""),
+                "sources": [s.get("title", "") for s in sources[:3]],
+                "type": "project_insight"
+            }, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+            gh_result = gh_put_file(
+                GH_CONTEXT_REPO, insight_path, insight_yaml,
+                f"prj-chat {slug}: {question.strip()[:60]}"
+            )
+            github_saved = gh_result.get("ok", False)
+            logger.info(f"Project chat saved: {slug} -> {insight_path} (github={github_saved})")
+        except Exception as e:
+            github_saved = False
+            logger.warning(f"Project insight GitHub push failed: {e}")
+
+        try:
+            auto_save_chat_to_kb(question, answer, user.get("sub", ""),
+                                 intent="project_chat",
+                                 metadata={"project_slug": slug, "customer_code":
+                                           project_ctx["project"].get("client", {}).get("customer_code", "")})
+        except: pass
+
+        return {
+            "status": "done",
+            "answer": answer,
+            "sources": sources,
+            "path": "project",
+            "project_slug": slug,
+            "github_saved": github_saved
+        }
+    except HTTPException: raise
+    except Exception as e:
+        logger.error(f"Project chat error: {e}")
+        import traceback; traceback.print_exc()
+        raise HTTPException(500, f"Fehler: {str(e)}")
+    finally:
+        db.close()
+
+
 
 @app.get("/api/chat/poll/{issue_number}")
 async def chat_poll(issue_number: int, user=Depends(require_auth)):
@@ -4410,8 +4604,7 @@ async def get_projects(user=Depends(require_auth)):
                     "fa_team": team.get("fa_team", []),
                     "created": meta.get("created", ""),
                     "last_updated": meta.get("last_updated", ""),
-                    "created_by": meta.get("created_by", ""),
-                     "github_path": f"data/projects/{item['name']}/project.yaml"
+                    "github_path": f"data/projects/{item['name']}/project.yaml"
                 })
             except Exception as e2:
                 logger.warning(f"Could not read project {item['name']}: {e2}")
@@ -5563,17 +5756,6 @@ async def get_leads(user=Depends(require_auth)):
     db = get_db()
     try:
         from sqlalchemy import text
-        # Return with lead_code
-        rows = db.execute(text("SELECT id, lead_code, company, customer_code, is_new_customer, contact, email, stage, value, source, notes, created_by, created_at, updated_at FROM leads ORDER BY created_at DESC")).fetchall()
-        return [{"id": r[0], "lead_code": r[1] or "", "company": r[2] or "", "customer_code": r[3] or "",
-                 "is_new_customer": r[4] if r[4] is not None else True,
-                 "contact": r[5] or "", "email": r[6] or "", "stage": r[7] or "kontakt",
-                 "value": r[8] or 0, "source": r[9] or "", "notes": r[10] or "",
-                 "created_by": r[11] or "", "created_at": r[12].isoformat() if r[12] else "",
-                 "updated_at": r[13].isoformat() if r[13] else ""} for r in rows]
-    except Exception as e2:
-        logger.warning(f"Lead list new format: {e2}, falling back")
-        from sqlalchemy import text
         rows = db.execute(text("SELECT * FROM leads ORDER BY updated_at DESC")).fetchall()
         return [dict(r._mapping) for r in rows]
     except Exception as e:
@@ -5586,49 +5768,17 @@ async def create_lead(request: Request, user=Depends(require_auth)):
     db = get_db()
     try:
         from sqlalchemy import text
-        import uuid, yaml, urllib.request as ureq
+        import uuid
         data = await request.json()
         lead_id = str(uuid.uuid4())[:8]
-        customer_code = data.get("customer_code", "").strip()
-        is_new = data.get("is_new_customer", True)
-        year_short = str(datetime.utcnow().year)[2:]  # "26"
-        typ = "N" if is_new else "B"
-
-        # ── Generate Lead Superkey: L-{KUNDE}-{B/N}-{JJ}-{NNN} ──
-        prefix = customer_code.upper().replace("-", "")[:6] if customer_code else "UNK"
-
-        # Try to resolve via prefix_mapping
-        try:
-            sctx = ssl.create_default_context()
-            sctx.check_hostname = False; sctx.verify_mode = ssl.CERT_NONE
-            gh_headers = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIX", "Accept": "application/vnd.github.v3.raw"}
-            seq_req = ureq.Request(f"https://api.github.com/repos/{GH_REPO}/contents/data/config/project-sequences.yaml", headers=gh_headers)
-            seq_data = yaml.safe_load(ureq.urlopen(seq_req, context=sctx, timeout=10).read().decode()) or {}
-            pm = seq_data.get("prefix_mapping", {})
-            resolved = pm.get(customer_code.lower(), "")
-            if resolved:
-                prefix = resolved
-        except Exception as pe:
-            logger.warning(f"Lead prefix resolve: {pe}")
-
-        # Count existing leads with same prefix+type+year
-        result = db.execute(text(
-            "SELECT COUNT(*) FROM leads WHERE lead_code LIKE :pattern"),
-            {"pattern": f"L-{prefix}-{typ}-{year_short}-%"}).scalar() or 0
-        next_num = result + 1
-        lead_code = f"L-{prefix}-{typ}-{year_short}-{next_num:03d}"
-
-        db.execute(text("""INSERT INTO leads (id, lead_code, company, customer_code, is_new_customer, contact, email, stage, value, source, notes, created_by)
-            VALUES (:id, :lead_code, :company, :customer_code, :is_new, :contact, :email, :stage, :value, :source, :notes, :created_by)"""),
-            {"id": lead_id, "lead_code": lead_code, "company": data.get("company",""),
-             "customer_code": customer_code, "is_new": is_new,
-             "contact": data.get("contact",""), "email": data.get("email",""),
-             "stage": data.get("stage","kontakt"), "value": data.get("value", 0),
-             "source": data.get("source",""), "notes": data.get("notes",""),
-             "created_by": user["sub"]})
+        db.execute(text("""INSERT INTO leads (id, company, contact, email, stage, value, source, notes, created_by)
+            VALUES (:id, :company, :contact, :email, :stage, :value, :source, :notes, :created_by)"""),
+            {"id": lead_id, "company": data.get("company",""), "contact": data.get("contact",""),
+             "email": data.get("email",""), "stage": data.get("stage","kontakt"),
+             "value": data.get("value", 0), "source": data.get("source",""),
+             "notes": data.get("notes",""), "created_by": user["sub"]})
         db.commit()
-        logger.info(f"Lead created: {lead_code} ({data.get('company','')}) by {user.get('email','?')}")
-        return {"id": lead_id, "lead_code": lead_code, "status": "created"}
+        return {"id": lead_id, "status": "created"}
     except Exception as e:
         db.rollback()
         logger.error(f"Lead create error: {e}")
@@ -5643,7 +5793,7 @@ async def update_lead(lead_id: str, request: Request, user=Depends(require_auth)
         data = await request.json()
         sets = []
         params = {"id": lead_id}
-        for field in ["company", "contact", "email", "stage", "value", "source", "notes", "customer_code", "is_new_customer"]:
+        for field in ["company", "contact", "email", "stage", "value", "source", "notes"]:
             if field in data:
                 sets.append(f"{field} = :{field}")
                 params[field] = data[field]
