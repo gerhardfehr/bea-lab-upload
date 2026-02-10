@@ -2231,11 +2231,8 @@
             const adminEl = document.getElementById('navAdmin');
             if (adminEl) adminEl.style.display = isAdmin ? 'inline' : 'none';
 
-            // Kontext-Analyse in Behavioral Design dropdown: role-based
-            const visibleTabs = isAdmin ? ['context'] : (ROLE_TABS[role] || []);
-            const showContext = visibleTabs.includes('context');
-            const ctxEl = document.getElementById('navDropContext');
-            if (ctxEl) ctxEl.style.display = showContext ? 'flex' : 'none';
+            // Kontext-Analyse is always visible (core EBF workflow under Behavioral Design)
+            // No role restriction needed
 
             // Business dropdown items (CRM, Firmen, Projekte)
             const showCrm = isFehrAdvice && hasCrmAccess;
@@ -2252,7 +2249,7 @@
                 businessDrop.style.display = showCrm ? 'flex' : 'none';
             }
 
-            console.log('Nav: Context=' + showContext, 'CRM=' + showCrm, 'Admin=' + isAdmin);
+            console.log('Nav: CRM=' + showCrm, 'Admin=' + isAdmin);
         }
 
         // ── Kontext / Ausgangslage ──────────────────────
