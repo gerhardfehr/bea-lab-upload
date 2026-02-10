@@ -4088,6 +4088,164 @@ async def chat_project(slug: str, request: ChatRequest, user=Depends(require_aut
         db.close()
 
 
+@app.post("/api/chat/project/{slug}/stream")
+async def chat_project_stream(slug: str, request: ChatRequest, user=Depends(require_auth)):
+    """Project-scoped streaming chat: enriched with project context, streams tokens via SSE."""
+    import urllib.request, ssl, http.client, yaml as _yaml
+
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(400, "Bitte stelle eine Frage")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(501, "Claude API nicht konfiguriert")
+
+    # Load project context
+    project_ctx = load_project_context_from_github(slug)
+    if not project_ctx.get("project"):
+        raise HTTPException(404, f"Projekt '{slug}' nicht gefunden")
+
+    # Search KB
+    db = get_db()
+    try:
+        results = search_knowledge_base(db, question)
+        kb_context = build_context(results) if results else ""
+        sources = [{"title": doc.title, "id": doc.id, "type": doc.source_type} for _, doc in results[:5]] if results else []
+    finally:
+        db.close()
+
+    # Build enriched prompt
+    system_prompt = build_project_system_prompt(project_ctx, slug)
+    if kb_context:
+        system_prompt += f"\n\nZUSAETZLICHES WISSEN AUS DER BEATRIX KNOWLEDGE BASE:\n{kb_context[:4000]}"
+
+    async def event_generator():
+        ctx_ssl = ssl.create_default_context()
+        ctx_ssl.check_hostname = False
+        ctx_ssl.verify_mode = ssl.CERT_NONE
+
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4000,
+            "stream": True,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": question}]
+        }).encode()
+
+        full_text = []
+        try:
+            conn = http.client.HTTPSConnection("api.anthropic.com", context=ctx_ssl)
+            conn.request("POST", "/v1/messages", body=payload, headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+                "User-Agent": "BEATRIXLab/3.20"
+            })
+            resp = conn.getresponse()
+
+            if resp.status != 200:
+                error_body = resp.read().decode()
+                logger.error(f"Project stream error: {resp.status} {error_body[:200]}")
+                yield f"data: {json.dumps({'type': 'error', 'text': 'Claude API Fehler'})}\n\n"
+                return
+
+            # Send sources first
+            if sources:
+                yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+
+            buffer = ""
+            while True:
+                chunk = resp.read(1024)
+                if not chunk:
+                    break
+                buffer += chunk.decode("utf-8", errors="replace")
+
+                while "\n\n" in buffer:
+                    event_str, buffer = buffer.split("\n\n", 1)
+                    for line in event_str.split("\n"):
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str.strip() == "[DONE]":
+                                continue
+                            try:
+                                event = json.loads(data_str)
+                                event_type = event.get("type", "")
+
+                                if event_type == "content_block_delta":
+                                    delta = event.get("delta", {})
+                                    if delta.get("type") == "text_delta":
+                                        text_chunk = delta.get("text", "")
+                                        full_text.append(text_chunk)
+                                        yield f"data: {json.dumps({'type': 'token', 'text': text_chunk})}\n\n"
+
+                                elif event_type == "message_stop":
+                                    yield f"data: {json.dumps({'type': 'done', 'text': ''})}\n\n"
+
+                            except json.JSONDecodeError:
+                                pass
+
+            conn.close()
+
+            # Store complete answer
+            complete_text = "".join(full_text)
+            if complete_text:
+                db2 = get_db()
+                try:
+                    user_msg = ChatMessage(user_email=user["sub"], role="user", content=f"[{slug}] {question}")
+                    db2.add(user_msg)
+                    assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=complete_text, sources=sources)
+                    db2.add(assistant_msg)
+                    db2.commit()
+                except Exception:
+                    pass
+                finally:
+                    db2.close()
+
+                # Save insight to GitHub
+                github_saved = False
+                try:
+                    import re as _re
+                    now = datetime.utcnow()
+                    q_slug = _re.sub(r'[^a-z0-9]+', '-', question.strip()[:60].lower()).strip('-')[:40]
+                    insight_path = f"data/projects/{slug}/insights/{now.strftime('%Y-%m')}_{q_slug}.yaml"
+                    insight_yaml = _yaml.dump({
+                        "question": question,
+                        "answer": complete_text,
+                        "user": user.get("email", user.get("sub", "")),
+                        "timestamp": now.isoformat(),
+                        "project_slug": slug,
+                        "project_code": project_ctx["project"].get("metadata", {}).get("project_code", ""),
+                        "type": "project_insight"
+                    }, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                    gh_result = gh_put_file(GH_CONTEXT_REPO, insight_path, insight_yaml,
+                                            f"prj-chat {slug}: {question.strip()[:60]}")
+                    github_saved = gh_result.get("ok", False)
+                    logger.info(f"Project stream saved: {slug} -> {insight_path}")
+                except Exception as e:
+                    logger.warning(f"Project stream GitHub push failed: {e}")
+
+                # KB auto-save
+                try:
+                    auto_save_chat_to_kb(question, complete_text, user.get("sub", ""),
+                                         intent="project_chat",
+                                         metadata={"project_slug": slug})
+                except Exception:
+                    pass
+
+                # Send final meta
+                yield f"data: {json.dumps({'type': 'meta', 'github_saved': github_saved, 'project_slug': slug})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'done', 'text': ''})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Project stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+    )
+
 
 @app.get("/api/chat/poll/{issue_number}")
 async def chat_poll(issue_number: int, user=Depends(require_auth)):
