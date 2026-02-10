@@ -1270,7 +1270,7 @@
 
                     <div class="mb-actions">
                         <button class="mb-btn mb-btn-back" onclick="caBack(3)">← Zurück</button>
-                        <button class="mb-btn mb-btn-secondary" onclick="caSaveAndUse()">💾 Speichern</button>
+                        <button class="mb-btn mb-btn-secondary" id="caSaveBtn" onclick="caSaveAndUse()">💾 Speichern</button>
                         <button class="mb-btn mb-btn-primary" onclick="caUseInChat()">💬 Im Chat verwenden →</button>
                     </div>
                 </div>
@@ -2469,7 +2469,7 @@
         // Kontext-Analyse state managed by caState and caHistoryData
 
         // ── KONTEXT-ANALYSE WORKFLOW ──────────────────────────
-        const caState = { mode: null, step: -1, question: '', macro: null, meso: null, micro: {}, result: null };
+        const caState = { mode: null, step: -1, question: '', macro: null, meso: null, micro: {}, result: null, lineageId: null, currentVersionId: null, customerCode: null, projectSlug: null };
         let caHistoryData = [];
 
         const PSI_DIMS = [
@@ -2529,6 +2529,8 @@
         function caGoToStart() {
             caState.step = -1;
             caState.mode = null;
+            caState.lineageId = null;
+            caState.currentVersionId = null;
             document.querySelectorAll('#caStart .mb-mode-card').forEach(c => c.classList.remove('selected'));
             document.getElementById('caStartBtn').disabled = true;
             document.getElementById('caProgress').style.display = 'none';
@@ -2833,23 +2835,36 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
         }
 
         async function caSaveAndUse() {
-            const ctx = {
-                client: 'Kontextanalyse',
-                project: caState.question.substring(0, 80),
-                domain: 'OTH',
-                status: 'aktiv',
-                situation: JSON.stringify(caState.result?.psi_profile || {}),
-                goal: caState.result?.synthesis || '',
-                constraints: caState.result?.confidence || ''
+            const r = caState.result;
+            if (!r) return;
+            const payload = {
+                question: caState.question,
+                mode: caState.mode,
+                macro_context: caState.macro ? { country: caState.macro, custom: document.getElementById('caMacroCustom')?.value } : null,
+                meso_context: caState.meso ? { industry: caState.meso, custom: document.getElementById('caMesoCustom')?.value } : null,
+                micro_context: caState.micro || null,
+                psi_profile: r.psi_profile,
+                parameters: r.parameters,
+                synthesis: r.synthesis,
+                implications: r.implications,
+                confidence: r.confidence,
+                customer_code: caState.customerCode || null,
+                project_slug: caState.projectSlug || null,
+                lineage_id: caState.lineageId || null  // null = auto-detect
             };
             try {
-                const r = await fetch(`${API}/contexts`, {
+                const resp = await fetch(`${API}/psi-analyses`, {
                     method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify(ctx)
+                    body: JSON.stringify(payload)
                 });
-                if (r.ok) showToast('Ψ-Profil gespeichert', 'success');
-                else showToast('Speichern fehlgeschlagen', 'error');
+                if (!resp.ok) throw new Error('Save failed');
+                const result = await resp.json();
+                showToast(`Ψ-Profil gespeichert: ${result.lineage_id} v${result.version}`, 'success');
+                // Store lineage for potential re-versioning
+                caState.lineageId = result.lineage_id;
+                caState.currentVersionId = result.id;
             } catch(e) {
+                console.error('Save error:', e);
                 showToast('Fehler beim Speichern', 'error');
             }
         }
@@ -2881,36 +2896,73 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             caShowPanel('caHistory');
             document.getElementById('caProgress').style.display = 'none';
             const container = document.getElementById('caHistoryList');
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.5)"><div class="spinner" style="margin:0 auto 12px"></div>Wird geladen...</div>';
             try {
-                const r = await fetch(`${API}/contexts`, { headers: H() });
+                const r = await fetch(`${API}/psi-analyses`, { headers: H() });
                 if (!r.ok) throw new Error('Load failed');
-                caHistoryData = await r.json();
-                if (!caHistoryData.length) {
-                    container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Kontextanalysen gespeichert.</div>';
+                const analyses = await r.json();
+                if (!analyses.length) {
+                    container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Ψ-Analysen gespeichert.</div>';
                     return;
                 }
-                container.innerHTML = caHistoryData.sort((a,b) => new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at)).map(c => {
-                    const date = new Date(c.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: 'short', year: 'numeric' });
-                    let psiHtml = '';
-                    try {
-                        const psi = JSON.parse(c.situation);
-                        psiHtml = PSI_DIMS.map(d => {
-                            const v = psi[d.key];
-                            if (!v) return '';
-                            const pct = Math.round(v.value * 100);
-                            return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:rgba(255,255,255,0.5);margin-right:8px">${d.icon} ${v.value.toFixed(1)}</span>`;
-                        }).join('');
-                    } catch(e) { psiHtml = `<span style="font-size:12px;color:rgba(255,255,255,0.5)">${c.situation||''}</span>`; }
+
+                // Group by lineage
+                const lineages = {};
+                analyses.forEach(a => {
+                    if (!lineages[a.lineage_id]) lineages[a.lineage_id] = [];
+                    lineages[a.lineage_id].push(a);
+                });
+
+                container.innerHTML = Object.entries(lineages).map(([lid, versions]) => {
+                    const latest = versions[0]; // already sorted DESC
+                    const date = new Date(latest.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: 'short', year: 'numeric' });
+                    const psi = latest.psi_profile || {};
+
+                    // Mini Ψ bars
+                    const psiMini = PSI_DIMS.map(d => {
+                        const v = psi[d.key];
+                        if (!v) return '';
+                        const pct = Math.round(v.value * 100);
+                        const hue = v.value < 0.3 ? 200 : v.value < 0.7 ? 45 : 140;
+                        return `<div style="display:flex;align-items:center;gap:4px;min-width:110px">
+                            <span style="font-size:12px">${d.icon}</span>
+                            <div style="flex:1;height:4px;background:var(--navy-mid);border-radius:2px;overflow:hidden;max-width:50px">
+                                <div style="width:${pct}%;height:100%;background:hsl(${hue},70%,55%);border-radius:2px"></div>
+                            </div>
+                            <span style="font-size:11px;color:hsl(${hue},70%,65%);font-weight:600">${v.value.toFixed(1)}</span>
+                        </div>`;
+                    }).join('');
+
+                    // Version pills
+                    const versionPills = versions.map(v => {
+                        const isLatest = v.id === latest.id;
+                        const vDate = new Date(v.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit' });
+                        return `<span onclick="caLoadVersion('${v.id}')" style="font-size:10px;padding:2px 8px;border-radius:10px;cursor:pointer;transition:all 0.2s;${isLatest ? 'background:var(--accent);color:white' : 'background:var(--navy-mid);color:rgba(255,255,255,0.5);border:1px solid var(--border)'}" title="${vDate}">v${v.version}</span>`;
+                    }).join('');
+
+                    // Params
+                    const params = latest.parameters || {};
+                    const paramStr = Object.entries(params).map(([k,v]) => {
+                        const sym = k === 'lambda' ? 'λ' : k === 'beta' ? 'β' : k === 'theta' ? 'θ' : k === 'delta' ? 'δ' : k;
+                        return `<span style="color:var(--accent-light)">${sym}</span>=${v.value}`;
+                    }).join('  ');
+
                     return `
-                    <div style="padding:14px 16px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
-                            <span style="font-weight:600;color:var(--white);font-size:14px">${c.project || c.client || '–'}</span>
-                            <span style="margin-left:auto;font-size:11px;color:rgba(255,255,255,0.25)">${date}</span>
+                    <div style="padding:16px 18px;background:var(--navy-card);border:1px solid var(--border);border-radius:12px">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+                            <span style="font-size:11px;font-family:monospace;color:var(--accent-light);background:var(--accent-glow);padding:2px 8px;border-radius:6px">${lid}</span>
+                            <span style="font-weight:600;color:var(--white);font-size:14px;flex:1">${latest.question?.substring(0,80) || '–'}${(latest.question?.length||0) > 80 ? '...' : ''}</span>
+                            <span style="font-size:11px;color:rgba(255,255,255,0.25)">${date}</span>
                         </div>
-                        <div style="margin-bottom:6px">${psiHtml}</div>
-                        ${c.goal ? `<div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5">${c.goal}</div>` : ''}
-                        <div style="display:flex;gap:8px;margin-top:8px;border-top:1px solid rgba(255,255,255,0.04);padding-top:8px">
-                            <button onclick="caDeleteAnalysis('${c.id}')" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(248,113,113,0.5);border:1px solid rgba(248,113,113,0.15);border-radius:6px;cursor:pointer">Löschen</button>
+                        <div style="display:flex;flex-wrap:wrap;gap:6px 12px;margin-bottom:10px">${psiMini}</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:8px">${paramStr}</div>
+                        ${latest.synthesis ? `<div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;margin-bottom:8px">${latest.synthesis.substring(0,200)}${latest.synthesis.length > 200 ? '...' : ''}</div>` : ''}
+                        <div style="display:flex;align-items:center;gap:8px;border-top:1px solid rgba(255,255,255,0.04);padding-top:8px;flex-wrap:wrap">
+                            <span style="font-size:10px;color:rgba(255,255,255,0.3)">Versionen:</span>
+                            ${versionPills}
+                            <div style="flex:1"></div>
+                            <button onclick="caNewVersion('${lid}','${latest.question?.replace(/'/g,"\\'")}')" style="font-size:11px;padding:3px 10px;background:rgba(139,170,255,0.08);color:var(--accent-light);border:1px solid rgba(139,170,255,0.2);border-radius:6px;cursor:pointer" title="Neue Version dieser Analyse">+ v${versions.length+1}</button>
+                            <button onclick="caDeleteAnalysis('${latest.id}')" style="font-size:11px;padding:3px 8px;background:transparent;color:rgba(248,113,113,0.5);border:1px solid rgba(248,113,113,0.15);border-radius:6px;cursor:pointer">Löschen</button>
                         </div>
                     </div>`;
                 }).join('');
@@ -2920,10 +2972,22 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             }
         }
 
+        function caNewVersion(lineageId, question) {
+            caState.lineageId = lineageId;
+            caState.question = question;
+            caState.mode = 'schnell';
+            caRunSchnell(question);
+        }
+
+        async function caLoadVersion(analysisId) {
+            // Could expand to show full detail of a specific version
+            showToast(`Version ${analysisId} — Detail-View kommt bald`, 'info');
+        }
+
         async function caDeleteAnalysis(id) {
-            if (!confirm('Analyse wirklich löschen?')) return;
+            if (!confirm('Ψ-Analyse wirklich löschen?')) return;
             try {
-                await fetch(`${API}/contexts/${id}`, { method: 'DELETE', headers: H() });
+                await fetch(`${API}/psi-analyses/${id}`, { method: 'DELETE', headers: H() });
                 showToast('Analyse gelöscht', 'success');
                 caShowHistory();
             } catch(e) { showToast('Fehler', 'error'); }
