@@ -1253,6 +1253,15 @@
                 </div>
 
                 <div id="caAnalysisResult" style="display:none">
+                    <!-- Allgemeine Perspektive: Big Picture -->
+                    <div id="caPerspectiveBox" style="padding:20px 24px;background:linear-gradient(135deg,rgba(27,54,93,0.4),rgba(27,54,93,0.15));border:1px solid rgba(139,170,255,0.2);border-radius:var(--radius);margin-bottom:20px">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                            <span style="font-size:20px">🔭</span>
+                            <div style="font-size:15px;font-weight:700;color:var(--white)">Allgemeine Perspektive</div>
+                        </div>
+                        <div id="caPerspectiveText" style="font-size:14px;color:rgba(255,255,255,0.88);line-height:1.85"></div>
+                    </div>
+
                     <!-- Ψ Dimension Cards -->
                     <div id="caPsiCards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px"></div>
 
@@ -2771,6 +2780,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
 
         function caGenerateFallback() {
             return {
+                allgemeine_perspektive: 'Ohne spezifischere Angaben zum Kontext können wir nur ein grobes Bild zeichnen. Jede Verhaltensveränderung hängt davon ab, in welcher Welt sich die Menschen befinden — welche Regeln gelten, wer zuschaut, wie viel Zeit und Geld zur Verfügung steht, und ob die Situation Nachdenken erlaubt oder schnelle Entscheidungen erzwingt. Je mehr wir über den konkreten Kontext wissen, desto präziser können wir vorhersagen, was funktioniert.',
                 psi_profile: {
                     psi_i: { value: 0.6, label: 'Moderater regulatorischer Rahmen', key_factors: ['Gesetzgebung', 'Defaults'], plain: 'Es gibt klare Regeln und Vorgaben, aber auch Spielraum für eigene Entscheidungen.' },
                     psi_s: { value: 0.5, label: 'Gemischte soziale Einflüsse', key_factors: ['Peer Effects', 'Normen'], plain: 'Was andere tun, spielt eine Rolle — aber man fühlt sich nicht stark unter Beobachtung.' },
@@ -2806,6 +2816,13 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             document.querySelector('#caStep4 .mb-step-title').textContent = 'Ψ-Profil — Ergebnis';
             document.querySelector('#caStep4 .mb-step-desc').textContent = caState.question;
             caUpdateProgress(5);
+
+            // 0) Allgemeine Perspektive — Big Picture
+            const perspEl = document.getElementById('caPerspectiveText');
+            if (perspEl) {
+                perspEl.textContent = r.allgemeine_perspektive || '';
+                document.getElementById('caPerspectiveBox').style.display = r.allgemeine_perspektive ? 'block' : 'none';
+            }
 
             // Render Ψ cards
             const cardsEl = document.getElementById('caPsiCards');
