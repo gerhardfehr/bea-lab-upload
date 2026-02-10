@@ -5499,6 +5499,8 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             const chatMsgs = document.getElementById('prjChatMessages');
             if (chatMsgs) chatMsgs.innerHTML = '<div style="font-size:12px;color:rgba(255,255,255,0.25);text-align:center;padding:12px">BEATRIX kennt den Projektkontext — stelle Fragen, Ergebnisse werden im Projekt gespeichert.</div>';
             prjChatHistory = [];
+            prjChatDraft = {};
+            prjChatIntent = '';
             // Reset to Übersicht main tab
             prjSwitchMainTab('overview');
             const backBtn = document.getElementById('prjBackBtn');
@@ -5842,8 +5844,10 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             showToast(`🔗 ${code || slug} → ${module.charAt(0).toUpperCase() + module.slice(1)}`, 'success');
         }
 
-        // ── PROJECT CHAT ──
+        // ── PROJECT CHAT (uses same bxCmd pipeline) ──
         let prjChatHistory = [];
+        let prjChatDraft = {};
+        let prjChatIntent = '';
 
         async function prjChatSend() {
             const input = document.getElementById('prjChatInput');
@@ -5856,66 +5860,105 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             btn.disabled = true;
             btn.textContent = '⏳';
 
-            // Add user message
-            const userDiv = document.createElement('div');
-            userDiv.style.cssText = 'align-self:flex-end;max-width:80%;padding:10px 14px;background:rgba(42,127,142,0.15);border:1px solid rgba(42,127,142,0.25);border-radius:12px 12px 4px 12px;font-size:13px;color:rgba(255,255,255,0.85);line-height:1.5';
-            userDiv.textContent = question;
-            msgsEl.appendChild(userDiv);
+            // User message bubble
+            msgsEl.insertAdjacentHTML('beforeend', `<div class="chat-msg user" style="justify-content:flex-end">
+                <div class="chat-msg-body" style="background:rgba(42,127,142,0.1);border:1px solid rgba(42,127,142,0.2);border-radius:12px 12px 4px 12px;padding:10px 14px;max-width:80%">
+                    <div style="font-size:13px;color:rgba(255,255,255,0.85);line-height:1.5">${question.replace(/</g,'&lt;')}</div>
+                </div>
+            </div>`);
 
-            // Add typing indicator
-            const typingDiv = document.createElement('div');
-            typingDiv.id = 'prjChatTyping';
-            typingDiv.style.cssText = 'align-self:flex-start;padding:10px 14px;font-size:12px;color:rgba(255,255,255,0.3)';
-            typingDiv.textContent = '🧠 BEATRIX denkt nach (mit Projektkontext)...';
-            msgsEl.appendChild(typingDiv);
+            prjChatHistory.push({role:'user', content: question});
+
+            // Typing indicator
+            msgsEl.insertAdjacentHTML('beforeend', `<div id="prjChatTyping" style="padding:10px 14px;font-size:12px;color:rgba(255,255,255,0.3)">🧠 BEATRIX analysiert (mit Projektkontext)...</div>`);
             msgsEl.scrollTop = msgsEl.scrollHeight;
 
             try {
-                const resp = await fetch(`${API}/chat/project/${prjCurrentSlug}`, {
+                // ── Same endpoint as bxCmd: /api/chat/intent ──
+                const r = await fetch(`${API}/chat/intent`, {
                     method: 'POST',
                     headers: {...H(), 'Content-Type': 'application/json'},
-                    body: JSON.stringify({ question })
+                    body: JSON.stringify({
+                        message: question,
+                        history: prjChatHistory,
+                        current_draft: prjChatDraft,
+                        intent: prjChatIntent,
+                        project_slug: prjCurrentSlug
+                    })
                 });
-
+                const d = await r.json();
                 const typing = document.getElementById('prjChatTyping');
                 if (typing) typing.remove();
 
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    const errDiv = document.createElement('div');
-                    errDiv.style.cssText = 'align-self:flex-start;padding:10px 14px;font-size:12px;color:var(--error)';
-                    errDiv.textContent = err.detail || 'Fehler bei der Verarbeitung';
-                    msgsEl.appendChild(errDiv);
+                if (!r.ok || !d.ok) {
+                    msgsEl.insertAdjacentHTML('beforeend', `<div style="padding:10px;font-size:12px;color:var(--error)">${d.error || 'Fehler'}</div>`);
+                    btn.disabled = false; btn.textContent = 'Senden'; return;
+                }
+
+                // If redirect to KB → use project-scoped chat instead
+                if (d.status === 'redirect_kb') {
+                    msgsEl.insertAdjacentHTML('beforeend', `<div style="padding:10px;font-size:12px;color:rgba(255,255,255,0.3)">Suche in der Wissensbasis...</div>`);
+                    try {
+                        const kr = await fetch(`${API}/chat/project/${prjCurrentSlug}`, {
+                            method: 'POST',
+                            headers: {...H(), 'Content-Type': 'application/json'},
+                            body: JSON.stringify({ question })
+                        });
+                        const kd = await kr.json();
+                        msgsEl.lastElementChild.remove(); // remove "Suche..."
+
+                        const bi = {icon:'📚', color:'42,127,142'};
+                        let ansHtml = kd.answer || '';
+                        ansHtml = ansHtml.replace(/</g,'&lt;').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                        ansHtml = ansHtml.replace(/\n\n/g, '<br><br>').replace(/\n- /g, '<br>• ').replace(/\n(\d+)\. /g, '<br>$1. ');
+
+                        msgsEl.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
+                            <div class="chat-msg-avatar" style="background:linear-gradient(135deg,rgba(${bi.color},0.8),rgba(${bi.color},0.4));font-size:12px">${bi.icon}</div>
+                            <div class="chat-msg-body">
+                                <div style="font-size:13px;color:rgba(255,255,255,0.8);line-height:1.7">${ansHtml}</div>
+                                ${kd.github_saved ? '<div style="font-size:10px;color:rgba(52,211,153,0.5);margin-top:6px">✓ Auf GitHub gespeichert</div>' : ''}
+                            </div>
+                        </div>`);
+                        prjChatHistory.push({role:'assistant', content: kd.answer});
+                    } catch(e) {
+                        msgsEl.lastElementChild.remove();
+                        msgsEl.insertAdjacentHTML('beforeend', `<div style="padding:10px;font-size:12px;color:var(--error)">KB-Fehler: ${e.message}</div>`);
+                    }
                 } else {
-                    const data = await resp.json();
+                    // ── Structured card response (SAME as bxCmd) ──
+                    const intent = d.intent || 'project';
+                    prjChatIntent = intent;
 
-                    const ansDiv = document.createElement('div');
-                    ansDiv.style.cssText = 'align-self:flex-start;max-width:90%;padding:14px 16px;background:var(--navy-card);border:1px solid var(--border);border-radius:4px 12px 12px 12px;font-size:13px;color:rgba(255,255,255,0.8);line-height:1.7';
-                    let html = data.answer || '';
-                    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                    html = html.replace(/\n\n/g, '<br><br>');
-                    html = html.replace(/\n- /g, '<br>• ');
-                    html = html.replace(/\n(\d+)\. /g, '<br>$1. ');
-                    ansDiv.innerHTML = html;
-                    msgsEl.appendChild(ansDiv);
-
-                    if (data.github_saved) {
-                        const ghDiv = document.createElement('div');
-                        ghDiv.style.cssText = 'align-self:flex-start;font-size:10px;color:rgba(52,211,153,0.5);padding:2px 8px';
-                        ghDiv.textContent = '✓ Auf GitHub gespeichert';
-                        msgsEl.appendChild(ghDiv);
+                    if (d.data && Object.keys(d.data).length > 0) {
+                        // Inject project_slug into draft
+                        d.data.project_slug = prjCurrentSlug;
+                        prjChatDraft = {...prjChatDraft, ...d.data};
                     }
 
-                    prjChatHistory.push({role: 'user', content: question});
-                    prjChatHistory.push({role: 'assistant', content: data.answer});
+                    let cardHtml = '';
+                    const hasData = d.data && Object.keys(d.data).length > 0;
+
+                    if (hasData) {
+                        switch(intent) {
+                            case 'project': cardHtml = renderProjectCard(prjChatDraft, d.status, d.missing, d.confidence, d.message); break;
+                            case 'lead': cardHtml = renderLeadCard(prjChatDraft, d.status, d.missing, d.confidence, d.message); break;
+                            case 'model': cardHtml = renderModelCard(prjChatDraft, d.status, d.missing, d.confidence, d.message); break;
+                            case 'context': cardHtml = renderContextCard(prjChatDraft, d.status, d.missing, d.confidence, d.message); break;
+                        }
+                    }
+                    const textHtml = (!cardHtml && d.message) ? formatMessage(d.message) : '';
+                    const bi = BX_INTENTS[intent] || {icon:'💡', color:'42,127,142'};
+
+                    msgsEl.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
+                        <div class="chat-msg-avatar" style="background:linear-gradient(135deg,rgba(${bi.color},0.8),rgba(${bi.color},0.4));font-size:12px">${bi.icon}</div>
+                        <div class="chat-msg-body">${cardHtml}${textHtml}</div>
+                    </div>`);
+                    prjChatHistory.push({role:'assistant', content: d.message || JSON.stringify(d.data)});
                 }
             } catch(e) {
                 const typing = document.getElementById('prjChatTyping');
                 if (typing) typing.remove();
-                const errDiv = document.createElement('div');
-                errDiv.style.cssText = 'align-self:flex-start;padding:10px 14px;font-size:12px;color:var(--error)';
-                errDiv.textContent = 'Verbindungsfehler. Bitte erneut versuchen.';
-                msgsEl.appendChild(errDiv);
+                msgsEl.insertAdjacentHTML('beforeend', `<div style="padding:10px;font-size:12px;color:var(--error)">Verbindungsfehler: ${e.message}</div>`);
             }
 
             btn.disabled = false;
