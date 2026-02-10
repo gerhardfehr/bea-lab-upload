@@ -3496,6 +3496,44 @@ async def chat_intent(request: Request, user=Depends(require_auth)):
     # ── Step 3: Domain specialist ──
     domain_prompt = DOMAIN_PROMPTS.get(intent, DOMAIN_PROMPTS.get("project"))
 
+    # ── Project context enrichment ──
+    project_slug = body.get("project_slug", "")
+    if project_slug:
+        try:
+            prj_ctx = load_project_context_from_github(project_slug)
+            if prj_ctx.get("project"):
+                p = prj_ctx["project"]
+                client = p.get("client", {})
+                project_info = p.get("project", {})
+                objective = p.get("objective", {})
+                scope = p.get("scope", {})
+                fa_scope = p.get("fehradvice_scope", {})
+                meta = p.get("metadata", {})
+                ctx_lines = [f"\n\nPROJEKTKONTEXT (Projekt: {meta.get('project_code', project_slug)}):"]
+                if client.get("name"): ctx_lines.append(f"Kunde: {client['name']}")
+                if client.get("customer_code"): ctx_lines.append(f"Kundencode: {client['customer_code']}")
+                if client.get("industry"): ctx_lines.append(f"Branche: {client['industry']}")
+                if client.get("country"): ctx_lines.append(f"Land: {client['country']}")
+                if project_info.get("name"): ctx_lines.append(f"Projektname: {project_info['name']}")
+                if project_info.get("description"): ctx_lines.append(f"Beschreibung: {project_info['description']}")
+                if project_info.get("type"): ctx_lines.append(f"Typ: {project_info['type']}")
+                if objective.get("summary"): ctx_lines.append(f"Ziel: {objective['summary']}")
+                if scope.get("in_scope"):
+                    in_s = scope["in_scope"]
+                    ctx_lines.append(f"In Scope: {', '.join(in_s) if isinstance(in_s, list) else in_s}")
+                beh_obj = fa_scope.get("behavioral_objectives", [])
+                if beh_obj: ctx_lines.append(f"Behavioral Objectives: {', '.join(beh_obj) if isinstance(beh_obj, list) else beh_obj}")
+                ten_c = fa_scope.get("ten_c_focus", [])
+                if ten_c: ctx_lines.append(f"10C Fokus: {', '.join(ten_c) if isinstance(ten_c, list) else ten_c}")
+                # Previous insights
+                for ins in prj_ctx.get("insights", [])[-3:]:
+                    ctx_lines.append(f"Bisherige Erkenntnis: {ins.get('question', '')[:80]} → {ins.get('answer', '')[:150]}")
+                domain_prompt += "\n".join(ctx_lines)
+                domain_prompt += f"\n\nWICHTIG: Setze in deiner Antwort project_slug='{project_slug}' und customer_code='{client.get('customer_code', '')}' in die data-Felder."
+                logger.info(f"Intent enriched with project context: {project_slug}")
+        except Exception as e:
+            logger.warning(f"Project context enrichment failed: {e}")
+
     # Build messages with history
     messages = []
     for h in history[-10:]:
