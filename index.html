@@ -666,8 +666,11 @@
                     💡 <strong>BEATRIX Command Mode</strong> – Projekte, Leads, Modelle, Kontext per Sprache.
                     <span onclick="toggleBxCmd()" style="cursor:pointer;margin-left:8px;color:rgba(255,255,255,0.3)">✕</span>
                 </div>
+                <div id="mainChatAttachments" style="display:none;padding:0 0 8px;display:flex;flex-wrap:wrap;gap:6px"></div>
                 <div class="chat-input-wrap" style="display:flex;align-items:flex-end;gap:6px">
                     <button id="prjChatToggle" onclick="toggleBxCmd()" style="padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:14px;cursor:pointer;flex-shrink:0;transition:all 0.15s;line-height:1" title="BEATRIX Command Mode">💡</button>
+                    <input type="file" id="mainChatFileInput" style="display:none" accept=".pdf,.txt,.md,.csv,.json,.docx,.png,.jpg,.jpeg,.gif,.webp" onchange="mainChatFileSelected(this)" multiple>
+                    <button onclick="document.getElementById('mainChatFileInput').click()" style="padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:14px;cursor:pointer;flex-shrink:0;transition:all 0.15s;line-height:1" title="Datei anhängen">📎</button>
                     <div style="flex:1;position:relative">
                         <textarea class="chat-input" id="chatInput" placeholder="Stelle eine Frage an BEATRIX..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="autoResize(this)"></textarea>
                     </div>
@@ -5906,14 +5909,31 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                         el.innerHTML = `<img src="data:${d.media_type};base64,${d.image_base64.slice(0,100)}" style="width:24px;height:24px;border-radius:4px;object-fit:cover">
                             <span>🖼 ${d.name}</span>
                             <span onclick="prjRemoveAttachment('${tempId}')" style="cursor:pointer;color:rgba(255,255,255,0.3);margin-left:4px">✕</span>`;
-                        // Show actual thumbnail
                         const img = el.querySelector('img');
                         img.src = `data:${d.media_type};base64,${d.image_base64}`;
                     } else {
                         const sizeKb = Math.round(d.size / 1024);
-                        el.innerHTML = `<span>📄</span>
-                            <span>${d.name} (${sizeKb} KB, ${d.chars || '?'} Zeichen)</span>
-                            <span onclick="prjRemoveAttachment('${tempId}')" style="cursor:pointer;color:rgba(255,255,255,0.3);margin-left:4px">✕</span>`;
+                        let paperBadge = '';
+                        if (d.paper_detected) {
+                            const p = d.paper;
+                            if (p.duplicate) {
+                                paperBadge = `<div style="font-size:10px;color:#f59e0b;margin-top:2px">⚠️ Bereits in KB: ${p.title}</div>`;
+                            } else if (p.ok) {
+                                paperBadge = `<div style="font-size:10px;color:#34d399;margin-top:2px">📚 Paper erkannt → KB + GitHub ✓</div>`;
+                            } else {
+                                paperBadge = `<div style="font-size:10px;color:#ef4444;margin-top:2px">📚 Paper erkannt, Pipeline-Fehler</div>`;
+                            }
+                        } else if (d.paper_detected === false) {
+                            paperBadge = `<div style="font-size:10px;color:rgba(255,255,255,0.25);margin-top:2px">📄 Kein Paper erkannt — nur als Chat-Kontext</div>`;
+                        }
+                        el.innerHTML = `<div style="display:flex;align-items:center;gap:6px">
+                            <span>${d.paper_detected ? '📚' : '📄'}</span>
+                            <div>
+                                <div>${d.name} (${sizeKb} KB, ${d.chars || '?'} Zeichen)</div>
+                                ${paperBadge}
+                            </div>
+                            <span onclick="prjRemoveAttachment('${tempId}')" style="cursor:pointer;color:rgba(255,255,255,0.3);margin-left:auto">✕</span>
+                        </div>`;
                     }
                 } catch(e) {
                     const el = document.getElementById(tempId);
@@ -7396,15 +7416,83 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             return {status: 'timeout', answer: 'Die Analyse dauert länger als erwartet. Die Antwort wird in Issue #' + issueNumber + ' auf GitHub erscheinen.'};
         }
 
+        // ── Main Chat File Upload ──
+        let mainChatAttachments = [];
+
+        async function mainChatFileSelected(input) {
+            const files = Array.from(input.files);
+            if (!files.length) return;
+            const container = document.getElementById('mainChatAttachments');
+            container.style.display = 'flex';
+
+            for (const file of files) {
+                const tempId = 'matt_' + Date.now() + Math.random().toString(36).slice(2,6);
+                container.insertAdjacentHTML('beforeend', `<div id="${tempId}" style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--navy-card);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--text-secondary)">
+                    <span style="animation:blink 0.8s infinite">⏳</span> ${file.name.length > 25 ? file.name.slice(0,22)+'...' : file.name}
+                </div>`);
+
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    const r = await fetch(`${API}/chat/upload`, {
+                        method: 'POST',
+                        headers: {'Authorization': 'Bearer ' + authToken},
+                        body: formData
+                    });
+                    const d = await r.json();
+                    if (!r.ok) {
+                        document.getElementById(tempId).innerHTML = `<span style="color:var(--error)">❌</span> ${file.name}: ${d.detail || 'Fehler'}`;
+                        setTimeout(() => document.getElementById(tempId)?.remove(), 3000);
+                        continue;
+                    }
+                    d._tempId = tempId;
+                    mainChatAttachments.push(d);
+                    const el = document.getElementById(tempId);
+                    if (d.type === 'image') {
+                        el.innerHTML = `<img src="data:${d.media_type};base64,${d.image_base64}" style="width:24px;height:24px;border-radius:4px;object-fit:cover">
+                            <span>🖼 ${d.name}</span>
+                            <span onclick="mainRemoveAttachment('${tempId}')" style="cursor:pointer;color:rgba(255,255,255,0.3);margin-left:4px">✕</span>`;
+                    } else {
+                        let paperBadge = '';
+                        if (d.paper_detected) {
+                            const p = d.paper;
+                            paperBadge = p.duplicate
+                                ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px">⚠️ Bereits in KB: ${p.title}</div>`
+                                : p.ok ? `<div style="font-size:10px;color:#34d399;margin-top:2px">📚 Paper erkannt → KB + GitHub ✓</div>`
+                                : `<div style="font-size:10px;color:#ef4444;margin-top:2px">📚 Paper erkannt, Pipeline-Fehler</div>`;
+                        } else if (d.paper_detected === false) {
+                            paperBadge = `<div style="font-size:10px;color:rgba(255,255,255,0.25);margin-top:2px">📄 Kein Paper — nur Chat-Kontext</div>`;
+                        }
+                        el.innerHTML = `<div style="display:flex;align-items:center;gap:6px">
+                            <span>${d.paper_detected ? '📚' : '📄'}</span>
+                            <div><div>${d.name} (${Math.round(d.size/1024)} KB)</div>${paperBadge}</div>
+                            <span onclick="mainRemoveAttachment('${tempId}')" style="cursor:pointer;color:rgba(255,255,255,0.3);margin-left:auto">✕</span>
+                        </div>`;
+                    }
+                } catch(e) {
+                    const el = document.getElementById(tempId);
+                    if (el) el.innerHTML = `<span style="color:var(--error)">❌ ${e.message}</span>`;
+                }
+            }
+            input.value = '';
+        }
+
+        function mainRemoveAttachment(tempId) {
+            mainChatAttachments = mainChatAttachments.filter(a => a._tempId !== tempId);
+            const el = document.getElementById(tempId);
+            if (el) el.remove();
+            if (!mainChatAttachments.length) document.getElementById('mainChatAttachments').style.display = 'none';
+        }
+
         async function sendChat() {
             const input = document.getElementById('chatInput');
             const btn = document.getElementById('chatSendBtn');
             const question = input.value.trim();
-            if (!question) return;
+            if (!question && !mainChatAttachments.length) return;
 
             // ── Auto-detect intent OR use command mode ──
             const intentKeywords = /\b(neues projekt|projekt eröffnen|projekt anlegen|eröffne.*projekt|erstell.*projekt|leg.*projekt an|mandat.*für|probono.*für|workshop.*für|beratung.*für|neuer lead|lead.*anlegen|lead.*erfassen|opportunity|akquise.*für|bcm.*modell|modell.*bauen|psi.*dimension|kontextvektor|behavioral.*model|intervention.*design|ausgangslage|kontext.*erfassen|situation.*bei|marktumfeld|herausforderung.*bei)\b/i;
-            if (bxCmdMode || intentKeywords.test(question)) {
+            if (bxCmdMode || (question && intentKeywords.test(question))) {
                 if (!bxCmdMode) {
                     bxCmdMode = true;
                     const tbtn = document.getElementById('prjChatToggle');
@@ -7420,37 +7508,129 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                 return;
             }
 
+            const currentAttachments = [...mainChatAttachments];
+            mainChatAttachments = [];
+            const attContainer = document.getElementById('mainChatAttachments');
+            if (attContainer) { attContainer.innerHTML = ''; attContainer.style.display = 'none'; }
+
             input.value = ''; autoResize(input);
             btn.disabled = true;
-            appendMessage('user', question);
-            showTyping('BEATRIX sucht in der Wissensbasis...');
-            try {
-                const r = await fetch(`${API}/chat`, {method:'POST', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({question})});
-                if (r.status === 401) { doLogout(); return; }
-                const d = await r.json();
-                if (!r.ok) { removeTyping(); appendMessage('assistant', d.detail || 'Entschuldigung, es gab einen Fehler.'); return; }
 
-                if (d.status === 'done' && d.path === 'fast') {
-                    // ⚡ FAST PATH: Instant answer from Knowledge Base
-                    removeTyping();
-                    appendMessage('assistant', d.answer, d.sources);
-                } else if (d.status === 'processing' && d.issue_number) {
-                    // 🔬 DEEP PATH: Claude Code analysis
-                    showTyping('Neue Frage! BEATRIX erarbeitet die Antwort mit dem EBF Framework (~3-5 Min)...');
-                    const result = await pollForAnswer(d.issue_number);
-                    removeTyping();
-                    if (result && result.answer) {
-                        appendMessage('assistant', result.answer, [{title: '🔬 EBF Deep Analysis', type: 'github', url: d.issue_url}]);
+            // Show user message with file previews
+            const welcome = document.getElementById('chatWelcome');
+            if (welcome) welcome.style.display = 'none';
+            const container = document.getElementById('chatMessages');
+            const initials = (currentUser?.name || currentUser?.email || 'U').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+
+            let attachHtml = '';
+            if (currentAttachments.length) {
+                attachHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">';
+                for (const att of currentAttachments) {
+                    if (att.type === 'image') {
+                        attachHtml += `<div style="border-radius:8px;overflow:hidden;border:1px solid var(--border)"><img src="data:${att.media_type};base64,${att.image_base64}" style="max-width:200px;max-height:150px;display:block"></div>`;
                     } else {
-                        appendMessage('assistant', 'BEATRIX konnte keine Antwort generieren. Versuche es erneut.');
+                        const icon = att.paper_detected ? '📚' : '📄';
+                        attachHtml += `<div style="padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--text-secondary)">${icon} ${att.name}${att.paper_detected ? ' <span style="color:#34d399">→ KB</span>' : ''}</div>`;
                     }
-                } else if (d.answer) {
-                    removeTyping();
-                    appendMessage('assistant', d.answer, d.sources);
                 }
-            } catch(e) {
-                removeTyping();
-                appendMessage('assistant', 'Verbindungsfehler. Bitte versuche es erneut.');
+                attachHtml += '</div>';
+            }
+
+            const msgText = question || `Analysiere: ${currentAttachments.map(a=>a.name).join(', ')}`;
+            container.insertAdjacentHTML('beforeend', `<div class="chat-msg user">
+                <div class="chat-msg-avatar">${initials}</div>
+                <div class="chat-msg-body">${attachHtml}${question ? formatMessage(question) : '<span style="color:var(--text-muted);font-style:italic">Datei hochgeladen</span>'}</div>
+            </div>`);
+            container.scrollTop = container.scrollHeight;
+
+            // If attachments → use streaming with attachments
+            if (currentAttachments.length) {
+                // Create assistant shell with cursor
+                const streamMsgId = 'mainStreamMsg_' + Date.now();
+                container.insertAdjacentHTML('beforeend', `<div class="chat-msg assistant">
+                    <div class="chat-msg-avatar">B</div>
+                    <div class="chat-msg-body" id="${streamMsgId}">
+                        <span class="mb-cursor" style="display:inline-block;width:2px;height:16px;background:var(--accent);animation:blink 0.8s infinite;vertical-align:middle"></span>
+                    </div>
+                </div>`);
+                container.scrollTop = container.scrollHeight;
+                const targetEl = document.getElementById(streamMsgId);
+                let fullText = '';
+                let renderTimer = null;
+
+                try {
+                    const streamResp = await fetch(`${API}/chat/stream`, {
+                        method: 'POST',
+                        headers: {...H(), 'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            question: msgText,
+                            attachments: currentAttachments.map(a => ({type:a.type, name:a.name, content_text:a.content_text, image_base64:a.image_base64, media_type:a.media_type}))
+                        })
+                    });
+                    if (!streamResp.ok) throw new Error(`Stream error: ${streamResp.status}`);
+                    const reader = streamResp.body.getReader();
+                    const decoder = new TextDecoder();
+                    let sseBuffer = '';
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        sseBuffer += decoder.decode(value, { stream: true });
+                        const events = sseBuffer.split('\n\n');
+                        sseBuffer = events.pop();
+                        for (const evt of events) {
+                            for (const line of evt.split('\n')) {
+                                if (!line.startsWith('data: ')) continue;
+                                try {
+                                    const data = JSON.parse(line.slice(6));
+                                    if (data.type === 'token' && data.text) {
+                                        fullText += data.text;
+                                        if (!renderTimer) {
+                                            renderTimer = setTimeout(() => {
+                                                targetEl.innerHTML = mbRenderMd(fullText) +
+                                                    '<span class="mb-cursor" style="display:inline-block;width:2px;height:14px;background:var(--accent);animation:blink 0.8s infinite;vertical-align:middle;margin-left:2px"></span>';
+                                                container.scrollTop = container.scrollHeight;
+                                                renderTimer = null;
+                                            }, 50);
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    }
+                    if (renderTimer) { clearTimeout(renderTimer); }
+                    targetEl.innerHTML = mbRenderMd(fullText);
+                } catch(e) {
+                    targetEl.innerHTML = '<span style="color:var(--error)">Fehler: ' + e.message + '</span>';
+                }
+            } else {
+                // Normal chat flow (no attachments)
+                showTyping('BEATRIX sucht in der Wissensbasis...');
+                try {
+                    const r = await fetch(`${API}/chat`, {method:'POST', headers:{...H(),'Content-Type':'application/json'}, body:JSON.stringify({question})});
+                    if (r.status === 401) { doLogout(); return; }
+                    const d = await r.json();
+                    if (!r.ok) { removeTyping(); appendMessage('assistant', d.detail || 'Entschuldigung, es gab einen Fehler.'); return; }
+
+                    if (d.status === 'done' && d.path === 'fast') {
+                        removeTyping();
+                        appendMessage('assistant', d.answer, d.sources);
+                    } else if (d.status === 'processing' && d.issue_number) {
+                        showTyping('Neue Frage! BEATRIX erarbeitet die Antwort mit dem EBF Framework (~3-5 Min)...');
+                        const result = await pollForAnswer(d.issue_number);
+                        removeTyping();
+                        if (result && result.answer) {
+                            appendMessage('assistant', result.answer, [{title: '🔬 EBF Deep Analysis', type: 'github', url: d.issue_url}]);
+                        } else {
+                            appendMessage('assistant', 'BEATRIX konnte keine Antwort generieren. Versuche es erneut.');
+                        }
+                    } else if (d.answer) {
+                        removeTyping();
+                        appendMessage('assistant', d.answer, d.sources);
+                    }
+                } catch(e) {
+                    removeTyping();
+                    appendMessage('assistant', 'Verbindungsfehler. Bitte versuche es erneut.');
+                }
             }
             btn.disabled = false;
             input.focus();
