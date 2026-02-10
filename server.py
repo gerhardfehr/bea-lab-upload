@@ -381,7 +381,6 @@ def get_db():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     # Ψ-Analyses: versioned context analyses per user
-                    conn.execute(text("DROP TABLE IF EXISTS psi_analyses"))
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS psi_analyses (
                         id VARCHAR(50) PRIMARY KEY,
                         lineage_id VARCHAR(30) NOT NULL,
