@@ -381,6 +381,7 @@ def get_db():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     # Ψ-Analyses: versioned context analyses per user
+                    conn.execute(text("DROP TABLE IF EXISTS psi_analyses"))
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS psi_analyses (
                         id VARCHAR(50) PRIMARY KEY,
                         lineage_id VARCHAR(30) NOT NULL,
@@ -402,11 +403,6 @@ def get_db():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_psi_lineage ON psi_analyses(lineage_id)"))
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_psi_user ON psi_analyses(created_by)"))
-                    # Fix column sizes if table already existed with smaller columns
-                    try:
-                        conn.execute(text("ALTER TABLE psi_analyses ALTER COLUMN id TYPE VARCHAR(50)"))
-                        conn.execute(text("ALTER TABLE psi_analyses ALTER COLUMN lineage_id TYPE VARCHAR(30)"))
-                    except: pass
                     # Feedback table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS feedback (
                         id VARCHAR PRIMARY KEY,
