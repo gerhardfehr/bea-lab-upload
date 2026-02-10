@@ -6845,6 +6845,9 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             const field = (l,v) => v ? `<div style="display:flex;gap:8px;padding:3px 0"><span style="color:rgba(255,255,255,0.3);min-width:100px;font-size:11px">${l}</span><span style="color:white;font-size:12px">${v}</span></div>` : '';
             let f = '';
             f += field('Kunde', d.customer_name || (d.customer_code||'').toUpperCase());
+            if (d.customer_code) f += field('Code', d.customer_code.toUpperCase());
+            const neuBadge = d.is_new_customer === false ? '<span style="padding:2px 8px;background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.3);border-radius:8px;font-size:10px;color:#34d399;font-weight:600">B · Bestandskunde</span>' : '<span style="padding:2px 8px;background:rgba(139,170,255,0.1);border:1px solid rgba(139,170,255,0.3);border-radius:8px;font-size:10px;color:rgba(139,170,255,0.8);font-weight:600">N · Neukunde</span>';
+            f += `<div style="padding:3px 0">${neuBadge}</div>`;
             f += field('Opportunity', d.opportunity);
             f += field('Phase', stageLabels[d.stage]||d.stage);
             f += field('Kontakt', d.contact_person);
@@ -7047,16 +7050,28 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             if (!d.customer_name && !d.customer_code) { showToast('Kundenname fehlt', 'error'); return; }
             showTyping('Lead wird erfasst...');
             try {
+                const payload = {
+                    company: d.customer_name || d.customer_code || '',
+                    customer_code: d.customer_code || '',
+                    is_new_customer: d.is_new_customer !== false,
+                    contact: d.contact_person || '',
+                    email: d.contact_email || '',
+                    stage: d.stage || 'initial_contact',
+                    value: d.estimated_value_chf || 0,
+                    source: d.source || 'inbound',
+                    notes: [d.opportunity, d.notes, d.next_action ? `Next: ${d.next_action}` : ''].filter(Boolean).join(' | ')
+                };
                 const r = await fetch(`${API}/leads`, {
                     method:'POST', headers:{...H(),'Content-Type':'application/json'},
-                    body: JSON.stringify(d)
+                    body: JSON.stringify(payload)
                 });
                 const res = await r.json();
                 removeTyping();
                 if (r.ok) {
-                    bxShowSuccess('Lead erfasst', '', d.opportunity||d.customer_name, 'lead', '');
+                    const leadCode = res.lead_code || '';
+                    bxShowSuccess('Lead erfasst', leadCode, d.opportunity||d.customer_name, 'lead', '');
                     bxCmdDraft = {}; bxCmdHistory = []; bxCmdIntent = '';
-                    showToast('✓ Lead erfasst!', 'success');
+                    showToast(`✓ ${leadCode || 'Lead'} erfasst!`, 'success');
                 } else { appendMessage('assistant', '❌ ' + (res.error||res.detail||'Fehler')); }
             } catch(e) { removeTyping(); appendMessage('assistant', '❌ ' + e.message); }
         }
