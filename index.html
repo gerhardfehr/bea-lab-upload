@@ -591,6 +591,10 @@
                     📊 Business <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
                 <div class="nav-dropdown-menu">
+                    <a class="nav-dropdown-item" id="navDropMyProjects" data-section="myprojects" onclick="navDropClick('myprojects',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                        Kundenprojekte
+                    </a>
                     <a class="nav-dropdown-item" id="navDropLeads" data-section="leads" onclick="navDropClick('leads',this)" style="display:none">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                         CRM
@@ -601,7 +605,7 @@
                     </a>
                     <a class="nav-dropdown-item" id="navDropProjects" data-section="projects" onclick="navDropClick('projects',this)" style="display:none">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                        Projekte
+                        Alle Projekte
                     </a>
                 </div>
             </div>
@@ -1988,6 +1992,47 @@
     </section>
 
     <!-- Projects Section -->
+    <!-- ═══════ MY PROJECTS (Kundenprojekte) ═══════ -->
+    <section class="section" id="myprojects-section">
+        <div class="container">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+                <div style="flex:1">
+                    <h2 style="margin:0;font-size:22px;color:white">📋 Meine Kundenprojekte</h2>
+                    <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="myPrjSubtitle"></div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <select id="myPrjFilter" onchange="myPrjRender()" style="padding:6px 12px;background:var(--navy-card);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.7);font-size:12px;cursor:pointer">
+                        <option value="all">Alle Status</option>
+                        <option value="active">Aktiv</option>
+                        <option value="planning">In Planung</option>
+                        <option value="completed">Abgeschlossen</option>
+                    </select>
+                    <button onclick="prjStartWizard();showSection('projects')" style="padding:8px 18px;background:linear-gradient(135deg,var(--accent),#2A7F8E);border:none;border-radius:8px;color:white;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s">+ Neues Projekt</button>
+                </div>
+            </div>
+            <!-- KPI Cards -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="myPrjKpis">
+                <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:22px;font-weight:700;color:#34d399" id="myPrjActive">0</div>
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4)">Aktiv</div>
+                </div>
+                <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:22px;font-weight:700;color:#fbbf24" id="myPrjPlanning">0</div>
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4)">In Planung</div>
+                </div>
+                <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:22px;font-weight:700;color:rgba(139,170,255,0.6)" id="myPrjDone">0</div>
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4)">Abgeschlossen</div>
+                </div>
+                <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:22px;font-weight:700;color:white" id="myPrjTotal">0</div>
+                    <div style="font-size:11px;color:rgba(255,255,255,0.4)">Meine Total</div>
+                </div>
+            </div>
+            <div id="myPrjList" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
+        </div>
+    </section>
+
     <section class="section" id="projects-section">
         <div class="container">
             <!-- Projects List View -->
@@ -2870,6 +2915,7 @@
             if(name==='leads') crmLoad();
             if(name==='companies') crmLoadCompanies();
             if(name==='projects') prjLoad();
+            if(name==='myprojects') myPrjLoad();
             if(name==='profile') loadProfile();
             if(name==='chat') { loadChatHistory(); document.getElementById('chatInput').focus(); }
             if(name==='model') { if (!mbUserProfile) mbLoadUserProfile().then(() => mbApplyDefault('start')); }
@@ -2922,6 +2968,7 @@
             if(section==='leads') crmLoad();
             if(section==='companies') crmLoadCompanies();
             if(section==='projects') prjLoad();
+            if(section==='myprojects') myPrjLoad();
             if(section==='profile') loadProfile();
         }
 
@@ -3001,7 +3048,7 @@
             // Kontext-Analyse is always visible (core EBF workflow under Behavioral Design)
             // No role restriction needed
 
-            // Business dropdown items (CRM, Firmen, Projekte)
+            // Business dropdown items (CRM, Firmen, Projekte-Admin)
             const showCrm = isFehrAdvice && hasCrmAccess;
             const leadsEl = document.getElementById('navDropLeads');
             if (leadsEl) leadsEl.style.display = showCrm ? 'flex' : 'none';
@@ -3010,10 +3057,10 @@
             const projEl = document.getElementById('navDropProjects');
             if (projEl) projEl.style.display = showCrm ? 'flex' : 'none';
 
-            // Show/hide entire Business dropdown based on whether any CRM item is visible
+            // Business dropdown always visible for logged-in users (Kundenprojekte is for everyone)
             const businessDrop = document.getElementById('navDropBusiness');
             if (businessDrop) {
-                businessDrop.style.display = showCrm ? 'flex' : 'none';
+                businessDrop.style.display = 'flex';
             }
 
             console.log('Nav: CRM=' + showCrm, 'Admin=' + isAdmin);
@@ -4817,6 +4864,112 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
         let prjMode = 'schnell';
         let prjStep = 1;
         let prjCompaniesCache = null;
+
+        // ═══ MY PROJECTS (Kundenprojekte — filtered by user) ═══
+        let myPrjCache = null;
+
+        async function myPrjLoad() {
+            const listEl = document.getElementById('myPrjList');
+            listEl.innerHTML = '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">Lade deine Projekte…</div>';
+            try {
+                const resp = await fetch(`${API}/projects`, { headers: H() });
+                const allProjects = resp.ok ? await resp.json() : [];
+
+                // Filter: projects where user is owner, team member, or creator
+                const ownerCode = (currentUser.crm_owner_code || '').toUpperCase();
+                const userEmail = (currentUser.email || '').toLowerCase();
+                const userName = (currentUser.name || '').toLowerCase();
+
+                myPrjCache = allProjects.filter(p => {
+                    // Match by fa_owner code
+                    if (ownerCode && (p.fa_owner || '').toUpperCase() === ownerCode) return true;
+                    // Match by created_by email
+                    if (userEmail && (p.created_by || '').toLowerCase() === userEmail) return true;
+                    // Match by team membership
+                    if (Array.isArray(p.fa_team)) {
+                        for (const m of p.fa_team) {
+                            const mCode = (typeof m === 'string' ? m : m?.code || m?.name || '').toUpperCase();
+                            const mEmail = (typeof m === 'object' ? m?.email || '' : '').toLowerCase();
+                            if (ownerCode && mCode === ownerCode) return true;
+                            if (userEmail && mEmail === userEmail) return true;
+                        }
+                    }
+                    return false;
+                });
+
+                // If no owner code set and no matches, show all as fallback for admins
+                if (!ownerCode && !myPrjCache.length && currentUser.admin) {
+                    myPrjCache = allProjects;
+                }
+
+                const subtitle = ownerCode
+                    ? `${myPrjCache.length} Projekte für ${currentUser.name || ownerCode} · Owner-Code: ${ownerCode}`
+                    : `${myPrjCache.length} Projekte für ${currentUser.name || userEmail}`;
+                document.getElementById('myPrjSubtitle').textContent = subtitle;
+
+                myPrjRender();
+            } catch(e) {
+                console.error('myPrjLoad error:', e);
+                listEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--error)">Fehler beim Laden</div>';
+            }
+        }
+
+        function myPrjRender() {
+            if (!myPrjCache) return;
+            const filterStatus = document.getElementById('myPrjFilter')?.value || 'all';
+            const projects = filterStatus === 'all'
+                ? myPrjCache
+                : myPrjCache.filter(p => {
+                    if (filterStatus === 'active') return p.status === 'active' || p.status === 'aktiv';
+                    return p.status === filterStatus;
+                });
+
+            // KPIs
+            const active = myPrjCache.filter(p => p.status === 'active' || p.status === 'aktiv').length;
+            const planning = myPrjCache.filter(p => p.status === 'planning').length;
+            const completed = myPrjCache.filter(p => p.status === 'completed').length;
+            document.getElementById('myPrjActive').textContent = active;
+            document.getElementById('myPrjPlanning').textContent = planning;
+            document.getElementById('myPrjDone').textContent = completed;
+            document.getElementById('myPrjTotal').textContent = myPrjCache.length;
+
+            if (!projects.length) {
+                document.getElementById('myPrjList').innerHTML = `<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">${myPrjCache.length ? 'Keine Projekte mit diesem Filter.' : 'Du hast noch keine Kundenprojekte. Eröffne ein neues Projekt oder lass dich als Teammitglied hinzufügen.'}</div>`;
+                return;
+            }
+
+            const statusColors = {active:'#34d399',aktiv:'#34d399',planning:'#fbbf24',completed:'rgba(139,170,255,0.5)',on_hold:'rgba(255,255,255,0.2)'};
+            const statusLabels = {active:'Aktiv',aktiv:'Aktiv',planning:'Planung',completed:'Abgeschlossen',on_hold:'On Hold'};
+            const catIcons = {mandat:'💼', lead:'🎯', probono:'🤝'};
+            const catColors = {mandat:'52,211,153', lead:'251,191,36', probono:'139,170,255'};
+
+            const rows = projects.map(p => {
+                const sc = statusColors[p.status] || 'rgba(255,255,255,0.2)';
+                const sl = statusLabels[p.status] || p.status;
+                const cat = p.project_category || '';
+                const catIcon = catIcons[cat] || '';
+                const catRgb = catColors[cat] || '255,255,255';
+                const code = p.project_code || '';
+                return `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="prjOpenLanding('${p.slug}');showSection('projects')">
+                    <div style="width:8px;height:8px;border-radius:50%;background:${sc};flex-shrink:0"></div>
+                    <div style="flex:1;min-width:0">
+                        <div style="display:flex;align-items:center;gap:8px">
+                            ${code ? `<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,0.06);color:var(--accent-light);font-weight:700;font-family:monospace;letter-spacing:0.5px">${code}</span>` : ''}
+                            <span style="font-weight:600;color:white;font-size:14px">${p.name || p.project_code}</span>
+                        </div>
+                        <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">
+                            <span style="font-size:11px;color:rgba(255,255,255,0.4)">${p.customer_name || ''}</span>
+                            ${cat ? `<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:rgba(${catRgb},0.08);color:rgba(${catRgb},0.7);border:1px solid rgba(${catRgb},0.15)">${catIcon} ${cat}</span>` : ''}
+                            <span style="font-size:10px;padding:2px 8px;border-radius:8px;background:${sc}15;color:${sc};border:1px solid ${sc}30">${sl}</span>
+                        </div>
+                    </div>
+                    <div style="text-align:right;flex-shrink:0">
+                        ${p.start_date ? `<div style="font-size:10px;color:rgba(255,255,255,0.2)">${p.start_date}</div>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+            document.getElementById('myPrjList').innerHTML = rows;
+        }
 
         async function prjLoad() {
             document.getElementById('prjListView').style.display = '';
