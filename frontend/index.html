@@ -409,6 +409,9 @@
         .mb-mode-time { font-size:11px; color:var(--accent-light); margin-bottom:6px; }
         .mb-mode-desc { font-size:11px; color:var(--text-muted); line-height:1.4; }
 
+        .nav-hamburger { display:none; width:36px; height:36px; align-items:center; justify-content:center; background:none; border:1px solid var(--border); border-radius:8px; cursor:pointer; color:var(--text-secondary); transition:var(--transition); }
+        .nav-hamburger:hover { border-color:var(--border-light); color:var(--white); }
+        .nav-hamburger svg { width:18px; height:18px; }
         @media (max-width:768px) { .mb-choices { grid-template-columns:1fr; } .mb-mode-cards { grid-template-columns:1fr 1fr; } }
         @media (max-width:768px) { .profile-grid { grid-template-columns:1fr; } .profile-row { grid-template-columns:1fr; } }
         @media (max-width:640px) {
@@ -435,9 +438,6 @@
             .mb-mode-cards { grid-template-columns:1fr !important; }
             .mb-choices { grid-template-columns:1fr !important; }
         }
-        .nav-hamburger { display:none; width:36px; height:36px; align-items:center; justify-content:center; background:none; border:1px solid var(--border); border-radius:8px; cursor:pointer; color:var(--text-secondary); transition:var(--transition); }
-        .nav-hamburger:hover { border-color:var(--border-light); color:var(--white); }
-        .nav-hamburger svg { width:18px; height:18px; }
     </style>
 </head>
 <body>
