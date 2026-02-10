@@ -2309,6 +2309,20 @@
                         <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Weitere Projekte mit diesem Kunden</div>
                         <div id="prjLandingOther" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden"></div>
                     </div>
+
+                    <!-- Project Chat -->
+                    <div style="margin-top:24px">
+                        <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">💬 Frage zu diesem Projekt</div>
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+                            <div id="prjChatMessages" style="max-height:400px;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+                                <div style="font-size:12px;color:rgba(255,255,255,0.25);text-align:center;padding:12px">BEATRIX kennt den Projektkontext — stelle Fragen, Ergebnisse werden im Projekt gespeichert.</div>
+                            </div>
+                            <div style="display:flex;align-items:flex-end;gap:8px;padding:12px;border-top:1px solid var(--border)">
+                                <textarea id="prjChatInput" placeholder="z.B. Erstelle eine Kontext-Analyse für dieses Projekt..." rows="1" style="flex:1;padding:10px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:white;font-size:13px;resize:none;font-family:inherit;line-height:1.5" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();prjChatSend()}" oninput="autoResize(this)"></textarea>
+                                <button onclick="prjChatSend()" id="prjChatSendBtn" style="padding:10px 16px;background:var(--accent);border:none;border-radius:8px;color:white;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Senden</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- ═══ TAB: INHALT (Behavioral Design im Projektkontext) ═══ -->
@@ -5481,6 +5495,10 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             document.getElementById('prjLandingHeader').innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.3)">Lade Projektdaten…</div>';
             document.getElementById('prjLandingResources').innerHTML = '';
             document.getElementById('prjLandingData').innerHTML = '';
+            // Clear project chat
+            const chatMsgs = document.getElementById('prjChatMessages');
+            if (chatMsgs) chatMsgs.innerHTML = '<div style="font-size:12px;color:rgba(255,255,255,0.25);text-align:center;padding:12px">BEATRIX kennt den Projektkontext — stelle Fragen, Ergebnisse werden im Projekt gespeichert.</div>';
+            prjChatHistory = [];
             // Reset to Übersicht main tab
             prjSwitchMainTab('overview');
             const backBtn = document.getElementById('prjBackBtn');
@@ -5822,6 +5840,88 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
 
             // Show toast with context info
             showToast(`🔗 ${code || slug} → ${module.charAt(0).toUpperCase() + module.slice(1)}`, 'success');
+        }
+
+        // ── PROJECT CHAT ──
+        let prjChatHistory = [];
+
+        async function prjChatSend() {
+            const input = document.getElementById('prjChatInput');
+            const btn = document.getElementById('prjChatSendBtn');
+            const msgsEl = document.getElementById('prjChatMessages');
+            const question = input.value.trim();
+            if (!question || !prjCurrentSlug) return;
+
+            input.value = ''; autoResize(input);
+            btn.disabled = true;
+            btn.textContent = '⏳';
+
+            // Add user message
+            const userDiv = document.createElement('div');
+            userDiv.style.cssText = 'align-self:flex-end;max-width:80%;padding:10px 14px;background:rgba(42,127,142,0.15);border:1px solid rgba(42,127,142,0.25);border-radius:12px 12px 4px 12px;font-size:13px;color:rgba(255,255,255,0.85);line-height:1.5';
+            userDiv.textContent = question;
+            msgsEl.appendChild(userDiv);
+
+            // Add typing indicator
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'prjChatTyping';
+            typingDiv.style.cssText = 'align-self:flex-start;padding:10px 14px;font-size:12px;color:rgba(255,255,255,0.3)';
+            typingDiv.textContent = '🧠 BEATRIX denkt nach (mit Projektkontext)...';
+            msgsEl.appendChild(typingDiv);
+            msgsEl.scrollTop = msgsEl.scrollHeight;
+
+            try {
+                const resp = await fetch(`${API}/chat/project/${prjCurrentSlug}`, {
+                    method: 'POST',
+                    headers: {...H(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({ question })
+                });
+
+                const typing = document.getElementById('prjChatTyping');
+                if (typing) typing.remove();
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    const errDiv = document.createElement('div');
+                    errDiv.style.cssText = 'align-self:flex-start;padding:10px 14px;font-size:12px;color:var(--error)';
+                    errDiv.textContent = err.detail || 'Fehler bei der Verarbeitung';
+                    msgsEl.appendChild(errDiv);
+                } else {
+                    const data = await resp.json();
+
+                    const ansDiv = document.createElement('div');
+                    ansDiv.style.cssText = 'align-self:flex-start;max-width:90%;padding:14px 16px;background:var(--navy-card);border:1px solid var(--border);border-radius:4px 12px 12px 12px;font-size:13px;color:rgba(255,255,255,0.8);line-height:1.7';
+                    let html = data.answer || '';
+                    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    html = html.replace(/\n\n/g, '<br><br>');
+                    html = html.replace(/\n- /g, '<br>• ');
+                    html = html.replace(/\n(\d+)\. /g, '<br>$1. ');
+                    ansDiv.innerHTML = html;
+                    msgsEl.appendChild(ansDiv);
+
+                    if (data.github_saved) {
+                        const ghDiv = document.createElement('div');
+                        ghDiv.style.cssText = 'align-self:flex-start;font-size:10px;color:rgba(52,211,153,0.5);padding:2px 8px';
+                        ghDiv.textContent = '✓ Auf GitHub gespeichert';
+                        msgsEl.appendChild(ghDiv);
+                    }
+
+                    prjChatHistory.push({role: 'user', content: question});
+                    prjChatHistory.push({role: 'assistant', content: data.answer});
+                }
+            } catch(e) {
+                const typing = document.getElementById('prjChatTyping');
+                if (typing) typing.remove();
+                const errDiv = document.createElement('div');
+                errDiv.style.cssText = 'align-self:flex-start;padding:10px 14px;font-size:12px;color:var(--error)';
+                errDiv.textContent = 'Verbindungsfehler. Bitte erneut versuchen.';
+                msgsEl.appendChild(errDiv);
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Senden';
+            msgsEl.scrollTop = msgsEl.scrollHeight;
+            input.focus();
         }
 
         function prjRenderModuleStatus() {
