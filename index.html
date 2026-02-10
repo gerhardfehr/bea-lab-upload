@@ -528,6 +528,7 @@
         </button>
         <div class="nav-links">
             <a href="#" class="nav-link active" data-section="chat" onclick="showSection('chat',this)">💬 Fragen</a>
+            <a href="#" class="nav-link" id="navTopProjects" data-section="myprojects" onclick="showSection('myprojects',this)" style="display:none">📋 Projekte</a>
             <div class="nav-dropdown" id="navDropBehavioral">
                 <button class="nav-dropdown-trigger" onclick="toggleDropdown('navDropBehavioral')">
                     🧠 Behavioral Design <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
@@ -594,7 +595,7 @@
                     📊 Business <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
                 <div class="nav-dropdown-menu">
-                    <a class="nav-dropdown-item" id="navDropMyProjects" data-section="myprojects" onclick="navDropClick('myprojects',this)">
+                    <a class="nav-dropdown-item" id="navDropMyProjects" data-section="myprojects" onclick="navDropClick('myprojects',this)" style="display:none">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                         Kundenprojekte
                     </a>
@@ -2000,10 +2001,14 @@
         <div class="container">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
                 <div style="flex:1">
-                    <h2 style="margin:0;font-size:22px;color:white">📋 Meine Kundenprojekte</h2>
+                    <h2 style="margin:0;font-size:22px;color:white">📋 Projekte</h2>
                     <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="myPrjSubtitle"></div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center">
+                    <div id="myPrjToggle" style="display:flex;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+                        <button onclick="myPrjSetScope('mine')" id="myPrjToggleMine" style="padding:6px 14px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all 0.15s;background:var(--accent);color:white">Meine</button>
+                        <button onclick="myPrjSetScope('all')" id="myPrjToggleAll" style="padding:6px 14px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all 0.15s;background:transparent;color:rgba(255,255,255,0.4);display:none">Alle</button>
+                    </div>
                     <select id="myPrjFilter" onchange="myPrjRender()" style="padding:6px 12px;background:var(--navy-card);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.7);font-size:12px;cursor:pointer">
                         <option value="all">Alle Status</option>
                         <option value="active">Aktiv</option>
@@ -3145,11 +3150,17 @@
             if (compEl) compEl.style.display = showCrm ? 'flex' : 'none';
             const projEl = document.getElementById('navDropProjects');
             if (projEl) projEl.style.display = showCrm ? 'flex' : 'none';
+            const myProjEl = document.getElementById('navDropMyProjects');
+            if (myProjEl) myProjEl.style.display = 'none'; // hidden, now top-level
 
-            // Business dropdown always visible for logged-in users (Kundenprojekte is for everyone)
+            // Top-level Projekte — visible for all logged-in users
+            const topProj = document.getElementById('navTopProjects');
+            if (topProj) topProj.style.display = '';
+
+            // Business dropdown only visible if CRM items exist
             const businessDrop = document.getElementById('navDropBusiness');
             if (businessDrop) {
-                businessDrop.style.display = 'flex';
+                businessDrop.style.display = showCrm ? 'flex' : 'none';
             }
 
             console.log('Nav: CRM=' + showCrm, 'Admin=' + isAdmin);
@@ -4956,6 +4967,17 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
 
         // ═══ MY PROJECTS (Kundenprojekte — filtered by user) ═══
         let myPrjCache = null;
+        let myPrjAllCache = null;
+        let myPrjScope = 'mine'; // 'mine' or 'all'
+
+        function myPrjSetScope(scope) {
+            myPrjScope = scope;
+            document.getElementById('myPrjToggleMine').style.background = scope === 'mine' ? 'var(--accent)' : 'transparent';
+            document.getElementById('myPrjToggleMine').style.color = scope === 'mine' ? 'white' : 'rgba(255,255,255,0.4)';
+            document.getElementById('myPrjToggleAll').style.background = scope === 'all' ? 'var(--accent)' : 'transparent';
+            document.getElementById('myPrjToggleAll').style.color = scope === 'all' ? 'white' : 'rgba(255,255,255,0.4)';
+            myPrjRender();
+        }
 
         async function myPrjLoad() {
             const listEl = document.getElementById('myPrjList');
@@ -4963,6 +4985,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             try {
                 const resp = await fetch(`${API}/projects`, { headers: H() });
                 const allProjects = resp.ok ? await resp.json() : [];
+                myPrjAllCache = allProjects;
 
                 // Filter: projects where user is owner, team member, or creator
                 const ownerCode = (currentUser.crm_owner_code || '').toUpperCase();
@@ -4970,11 +4993,8 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                 const userName = (currentUser.name || '').toLowerCase();
 
                 myPrjCache = allProjects.filter(p => {
-                    // Match by fa_owner code
                     if (ownerCode && (p.fa_owner || '').toUpperCase() === ownerCode) return true;
-                    // Match by created_by email
                     if (userEmail && (p.created_by || '').toLowerCase() === userEmail) return true;
-                    // Match by team membership
                     if (Array.isArray(p.fa_team)) {
                         for (const m of p.fa_team) {
                             const mCode = (typeof m === 'string' ? m : m?.code || m?.name || '').toUpperCase();
@@ -4986,15 +5006,15 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                     return false;
                 });
 
-                // If no owner code set and no matches, show all as fallback for admins
+                // If no owner code and no matches, show all for admins
                 if (!ownerCode && !myPrjCache.length && currentUser.admin) {
                     myPrjCache = allProjects;
                 }
 
-                const subtitle = ownerCode
-                    ? `${myPrjCache.length} Projekte für ${currentUser.name || ownerCode} · Owner-Code: ${ownerCode}`
-                    : `${myPrjCache.length} Projekte für ${currentUser.name || userEmail}`;
-                document.getElementById('myPrjSubtitle').textContent = subtitle;
+                // Show "Alle" toggle only for admins or CRM users
+                const showAll = currentUser.admin || currentUser.crm_access;
+                const allBtn = document.getElementById('myPrjToggleAll');
+                if (allBtn) allBtn.style.display = showAll ? '' : 'none';
 
                 myPrjRender();
             } catch(e) {
@@ -5005,25 +5025,35 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
 
         function myPrjRender() {
             if (!myPrjCache) return;
+            const source = myPrjScope === 'all' ? (myPrjAllCache || myPrjCache) : myPrjCache;
             const filterStatus = document.getElementById('myPrjFilter')?.value || 'all';
             const projects = filterStatus === 'all'
-                ? myPrjCache
-                : myPrjCache.filter(p => {
+                ? source
+                : source.filter(p => {
                     if (filterStatus === 'active') return p.status === 'active' || p.status === 'aktiv';
                     return p.status === filterStatus;
                 });
 
-            // KPIs
-            const active = myPrjCache.filter(p => p.status === 'active' || p.status === 'aktiv').length;
-            const planning = myPrjCache.filter(p => p.status === 'planning').length;
-            const completed = myPrjCache.filter(p => p.status === 'completed').length;
+            // Subtitle
+            const ownerCode = (currentUser.crm_owner_code || '').toUpperCase();
+            const subtitle = myPrjScope === 'all'
+                ? `${source.length} Projekte gesamt`
+                : ownerCode
+                    ? `${source.length} Projekte für ${currentUser.name || ownerCode}`
+                    : `${source.length} Projekte für ${currentUser.name || currentUser.email}`;
+            document.getElementById('myPrjSubtitle').textContent = subtitle;
+
+            // KPIs from source (not filtered)
+            const active = source.filter(p => p.status === 'active' || p.status === 'aktiv').length;
+            const planning = source.filter(p => p.status === 'planning').length;
+            const completed = source.filter(p => p.status === 'completed').length;
             document.getElementById('myPrjActive').textContent = active;
             document.getElementById('myPrjPlanning').textContent = planning;
             document.getElementById('myPrjDone').textContent = completed;
-            document.getElementById('myPrjTotal').textContent = myPrjCache.length;
+            document.getElementById('myPrjTotal').textContent = source.length;
 
             if (!projects.length) {
-                document.getElementById('myPrjList').innerHTML = `<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">${myPrjCache.length ? 'Keine Projekte mit diesem Filter.' : 'Du hast noch keine Kundenprojekte. Eröffne ein neues Projekt oder lass dich als Teammitglied hinzufügen.'}</div>`;
+                document.getElementById('myPrjList').innerHTML = `<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.3)">${source.length ? 'Keine Projekte mit diesem Filter.' : myPrjScope === 'all' ? 'Noch keine Projekte vorhanden.' : 'Du hast noch keine Kundenprojekte. Eröffne ein neues Projekt oder lass dich als Teammitglied hinzufügen.'}</div>`;
                 return;
             }
 
