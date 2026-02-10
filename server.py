@@ -4410,7 +4410,8 @@ async def get_projects(user=Depends(require_auth)):
                     "fa_team": team.get("fa_team", []),
                     "created": meta.get("created", ""),
                     "last_updated": meta.get("last_updated", ""),
-                    "github_path": f"data/projects/{item['name']}/project.yaml"
+                    "created_by": meta.get("created_by", ""),
+                     "github_path": f"data/projects/{item['name']}/project.yaml"
                 })
             except Exception as e2:
                 logger.warning(f"Could not read project {item['name']}: {e2}")
