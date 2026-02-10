@@ -1254,7 +1254,17 @@
 
                 <div id="caAnalysisResult" style="display:none">
                     <!-- Ψ Dimension Cards -->
-                    <div id="caPsiCards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px"></div>
+                    <div id="caPsiCards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px"></div>
+
+                    <!-- Context Story: Plain Language Translation -->
+                    <div id="caStoryBox" style="padding:20px;background:linear-gradient(135deg,rgba(42,127,142,0.08),rgba(232,163,61,0.05));border:1px solid rgba(42,127,142,0.25);border-radius:var(--radius);margin-bottom:16px">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+                            <span style="font-size:20px">🌍</span>
+                            <div style="font-size:15px;font-weight:700;color:var(--white)">Was bedeutet das konkret?</div>
+                        </div>
+                        <div id="caStoryText" style="font-size:14px;color:rgba(255,255,255,0.85);line-height:1.8;margin-bottom:16px"></div>
+                        <div id="caStoryDims" style="display:flex;flex-direction:column;gap:8px"></div>
+                    </div>
 
                     <!-- Parameter Implications -->
                     <div id="caParamBox" style="padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px">
@@ -2680,15 +2690,17 @@
 Antworte EXAKT in diesem JSON-Format (kein Markdown, kein Text davor/danach):
 {
   "psi_profile": {
-    "psi_i": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
-    "psi_s": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
-    "psi_c": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
-    "psi_k": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
-    "psi_e": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
-    "psi_t": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
-    "psi_m": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] },
-    "psi_f": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"] }
+    "psi_i": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz in Alltagssprache: Was bedeutet das für die Person konkret?" },
+    "psi_s": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_c": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_k": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_e": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_t": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_m": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" },
+    "psi_f": { "value": 0.0-1.0, "label": "kurze Beschreibung", "key_factors": ["Faktor1","Faktor2"], "plain": "1 Satz Alltagssprache" }
   },
+  "context_story": "Ein Absatz (4-6 Sätze) in einfacher Sprache, der die gesamte Situation aus Sicht der betroffenen Person beschreibt. Kein Fachjargon, keine griechischen Buchstaben, keine Zahlenwerte. Schreibe so, als würdest du einem Kunden erklären, in welcher Welt sich die Zielgruppe befindet. Beginne mit 'Die Menschen in diesem Kontext...' oder 'Stell dir vor...'",
+  "allgemeine_perspektive": "Ein Absatz (3-5 Sätze) aus der Vogelperspektive: Was ist das GROSSE BILD dieses Kontexts? Welche Kräfte wirken auf das Verhalten? Was macht diesen Kontext besonders oder herausfordernd? Schreibe wie ein erfahrener Berater, der einem CEO in 30 Sekunden erklärt, warum sich Menschen hier so verhalten wie sie es tun. Kein Jargon, keine Zahlenwerte.",
   "parameters": {
     "lambda": { "value": "Zahl", "note": "Erklärung warum dieser Wert im Kontext" },
     "beta": { "value": "Zahl", "note": "Erklärung" },
@@ -2702,6 +2714,14 @@ Antworte EXAKT in diesem JSON-Format (kein Markdown, kein Text davor/danach):
   "meso_summary": "1 Satz MESO",
   "micro_summary": "1 Satz MICRO"
 }
+
+WICHTIG für "plain" und "context_story":
+- Schreibe für einen Berater, der den Kontext seinem Kunden erklärt
+- Keine griechischen Buchstaben (λ, β, Ψ)
+- Keine Zahlenwerte oder Scores
+- Konkrete Beispiele aus dem Alltag der Zielgruppe
+- "plain" pro Dimension: Was SPÜRT oder ERLEBT die Person?
+- "context_story": Die Geschichte des Kontexts als zusammenhängende Erzählung
 
 Werte-Skala für Ψ: 0.0 = minimal/absent, 0.5 = moderat, 1.0 = maximal/dominant.
 Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
@@ -2752,15 +2772,16 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
         function caGenerateFallback() {
             return {
                 psi_profile: {
-                    psi_i: { value: 0.6, label: 'Moderater regulatorischer Rahmen', key_factors: ['Gesetzgebung', 'Defaults'] },
-                    psi_s: { value: 0.5, label: 'Gemischte soziale Einflüsse', key_factors: ['Peer Effects', 'Normen'] },
-                    psi_c: { value: 0.4, label: 'Moderate kognitive Belastung', key_factors: ['Komplexität', 'Aufmerksamkeit'] },
-                    psi_k: { value: 0.5, label: 'Kultureller Standardkontext', key_factors: ['Werte', 'Tradition'] },
-                    psi_e: { value: 0.5, label: 'Durchschnittliche Ressourcen', key_factors: ['Budget', 'Zeit'] },
-                    psi_t: { value: 0.4, label: 'Moderater Zeitdruck', key_factors: ['Deadline', 'Rhythmus'] },
-                    psi_m: { value: 0.5, label: 'Standard-Tooling', key_factors: ['Digital', 'Analog'] },
-                    psi_f: { value: 0.5, label: 'Neutrales Setting', key_factors: ['Ort', 'Zugang'] }
+                    psi_i: { value: 0.6, label: 'Moderater regulatorischer Rahmen', key_factors: ['Gesetzgebung', 'Defaults'], plain: 'Es gibt klare Regeln und Vorgaben, aber auch Spielraum für eigene Entscheidungen.' },
+                    psi_s: { value: 0.5, label: 'Gemischte soziale Einflüsse', key_factors: ['Peer Effects', 'Normen'], plain: 'Was andere tun, spielt eine Rolle — aber man fühlt sich nicht stark unter Beobachtung.' },
+                    psi_c: { value: 0.4, label: 'Moderate kognitive Belastung', key_factors: ['Komplexität', 'Aufmerksamkeit'], plain: 'Die Entscheidung ist nicht trivial, aber auch nicht überwältigend — man muss sich etwas Zeit nehmen.' },
+                    psi_k: { value: 0.5, label: 'Kultureller Standardkontext', key_factors: ['Werte', 'Tradition'], plain: 'Kulturelle Gewohnheiten und Werte spielen mit, ohne die Entscheidung zu dominieren.' },
+                    psi_e: { value: 0.5, label: 'Durchschnittliche Ressourcen', key_factors: ['Budget', 'Zeit'], plain: 'Geld und Zeit sind vorhanden, aber begrenzt — man wägt ab, was sich lohnt.' },
+                    psi_t: { value: 0.4, label: 'Moderater Zeitdruck', key_factors: ['Deadline', 'Rhythmus'], plain: 'Es besteht kein akuter Zeitdruck, aber die Entscheidung sollte irgendwann fallen.' },
+                    psi_m: { value: 0.5, label: 'Standard-Tooling', key_factors: ['Digital', 'Analog'], plain: 'Die nötigen Werkzeuge und Informationen sind grundsätzlich verfügbar.' },
+                    psi_f: { value: 0.5, label: 'Neutrales Setting', key_factors: ['Ort', 'Zugang'], plain: 'Der Ort der Entscheidung hat keinen starken Einfluss — weder besonders förderlich noch hinderlich.' }
                 },
+                context_story: 'Die Menschen in diesem Kontext bewegen sich in einem relativ stabilen Umfeld. Sie haben grundsätzlich Zugang zu Informationen und Ressourcen, stehen aber vor einer Entscheidung, die nicht ganz einfach ist. Soziale Einflüsse spielen eine Rolle — man schaut durchaus, was andere machen — aber letztlich fühlt sich jeder für seine eigene Entscheidung verantwortlich. Es gibt keinen akuten Handlungsdruck, was dazu führen kann, dass Entscheidungen aufgeschoben werden. Die kulturelle Prägung gibt eine Richtung vor, ohne die Wahl zu erzwingen.',
                 parameters: {
                     lambda: { value: '2.25', note: 'GGG Default — kein kontextspezifischer Modifier' },
                     beta: { value: '0.95', note: 'Leicht present-biased im Standardkontext' },
@@ -2808,6 +2829,39 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                     <div style="font-size:10px;color:rgba(255,255,255,0.35)">${(data.key_factors||[]).join(' · ')}</div>
                 </div>`;
             }).join('');
+
+            // ── Context Story Box: Plain Language Translation ──
+            const storyTextEl = document.getElementById('caStoryText');
+            const storyDimsEl = document.getElementById('caStoryDims');
+            const storyBoxEl = document.getElementById('caStoryBox');
+
+            if (r.context_story || PSI_DIMS.some(d => r.psi_profile?.[d.key]?.plain)) {
+                storyBoxEl.style.display = 'block';
+
+                // Main story paragraph
+                storyTextEl.innerHTML = r.context_story
+                    ? `<p style="margin:0">${r.context_story}</p>`
+                    : '';
+
+                // Per-dimension plain-language bullets
+                const dimLines = PSI_DIMS.map(dim => {
+                    const data = r.psi_profile?.[dim.key];
+                    if (!data?.plain) return '';
+                    const hue = data.value < 0.3 ? 200 : data.value < 0.7 ? 45 : 140;
+                    return `
+                    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px">
+                        <span style="font-size:16px;min-width:24px;text-align:center;margin-top:1px">${dim.icon}</span>
+                        <div style="flex:1">
+                            <div style="font-size:12px;font-weight:600;color:hsl(${hue},60%,70%);margin-bottom:2px">${dim.label.replace(/Ψ_[A-Z]\s*/,'')}</div>
+                            <div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.5">${data.plain}</div>
+                        </div>
+                    </div>`;
+                }).filter(Boolean).join('');
+
+                storyDimsEl.innerHTML = dimLines;
+            } else {
+                storyBoxEl.style.display = 'none';
+            }
 
             // Render parameters
             const paramsEl = document.getElementById('caParams');
