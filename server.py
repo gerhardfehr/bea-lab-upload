@@ -3319,8 +3319,9 @@ REGELN:
 Der User möchte einen Lead/eine Opportunity erfassen oder die Sales-Pipeline bearbeiten.
 
 FELDER:
-- customer_code: Kundencode (z.B. "ubs", "lukb")
+- customer_code: Kundencode (z.B. "ubs", "lukb") — MUSS aus CRM-Liste stammen oder neu sein
 - customer_name: Voller Firmenname
+- is_new_customer: true = Neukunde (noch nie gearbeitet), false = Bestandskunde (bereits in CRM)
 - contact_person: Ansprechpartner (Name)
 - contact_email: E-Mail
 - contact_role: Position/Rolle
@@ -3335,12 +3336,16 @@ FELDER:
 - source: Woher kam der Lead (referral, event, inbound, outbound, existing_client)
 - notes: Zusätzliche Infos
 
+LEAD-SUPERKEY: Wird automatisch generiert als L-{KUNDE}-{B/N}-{JJ}-{NNN}
+  B = Bestandskunde, N = Neukunde. Beispiel: L-UBS-B-26-003
+  Setze is_new_customer korrekt basierend auf der Kundenliste!
+
 KUNDEN: """ + CUSTOMERS_LIST + """
 
 REGELN:
 1. Antworte mit JSON in ```json ... ``` Tags
 2. JSON: {"intent":"lead", "action":"create"|"update", "status":"complete"|"need_info", "data":{...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
-3. Pflichtfelder: customer_name, opportunity, stage
+3. Pflichtfelder: customer_name, customer_code, opportunity, stage, is_new_customer
 4. Defaults: stage="initial_contact", fa_owner="GF", source="inbound"
 5. Frage gezielt nach fehlenden Infos – nicht alles auf einmal
 6. Deutsch, professionell""",
