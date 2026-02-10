@@ -307,13 +307,21 @@ def get_db():
                     conn.execute(text("UPDATE users SET role = 'sales' WHERE email IN ('nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com') AND (role IS NULL OR role = 'researcher')"))
                     # Leads table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS leads (
-                        id VARCHAR PRIMARY KEY, company VARCHAR(500),
+                        id VARCHAR PRIMARY KEY, lead_code VARCHAR(30),
+                        company VARCHAR(500), customer_code VARCHAR(50),
+                        is_new_customer BOOLEAN DEFAULT TRUE,
                         contact VARCHAR(200), email VARCHAR(320),
                         stage VARCHAR(50) DEFAULT 'kontakt',
                         value REAL DEFAULT 0, source VARCHAR(200),
                         notes TEXT, created_by VARCHAR(320),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    # Migrate: add lead_code column if missing
+                    try:
+                        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS lead_code VARCHAR(30)"))
+                        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS customer_code VARCHAR(50)"))
+                        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS is_new_customer BOOLEAN DEFAULT TRUE"))
+                    except: pass
                     # ── CRM Tables ──
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS crm_companies (
                         id VARCHAR PRIMARY KEY,
@@ -5549,6 +5557,17 @@ async def get_leads(user=Depends(require_auth)):
     db = get_db()
     try:
         from sqlalchemy import text
+        # Return with lead_code
+        rows = db.execute(text("SELECT id, lead_code, company, customer_code, is_new_customer, contact, email, stage, value, source, notes, created_by, created_at, updated_at FROM leads ORDER BY created_at DESC")).fetchall()
+        return [{"id": r[0], "lead_code": r[1] or "", "company": r[2] or "", "customer_code": r[3] or "",
+                 "is_new_customer": r[4] if r[4] is not None else True,
+                 "contact": r[5] or "", "email": r[6] or "", "stage": r[7] or "kontakt",
+                 "value": r[8] or 0, "source": r[9] or "", "notes": r[10] or "",
+                 "created_by": r[11] or "", "created_at": r[12].isoformat() if r[12] else "",
+                 "updated_at": r[13].isoformat() if r[13] else ""} for r in rows]
+    except Exception as e2:
+        logger.warning(f"Lead list new format: {e2}, falling back")
+        from sqlalchemy import text
         rows = db.execute(text("SELECT * FROM leads ORDER BY updated_at DESC")).fetchall()
         return [dict(r._mapping) for r in rows]
     except Exception as e:
@@ -5561,17 +5580,49 @@ async def create_lead(request: Request, user=Depends(require_auth)):
     db = get_db()
     try:
         from sqlalchemy import text
-        import uuid
+        import uuid, yaml, urllib.request as ureq
         data = await request.json()
         lead_id = str(uuid.uuid4())[:8]
-        db.execute(text("""INSERT INTO leads (id, company, contact, email, stage, value, source, notes, created_by)
-            VALUES (:id, :company, :contact, :email, :stage, :value, :source, :notes, :created_by)"""),
-            {"id": lead_id, "company": data.get("company",""), "contact": data.get("contact",""),
-             "email": data.get("email",""), "stage": data.get("stage","kontakt"),
-             "value": data.get("value", 0), "source": data.get("source",""),
-             "notes": data.get("notes",""), "created_by": user["sub"]})
+        customer_code = data.get("customer_code", "").strip()
+        is_new = data.get("is_new_customer", True)
+        year_short = str(datetime.utcnow().year)[2:]  # "26"
+        typ = "N" if is_new else "B"
+
+        # ── Generate Lead Superkey: L-{KUNDE}-{B/N}-{JJ}-{NNN} ──
+        prefix = customer_code.upper().replace("-", "")[:6] if customer_code else "UNK"
+
+        # Try to resolve via prefix_mapping
+        try:
+            sctx = ssl.create_default_context()
+            sctx.check_hostname = False; sctx.verify_mode = ssl.CERT_NONE
+            gh_headers = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIX", "Accept": "application/vnd.github.v3.raw"}
+            seq_req = ureq.Request(f"https://api.github.com/repos/{GH_REPO}/contents/data/config/project-sequences.yaml", headers=gh_headers)
+            seq_data = yaml.safe_load(ureq.urlopen(seq_req, context=sctx, timeout=10).read().decode()) or {}
+            pm = seq_data.get("prefix_mapping", {})
+            resolved = pm.get(customer_code.lower(), "")
+            if resolved:
+                prefix = resolved
+        except Exception as pe:
+            logger.warning(f"Lead prefix resolve: {pe}")
+
+        # Count existing leads with same prefix+type+year
+        result = db.execute(text(
+            "SELECT COUNT(*) FROM leads WHERE lead_code LIKE :pattern"),
+            {"pattern": f"L-{prefix}-{typ}-{year_short}-%"}).scalar() or 0
+        next_num = result + 1
+        lead_code = f"L-{prefix}-{typ}-{year_short}-{next_num:03d}"
+
+        db.execute(text("""INSERT INTO leads (id, lead_code, company, customer_code, is_new_customer, contact, email, stage, value, source, notes, created_by)
+            VALUES (:id, :lead_code, :company, :customer_code, :is_new, :contact, :email, :stage, :value, :source, :notes, :created_by)"""),
+            {"id": lead_id, "lead_code": lead_code, "company": data.get("company",""),
+             "customer_code": customer_code, "is_new": is_new,
+             "contact": data.get("contact",""), "email": data.get("email",""),
+             "stage": data.get("stage","kontakt"), "value": data.get("value", 0),
+             "source": data.get("source",""), "notes": data.get("notes",""),
+             "created_by": user["sub"]})
         db.commit()
-        return {"id": lead_id, "status": "created"}
+        logger.info(f"Lead created: {lead_code} ({data.get('company','')}) by {user.get('email','?')}")
+        return {"id": lead_id, "lead_code": lead_code, "status": "created"}
     except Exception as e:
         db.rollback()
         logger.error(f"Lead create error: {e}")
@@ -5586,7 +5637,7 @@ async def update_lead(lead_id: str, request: Request, user=Depends(require_auth)
         data = await request.json()
         sets = []
         params = {"id": lead_id}
-        for field in ["company", "contact", "email", "stage", "value", "source", "notes"]:
+        for field in ["company", "contact", "email", "stage", "value", "source", "notes", "customer_code", "is_new_customer"]:
             if field in data:
                 sets.append(f"{field} = :{field}")
                 params[field] = data[field]
