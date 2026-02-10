@@ -3073,34 +3073,67 @@ def detect_scientific_paper(text: str, filename: str = "") -> dict:
     """Heuristic detection: Is this text from a scientific paper?
     Returns {is_paper: bool, confidence: float, signals: [str]}"""
     if not text or len(text) < 500:
-        return {"is_paper": False, "confidence": 0, "signals": []}
+        return {"is_paper": False, "confidence": 0, "signals": [], "score": 0}
 
-    text_lower = text[:8000].lower()
+    # Scan first 8000 chars AND last 3000 chars (for References section)
+    text_start = text[:8000].lower()
+    text_end = text[-3000:].lower() if len(text) > 3000 else ""
+    text_lower = text_start + " " + text_end
     signals = []
 
-    # Strong signals (2 points each)
+    # ── Filename: Academic repository names = near-certain paper (3 points) ──
+    fn = filename.lower()
+    repo_names = ["ssrn", "arxiv", "nber", "repec", "working_paper", "working-paper", "wp_"]
+    if any(w in fn for w in repo_names):
+        signals.append("academic_repo_filename")
+        # Score 3 = strong hint, combined with any 1 text signal → paper
+        score_base = 3
+    else:
+        score_base = 0
+
+    # ── Strong text signals (2 points each) ──
     strong = {
-        "abstract": ["abstract\n", "abstract:", "abstract ", "\nabstract"],
-        "references": ["references\n", "\nreferences", "bibliography\n"],
-        "doi": ["doi:", "doi.org/", "https://doi"],
-        "journal": ["journal of ", "proceedings of ", "conference on "],
-        "peer_review": ["peer-review", "submitted to", "accepted for publication"],
+        "abstract": ["abstract\n", "abstract:", "abstract ", "\nabstract", "zusammenfassung\n"],
+        "references": ["references\n", "\nreferences", "bibliography\n", "\nbibliography",
+                       "literaturverzeichnis", "quellenverzeichnis"],
+        "doi": ["doi:", "doi.org/", "https://doi", "10.1016/", "10.1038/", "10.1111/",
+                "10.1257/", "10.2139/"],
+        "journal": ["journal of ", "proceedings of ", "conference on ", "zeitschrift für",
+                     "quarterly journal", "economic review", "annual review"],
+        "peer_review": ["peer-review", "submitted to", "accepted for publication",
+                        "forthcoming in", "under review", "revised version"],
+        "ssrn_arxiv_text": ["ssrn.com", "arxiv.org", "nber.org", "repec.org",
+                            "social science research network", "electronic copy available at"],
     }
-    # Medium signals (1 point each)
+    # ── Medium text signals (1 point each) ──
     medium = {
         "et_al": ["et al.", "et al,", "et al "],
-        "methodology": ["methodology", "research method", "empirical study", "empirische studie"],
+        "methodology": ["methodology", "research method", "empirical study", "empirische studie",
+                        "randomized controlled", "experimental design", "field experiment",
+                        "natural experiment", "quasi-experiment"],
         "hypothesis": ["hypothesis", "hypothes", "h1:", "h2:", "hypothese"],
-        "findings": ["findings", "results show", "ergebnisse zeigen"],
-        "literature": ["literature review", "related work", "prior research", "literaturüberblick"],
-        "academic_style": ["(20", "(19", "pp.", "vol.", "no.", "p. "],
-        "keywords": ["keywords:", "key words:", "schlüsselwörter"],
-        "acknowledgments": ["acknowledgment", "acknowledgement", "danksagung"],
-        "author_affil": ["university", "universität", "institute", "institut", "department"],
-        "statistical": ["p < ", "p=0.", "n = ", "sd = ", "significant", "regression", "correlation"],
+        "findings": ["findings", "results show", "ergebnisse zeigen", "we find that",
+                     "our results", "the evidence suggests"],
+        "literature": ["literature review", "related work", "prior research",
+                       "literaturüberblick", "previous studies", "existing literature"],
+        "academic_style": ["(20", "(19", "pp.", "vol.", "no.", "p. ", "ibid"],
+        "keywords": ["keywords:", "key words:", "schlüsselwörter", "jel classification",
+                     "jel codes"],
+        "acknowledgments": ["acknowledgment", "acknowledgement", "danksagung",
+                            "we thank", "we are grateful", "financial support"],
+        "author_affil": ["university", "universität", "institute", "institut", "department",
+                         "school of", "faculty of", "business school", "hochschule"],
+        "statistical": ["p < ", "p<", "p=0.", "n = ", "sd = ", "significant", "regression",
+                        "correlation", "standard error", "confidence interval", "robust",
+                        "treatment effect", "coefficient", "t-stat", "z-score"],
+        "academic_sections": ["introduction\n", "\nintroduction", "conclusion\n",
+                              "\nconclusion", "discussion\n", "appendix\n", "\nappendix"],
+        "equations": ["equation ", "theorem ", "proposition ", "lemma ", "proof."],
+        "data_sources": ["dataset", "data set", "survey data", "panel data", "cross-section",
+                         "time series"],
     }
 
-    score = 0
+    score = score_base
     for name, patterns in strong.items():
         if any(p in text_lower for p in patterns):
             signals.append(name)
@@ -3110,14 +3143,15 @@ def detect_scientific_paper(text: str, filename: str = "") -> dict:
             signals.append(name)
             score += 1
 
-    # Filename hints
-    fn = filename.lower()
-    if any(w in fn for w in ["paper", "manuscript", "journal", "study", "research", "review", "working_paper"]):
-        signals.append("filename_hint")
-        score += 1
+    # Additional filename hints (1 point)
+    if any(w in fn for w in ["paper", "manuscript", "journal", "study", "research", "review",
+                              "article", "draft", "preprint"]):
+        if "academic_repo_filename" not in signals:
+            signals.append("filename_hint")
+            score += 1
 
-    # Decision: score >= 5 = paper, 3-4 = maybe
-    is_paper = score >= 5
+    # Decision: score >= 4 = paper (lowered from 5 to catch more edge cases)
+    is_paper = score >= 4
     confidence = min(score / 10.0, 1.0)
 
     return {"is_paper": is_paper, "confidence": round(confidence, 2), "signals": signals, "score": score}
