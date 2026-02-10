@@ -2321,7 +2321,10 @@
                                 </div>
                             </div>
                             <div class="chat-input-area" style="padding:12px 16px 16px">
+                                <div id="prjChatAttachments" style="display:none;padding:0 0 8px;display:flex;flex-wrap:wrap;gap:6px"></div>
                                 <div class="chat-input-wrap">
+                                    <input type="file" id="prjChatFileInput" style="display:none" accept=".pdf,.txt,.md,.csv,.json,.docx,.png,.jpg,.jpeg,.gif,.webp" onchange="prjChatFileSelected(this)" multiple>
+                                    <button onclick="document.getElementById('prjChatFileInput').click()" style="width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--transition);flex-shrink:0;color:var(--text-muted);font-size:16px" title="Datei anhängen">📎</button>
                                     <textarea class="chat-input" id="prjChatInput" placeholder="z.B. Erstelle eine Kontext-Analyse für dieses Projekt..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();prjChatSend()}" oninput="autoResize(this)"></textarea>
                                     <button class="chat-send-btn" onclick="prjChatSend()" id="prjChatSendBtn" title="Senden">
                                         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -5511,6 +5514,9 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             prjChatHistory = [];
             prjChatDraft = {};
             prjChatIntent = '';
+            prjChatAttachments = [];
+            const attEl = document.getElementById('prjChatAttachments');
+            if (attEl) { attEl.innerHTML = ''; attEl.style.display = 'none'; }
             // Reset to Übersicht main tab
             prjSwitchMainTab('overview');
             const backBtn = document.getElementById('prjBackBtn');
@@ -5858,6 +5864,73 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
         let prjChatHistory = [];
         let prjChatDraft = {};
         let prjChatIntent = '';
+        let prjChatAttachments = []; // [{type, name, content_text, image_base64, media_type, size}]
+
+        async function prjChatFileSelected(input) {
+            const files = Array.from(input.files);
+            if (!files.length) return;
+
+            const container = document.getElementById('prjChatAttachments');
+            container.style.display = 'flex';
+
+            for (const file of files) {
+                // Show uploading indicator
+                const tempId = 'att_' + Date.now() + Math.random().toString(36).slice(2,6);
+                container.insertAdjacentHTML('beforeend', `<div id="${tempId}" style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--navy-card);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--text-secondary)">
+                    <span style="animation:blink 0.8s infinite">⏳</span> ${file.name.length > 20 ? file.name.slice(0,17)+'...' : file.name}
+                </div>`);
+
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    const r = await fetch(`${API}/chat/upload`, {
+                        method: 'POST',
+                        headers: {'Authorization': 'Bearer ' + authToken},
+                        body: formData
+                    });
+                    const d = await r.json();
+
+                    if (!r.ok) {
+                        document.getElementById(tempId).innerHTML = `<span style="color:var(--error)">❌</span> ${file.name}: ${d.detail || 'Fehler'}`;
+                        setTimeout(() => document.getElementById(tempId)?.remove(), 3000);
+                        continue;
+                    }
+
+                    // Store attachment
+                    d._tempId = tempId;
+                    prjChatAttachments.push(d);
+
+                    // Update preview
+                    const el = document.getElementById(tempId);
+                    if (d.type === 'image') {
+                        el.innerHTML = `<img src="data:${d.media_type};base64,${d.image_base64.slice(0,100)}" style="width:24px;height:24px;border-radius:4px;object-fit:cover">
+                            <span>🖼 ${d.name}</span>
+                            <span onclick="prjRemoveAttachment('${tempId}')" style="cursor:pointer;color:rgba(255,255,255,0.3);margin-left:4px">✕</span>`;
+                        // Show actual thumbnail
+                        const img = el.querySelector('img');
+                        img.src = `data:${d.media_type};base64,${d.image_base64}`;
+                    } else {
+                        const sizeKb = Math.round(d.size / 1024);
+                        el.innerHTML = `<span>📄</span>
+                            <span>${d.name} (${sizeKb} KB, ${d.chars || '?'} Zeichen)</span>
+                            <span onclick="prjRemoveAttachment('${tempId}')" style="cursor:pointer;color:rgba(255,255,255,0.3);margin-left:4px">✕</span>`;
+                    }
+                } catch(e) {
+                    const el = document.getElementById(tempId);
+                    if (el) el.innerHTML = `<span style="color:var(--error)">❌ ${e.message}</span>`;
+                }
+            }
+            input.value = ''; // Reset file input
+        }
+
+        function prjRemoveAttachment(tempId) {
+            prjChatAttachments = prjChatAttachments.filter(a => a._tempId !== tempId);
+            const el = document.getElementById(tempId);
+            if (el) el.remove();
+            if (!prjChatAttachments.length) {
+                document.getElementById('prjChatAttachments').style.display = 'none';
+            }
+        }
 
         function prjAppendMessage(role, content, sources) {
             const welcome = document.getElementById('prjChatWelcome');
@@ -5900,14 +5973,47 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             const input = document.getElementById('prjChatInput');
             const btn = document.getElementById('prjChatSendBtn');
             const question = input.value.trim();
-            if (!question || !prjCurrentSlug) return;
+            if (!question && !prjChatAttachments.length) return;
+            if (!prjCurrentSlug) return;
 
+            const currentAttachments = [...prjChatAttachments];
             input.value = ''; autoResize(input);
             btn.disabled = true;
+            prjChatAttachments = [];
+            document.getElementById('prjChatAttachments').innerHTML = '';
+            document.getElementById('prjChatAttachments').style.display = 'none';
 
-            // User message — identical to main chat
-            prjAppendMessage('user', question);
-            prjChatHistory.push({role:'user', content: question});
+            // User message with file previews
+            const welcome = document.getElementById('prjChatWelcome');
+            if (welcome) welcome.style.display = 'none';
+            const container = document.getElementById('prjChatMessages');
+            const initials = (currentUser?.name || currentUser?.email || 'U').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+
+            let attachHtml = '';
+            if (currentAttachments.length) {
+                attachHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">';
+                for (const att of currentAttachments) {
+                    if (att.type === 'image') {
+                        attachHtml += `<div style="border-radius:8px;overflow:hidden;border:1px solid var(--border)">
+                            <img src="data:${att.media_type};base64,${att.image_base64}" style="max-width:200px;max-height:150px;display:block">
+                        </div>`;
+                    } else {
+                        attachHtml += `<div style="padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--text-secondary)">
+                            📄 ${att.name} (${Math.round(att.size/1024)} KB)
+                        </div>`;
+                    }
+                }
+                attachHtml += '</div>';
+            }
+
+            container.insertAdjacentHTML('beforeend', `<div class="chat-msg user">
+                <div class="chat-msg-avatar">${initials}</div>
+                <div class="chat-msg-body">${attachHtml}${question ? formatMessage(question) : '<span style="color:var(--text-muted);font-style:italic">Datei hochgeladen</span>'}</div>
+            </div>`);
+            container.scrollTop = container.scrollHeight;
+
+            const msgText = question || `Analysiere die hochgeladenen Datei(en): ${currentAttachments.map(a=>a.name).join(', ')}`;
+            prjChatHistory.push({role:'user', content: msgText});
 
             // Typing indicator — identical to main chat
             const intentLabels = {project:'Projekt analysieren',lead:'Lead analysieren',model:'Modell bauen',context:'Kontext erfassen'};
@@ -5919,7 +6025,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                     method: 'POST',
                     headers: {...H(), 'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        message: question,
+                        message: msgText,
                         history: prjChatHistory,
                         current_draft: prjChatDraft,
                         intent: prjChatIntent,
@@ -5959,7 +6065,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                         const streamResp = await fetch(`${API}/chat/project/${prjCurrentSlug}/stream`, {
                             method: 'POST',
                             headers: {...H(), 'Content-Type': 'application/json'},
-                            body: JSON.stringify({ question })
+                            body: JSON.stringify({ question: msgText, attachments: currentAttachments.map(a => ({type:a.type, name:a.name, content_text:a.content_text, image_base64:a.image_base64, media_type:a.media_type})) })
                         });
 
                         if (!streamResp.ok) throw new Error(`Stream error: ${streamResp.status}`);
@@ -6023,7 +6129,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                             const kr = await fetch(`${API}/chat/project/${prjCurrentSlug}`, {
                                 method: 'POST',
                                 headers: {...H(), 'Content-Type': 'application/json'},
-                                body: JSON.stringify({ question })
+                                body: JSON.stringify({ question: msgText, attachments: currentAttachments.map(a => ({type:a.type, name:a.name, content_text:a.content_text, image_base64:a.image_base64, media_type:a.media_type})) })
                             });
                             const kd = await kr.json();
                             let fallbackHtml = mbRenderMd(kd.answer || '');
