@@ -324,8 +324,8 @@
         .mb-header h2 { font-size:24px; font-weight:700; color:var(--white); margin:0; }
         .mb-header p { font-size:14px; color:var(--text-secondary); margin:4px 0 0; }
         .mb-progress { display:flex; gap:4px; padding:16px 0; margin-bottom:28px; overflow-x:auto; }
-        .mb-step-dot { display:flex; flex-direction:column; align-items:center; gap:4px; min-width:60px; cursor:pointer; }
-        .mb-step-num { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; border:2px solid var(--border); color:var(--text-muted); background:var(--navy-light); transition:var(--transition); }
+        .mb-step-dot { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:70px; cursor:pointer; }
+        .mb-step-num { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; border:2px solid var(--border); color:var(--text-muted); background:var(--navy-light); transition:var(--transition); }
         .mb-step-dot.active .mb-step-num { border-color:var(--accent); color:var(--white); background:var(--accent); box-shadow:0 0 16px var(--accent-glow); }
         .mb-step-dot.completed .mb-step-num { border-color:var(--success); color:var(--white); background:var(--success); }
         .mb-step-dot.completed .mb-step-num::after { content:'✓'; }
@@ -1050,19 +1050,13 @@
             <div class="mb-progress" id="caProgress" style="display:none">
                 <div class="mb-step-dot active" data-castep="0"><div class="mb-step-num">1</div><div class="mb-step-label">Thema</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="1"><div class="mb-step-num">2</div><div class="mb-step-label">Land</div></div>
+                <div class="mb-step-dot" data-castep="1"><div class="mb-step-num">2</div><div class="mb-step-label">Kontext</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="2"><div class="mb-step-num">3</div><div class="mb-step-label">Branche</div></div>
+                <div class="mb-step-dot" data-castep="2"><div class="mb-step-num">3</div><div class="mb-step-label">Situation</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="3"><div class="mb-step-num">4</div><div class="mb-step-label">Organisation</div></div>
+                <div class="mb-step-dot" data-castep="3"><div class="mb-step-num">4</div><div class="mb-step-label">Analyse</div></div>
                 <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="4"><div class="mb-step-num">5</div><div class="mb-step-label">Perspektive</div></div>
-                <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="5"><div class="mb-step-num">6</div><div class="mb-step-label">Situation</div></div>
-                <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="6"><div class="mb-step-num">7</div><div class="mb-step-label">Analyse</div></div>
-                <div class="mb-step-line"></div>
-                <div class="mb-step-dot" data-castep="7"><div class="mb-step-num">8</div><div class="mb-step-label">Ergebnis</div></div>
+                <div class="mb-step-dot" data-castep="4"><div class="mb-step-num">5</div><div class="mb-step-label">Ergebnis</div></div>
             </div>
 
             <!-- ═══ START: Mode Selection ═══ -->
@@ -1129,6 +1123,164 @@
                 </div>
             </div>
 
+            <!-- ═══ SMART STEP 1: KONTEXT BESTÄTIGEN ═══ -->
+            <div class="mb-panel" id="caStepConfirm">
+                <div class="mb-step-title" id="caConfirmTitle">Kontext wird erkannt...</div>
+                <div class="mb-step-desc" id="caConfirmDesc">BEATRIX analysiert deine Frage...</div>
+
+                <div id="caConfirmLoading" style="padding:30px;text-align:center">
+                    <div class="spinner" style="margin:0 auto 12px"></div>
+                    <div style="font-size:13px;color:rgba(255,255,255,0.5)">Frage wird analysiert...</div>
+                </div>
+
+                <div id="caConfirmContent" style="display:none">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+                        <!-- Land -->
+                        <div style="padding:14px 16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)" id="caConfLand">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                                <span style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;letter-spacing:0.5px">🌍 Land</span>
+                                <span onclick="caConfirmEdit('land')" style="font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline">ändern</span>
+                            </div>
+                            <div id="caConfLandValue" style="font-size:15px;font-weight:600;color:var(--white)">–</div>
+                            <div id="caConfLandEdit" style="display:none;margin-top:8px">
+                                <select class="mb-input" id="caConfLandSelect" onchange="caConfirmPick('land')" style="width:100%;box-sizing:border-box;font-size:13px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--accent)">
+                                    <option value="ch">🇨🇭 Schweiz</option>
+                                    <option value="at">🇦🇹 Österreich</option>
+                                    <option value="de">🇩🇪 Deutschland</option>
+                                    <option value="custom_macro">🌍 Anderes Land</option>
+                                </select>
+                                <input class="mb-input" id="caConfLandCustom" placeholder="Land beschreiben..." style="display:none;width:100%;box-sizing:border-box;margin-top:6px;font-size:12px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            </div>
+                        </div>
+
+                        <!-- Branche -->
+                        <div style="padding:14px 16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)" id="caConfBranche">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                                <span style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;letter-spacing:0.5px">🏢 Branche</span>
+                                <span onclick="caConfirmEdit('branche')" style="font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline">ändern</span>
+                            </div>
+                            <div id="caConfBrancheValue" style="font-size:15px;font-weight:600;color:var(--white)">–</div>
+                            <div id="caConfBrancheEdit" style="display:none;margin-top:8px">
+                                <select class="mb-input" id="caConfBrancheSelect" onchange="caConfirmPick('branche')" style="width:100%;box-sizing:border-box;font-size:13px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--accent)">
+                                    <option value="finance">🏦 Finanzdienstleistung</option>
+                                    <option value="health">🏥 Gesundheit</option>
+                                    <option value="public">🏛️ Öffentlicher Sektor</option>
+                                    <option value="energy">⚡ Energie</option>
+                                    <option value="retail">🛍️ Retail / Handel</option>
+                                    <option value="tech">💻 Technologie</option>
+                                    <option value="education">🎓 Bildung</option>
+                                    <option value="custom_meso">🏢 Andere Branche</option>
+                                </select>
+                                <input class="mb-input" id="caConfBrancheCustom" placeholder="Branche beschreiben..." style="display:none;width:100%;box-sizing:border-box;margin-top:6px;font-size:12px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            </div>
+                        </div>
+
+                        <!-- Organisation -->
+                        <div style="padding:14px 16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)" id="caConfOrg">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                                <span style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;letter-spacing:0.5px">🏢 Organisation</span>
+                                <span onclick="caConfirmEdit('org')" style="font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline">ändern</span>
+                            </div>
+                            <div id="caConfOrgValue" style="font-size:15px;font-weight:600;color:var(--white)">–</div>
+                            <div id="caConfOrgEdit" style="display:none;margin-top:8px">
+                                <select class="mb-input" id="caConfOrgSelect" onchange="caConfirmPick('org')" style="width:100%;box-sizing:border-box;font-size:13px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--accent)">
+                                    <option value="company">🏢 Unternehmen</option>
+                                    <option value="public">🏛️ Behörde / Öffentlich</option>
+                                    <option value="healthcare">🏥 Gesundheitseinrichtung</option>
+                                    <option value="general">👤 Allgemein</option>
+                                </select>
+                                <input class="mb-input" id="caConfOrgCustom" placeholder="Konkretes Unternehmen (optional)..." style="width:100%;box-sizing:border-box;margin-top:6px;font-size:12px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                            </div>
+                        </div>
+
+                        <!-- Perspektive -->
+                        <div style="padding:14px 16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)" id="caConfPersp">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                                <span style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;letter-spacing:0.5px">👁️ Perspektive</span>
+                                <span onclick="caConfirmEdit('persp')" style="font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline">ändern</span>
+                            </div>
+                            <div id="caConfPerspValue" style="font-size:15px;font-weight:600;color:var(--white)">–</div>
+                            <div id="caConfPerspEdit" style="display:none;margin-top:8px">
+                                <select class="mb-input" id="caConfPerspSelect" onchange="caConfirmPick('persp')" style="width:100%;box-sizing:border-box;font-size:13px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--accent)">
+                                    <option value="kunden">🛒 Kunden</option>
+                                    <option value="mitarbeitende">👔 Mitarbeitende</option>
+                                    <option value="management">📊 Management</option>
+                                    <option value="alle">🔄 Alle Perspektiven (Strategie)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-actions">
+                        <button class="mb-btn mb-btn-back" onclick="caBack(0)">← Zurück</button>
+                        <button class="mb-btn mb-btn-primary" onclick="caConfirmDone()" id="caConfirmBtn">✅ Stimmt — weiter zur Situation →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ SMART STEP 2: SITUATION (Scenario-based) ═══ -->
+            <div class="mb-panel" id="caStepScenarios">
+                <div class="mb-step-title">In welcher Situation?</div>
+                <div class="mb-step-desc" id="caScenarioDesc">Wähle ein typisches Szenario oder beschreibe die Situation selbst.</div>
+
+                <div id="caScenarioLoading" style="padding:30px;text-align:center">
+                    <div class="spinner" style="margin:0 auto 12px"></div>
+                    <div style="font-size:13px;color:rgba(255,255,255,0.5)">Typische Szenarien werden generiert...</div>
+                </div>
+
+                <div id="caScenarioCards" style="display:none">
+                    <div class="mb-choices" id="caScenarioChoices">
+                        <!-- Filled by JS -->
+                    </div>
+
+                    <!-- Custom scenario (collapsed by default) -->
+                    <div id="caCustomScenario" style="display:none;margin-top:16px;padding:16px;background:var(--navy-light);border:1px solid var(--border);border-radius:var(--radius)">
+                        <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:12px">🎨 Eigenes Szenario definieren</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+                            <select class="mb-input" id="caMicroWhere" style="font-size:12px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                                <option value="">📍 Ort...</option>
+                                <option value="home">🏠 Zuhause</option>
+                                <option value="workplace">🏢 Arbeitsplatz</option>
+                                <option value="store">🛒 Geschäft</option>
+                                <option value="online">💻 Online / App</option>
+                                <option value="public">🚶 Unterwegs</option>
+                                <option value="healthcare">🏥 Arztpraxis / Behörde</option>
+                            </select>
+                            <select class="mb-input" id="caMicroSocial" style="font-size:12px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                                <option value="">👥 Wer dabei...</option>
+                                <option value="solo">🙋 Allein</option>
+                                <option value="dyadic">🤝 Zu zweit</option>
+                                <option value="small_group">👨‍👩‍👧 Kleine Gruppe</option>
+                                <option value="large_group">🏛️ Grosse Gruppe</option>
+                                <option value="anonymous">🌐 Anonym</option>
+                            </select>
+                            <select class="mb-input" id="caMicroTime" style="font-size:12px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                                <option value="">⏰ Zeitrahmen...</option>
+                                <option value="urgent">⚡ Sofort</option>
+                                <option value="moderate">📅 Tage/Wochen</option>
+                                <option value="relaxed">🌿 Viel Zeit</option>
+                                <option value="recurring">🔄 Wiederkehrend</option>
+                            </select>
+                            <select class="mb-input" id="caMicroCognitive" style="font-size:12px;padding:6px 10px;background:var(--navy-card);color:white;border:1px solid var(--border)">
+                                <option value="">🧠 Zustand...</option>
+                                <option value="analytical">🔬 Aufmerksam</option>
+                                <option value="intuitive">💨 Autopilot</option>
+                                <option value="stressed">😰 Gestresst</option>
+                                <option value="fatigued">😴 Erschöpft</option>
+                                <option value="motivated">🔥 Motiviert</option>
+                            </select>
+                        </div>
+                        <textarea class="mb-input mb-textarea" id="caMicroNotes" placeholder="Besondere Umstände..." style="min-height:50px;width:100%;box-sizing:border-box;font-size:12px"></textarea>
+                    </div>
+
+                    <div class="mb-actions" style="margin-top:16px">
+                        <button class="mb-btn mb-btn-back" onclick="caBack(1)">← Zurück</button>
+                        <button class="mb-btn mb-btn-primary" id="caScenarioBtn" disabled onclick="caAnalyzeFromScenario()">🔍 Kontextprofil erstellen →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ OLD STEPS (hidden, used for edit fallback) ═══ -->
             <!-- ═══ STEP 1: MACRO ═══ -->
             <div class="mb-panel" id="caStep1">
                 <div id="caStep1ViewA">
@@ -2646,7 +2798,7 @@
         // Kontext-Analyse state managed by caState and caHistoryData
 
         // ── KONTEXT-ANALYSE WORKFLOW ──────────────────────────
-        const caState = { mode: null, step: -1, question: '', macro: null, meso: null, orgType: null, orgCode: null, orgName: null, perspective: null, micro: {}, result: null, lineageId: null, currentVersionId: null, customerCode: null, projectSlug: null };
+        const caState = { mode: null, step: -1, question: '', macro: null, meso: null, macroCustom: null, mesoCustom: null, orgType: null, orgCode: null, orgName: null, perspective: null, micro: {}, result: null, lineageId: null, currentVersionId: null, customerCode: null, projectSlug: null, smartParse: null, scenarios: [] };
         let caHistoryData = [];
 
         const PSI_DIMS = [
@@ -2735,21 +2887,14 @@
             // Reset all context selections
             caState.macro = null; caState.meso = null; caState.micro = null;
             caState.orgType = null; caState.orgCode = null; caState.orgName = null; caState.perspective = null;
-            // Re-populate question
-            const qEl = document.getElementById('caQuestion');
-            if (qEl) qEl.value = keepQuestion;
             caState.question = keepQuestion;
             caState.lineageId = keepLineage;
-            // Navigate to macro context (step 1)
+            // Go to smart confirm (AI will parse question)
             document.getElementById('caProgress').style.display = 'flex';
-            caShowPanel('caStep1');
+            caShowPanel('caStepConfirm');
             caUpdateProgress(1);
-            // Reset all step selections
-            document.querySelectorAll('#caStep1 .mb-choice, #caStep2 .mb-choice, #caOrgTypeChoices .mb-choice, #caPerspChoices .mb-choice').forEach(c => c.classList.remove('selected'));
-            ['caStep1Btn','caStep2Btn','caOrgBtn','caPerspBtn'].forEach(id => { const b = document.getElementById(id); if(b) b.disabled = true; });
-            document.getElementById('caOrgSearch').style.display = 'none';
-            document.getElementById('caNewOrgForm').style.display = 'none';
             showToast('🔍 Jetzt Kontext vertiefen — gleiche Frage, tiefere Analyse', 'info');
+            await caSmartParse(keepQuestion);
         }
 
         function caSelect(el, value) {
@@ -2807,9 +2952,11 @@
             if (caState.mode === 'schnell') {
                 caRunSchnell(text);
             } else {
+                // Smart flow: go to confirm with AI parse
                 caState.step = 1;
-                caShowPanel('caStep1');
+                caShowPanel('caStepConfirm');
                 caUpdateProgress(1);
+                caSmartParse(text);
             }
         }
 
@@ -2820,13 +2967,253 @@
             if (caState.mode === 'schnell') {
                 caRunSchnell(q);
             } else {
+                // Smart parse: AI extracts context from question
                 caState.step = 1;
-                caShowPanel('caStep1');
+                caShowPanel('caStepConfirm');
                 caUpdateProgress(1);
+                await caSmartParse(q);
             }
         }
 
-        const CA_PANELS = ['caStep0','caStep1','caStep2','caStepOrg','caStepPersp','caStep3','caStep4'];
+        // ═══ SMART PARSE: Extract context from question via AI ═══
+        async function caSmartParse(question) {
+            document.getElementById('caConfirmLoading').style.display = 'block';
+            document.getElementById('caConfirmContent').style.display = 'none';
+
+            const parsePrompt = `Analysiere diese Frage und extrahiere den Kontext. Antworte NUR als JSON:
+"${question}"
+
+{
+  "land": { "code": "ch|at|de|custom_macro", "label": "Schweiz|Österreich|Deutschland|[Land]", "confidence": 0.0-1.0 },
+  "branche": { "code": "finance|health|public|energy|retail|tech|education|custom_meso", "label": "Finanzdienstleistung|Gesundheit|...", "confidence": 0.0-1.0 },
+  "organisation": { "code": "company|public|healthcare|general", "label": "Beschreibung der Organisation", "name": "konkreter Name falls erkannt oder null", "confidence": 0.0-1.0 },
+  "perspektive": { "code": "kunden|mitarbeitende|management|alle", "label": "Kunden|Mitarbeitende|Management|Alle Perspektiven", "confidence": 0.0-1.0 },
+  "szenarien": [
+    { "title": "Kurzer Titel (max 6 Worte)", "desc": "2-3 Sätze die die konkrete Entscheidungssituation beschreiben. Wer, Wo, Wann, in welchem Zustand.", "where": "home|workplace|store|online|public|healthcare", "social": "solo|dyadic|small_group|large_group|anonymous", "time": "urgent|moderate|relaxed|recurring", "cognitive": "analytical|intuitive|stressed|fatigued|motivated", "icon": "passendes Emoji" },
+    { "title": "...", "desc": "...", "where": "...", "social": "...", "time": "...", "cognitive": "...", "icon": "..." },
+    { "title": "...", "desc": "...", "where": "...", "social": "...", "time": "...", "cognitive": "...", "icon": "..." }
+  ]
+}
+
+Regeln:
+- Wenn Land nicht klar: Default "ch" (FehrAdvice ist in Zürich), confidence: 0.3
+- Wenn Branche nicht klar: besten Guess machen, confidence angeben
+- Szenarien: IMMER genau 3 realistische, unterschiedliche Entscheidungssituationen generieren
+- Szenario 1: Die häufigste/typischste Situation
+- Szenario 2: Eine alternative Situation
+- Szenario 3: Eine weniger offensichtliche aber relevante Situation`;
+
+            try {
+                const resp = await fetch(`${API}/chat`, {
+                    method: 'POST',
+                    headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: parsePrompt, system_prompt: 'Du bist ein Kontext-Parser. Antworte NUR als valides JSON. Kein Markdown, kein Text.' })
+                });
+                const data = await resp.json();
+                const text = (data.response || data.answer || '').replace(/```json|```/g, '').trim();
+                caState.smartParse = JSON.parse(text);
+            } catch (e) {
+                console.error('Smart parse failed:', e);
+                // Fallback defaults
+                caState.smartParse = {
+                    land: { code: 'ch', label: '🇨🇭 Schweiz', confidence: 0.3 },
+                    branche: { code: 'finance', label: '🏦 Finanzdienstleistung', confidence: 0.3 },
+                    organisation: { code: 'general', label: 'Allgemein', name: null, confidence: 0.3 },
+                    perspektive: { code: 'kunden', label: '🛒 Kunden', confidence: 0.3 },
+                    szenarien: []
+                };
+            }
+            caRenderConfirm();
+        }
+
+        function caRenderConfirm() {
+            const p = caState.smartParse;
+            if (!p) return;
+
+            document.getElementById('caConfirmLoading').style.display = 'none';
+            document.getElementById('caConfirmContent').style.display = 'block';
+            document.getElementById('caConfirmTitle').textContent = 'Erkannter Kontext — stimmt das?';
+            document.getElementById('caConfirmDesc').textContent = `"${caState.question}"`;
+
+            // Set state from parsed values
+            caState.macro = p.land?.code || 'ch';
+            caState.meso = p.branche?.code || 'finance';
+            caState.orgType = p.organisation?.code || 'general';
+            caState.orgName = p.organisation?.name || p.organisation?.label || 'Allgemein';
+            caState.perspective = p.perspektive?.code || 'kunden';
+
+            const landLabels = { ch: '🇨🇭 Schweiz', at: '🇦🇹 Österreich', de: '🇩🇪 Deutschland' };
+            const brancheLabels = { finance: '🏦 Finanzdienstleistung', health: '🏥 Gesundheit', public: '🏛️ Öffentlicher Sektor', energy: '⚡ Energie', retail: '🛍️ Retail', tech: '💻 Technologie', education: '🎓 Bildung' };
+            const orgLabels = { company: '🏢 Unternehmen', public: '🏛️ Behörde', healthcare: '🏥 Gesundheitseinrichtung', general: '👤 Allgemein' };
+            const perspLabels = { kunden: '🛒 Kunden', mitarbeitende: '👔 Mitarbeitende', management: '📊 Management', alle: '🔄 Alle Perspektiven' };
+
+            // Render values with confidence indicator
+            const confDot = (c) => c >= 0.7 ? '🟢' : c >= 0.4 ? '🟡' : '🔴';
+
+            document.getElementById('caConfLandValue').innerHTML = `${landLabels[p.land?.code] || p.land?.label || 'Schweiz'} <span style="font-size:11px">${confDot(p.land?.confidence||0)}</span>`;
+            document.getElementById('caConfBrancheValue').innerHTML = `${brancheLabels[p.branche?.code] || p.branche?.label || '–'} <span style="font-size:11px">${confDot(p.branche?.confidence||0)}</span>`;
+            const orgDisplay = p.organisation?.name ? `${orgLabels[p.organisation?.code] || ''} — ${p.organisation.name}` : (orgLabels[p.organisation?.code] || p.organisation?.label || 'Allgemein');
+            document.getElementById('caConfOrgValue').innerHTML = `${orgDisplay} <span style="font-size:11px">${confDot(p.organisation?.confidence||0)}</span>`;
+            document.getElementById('caConfPerspValue').innerHTML = `${perspLabels[p.perspektive?.code] || p.perspektive?.label || 'Kunden'} <span style="font-size:11px">${confDot(p.perspektive?.confidence||0)}</span>`;
+
+            // Pre-select dropdowns
+            const landSel = document.getElementById('caConfLandSelect');
+            if (landSel) landSel.value = p.land?.code || 'ch';
+            const brancheSel = document.getElementById('caConfBrancheSelect');
+            if (brancheSel) brancheSel.value = p.branche?.code || 'finance';
+            const orgSel = document.getElementById('caConfOrgSelect');
+            if (orgSel) orgSel.value = p.organisation?.code || 'general';
+            const perspSel = document.getElementById('caConfPerspSelect');
+            if (perspSel) perspSel.value = p.perspektive?.code || 'kunden';
+
+            // Store scenarios for next step
+            caState.scenarios = p.szenarien || [];
+        }
+
+        function caConfirmEdit(field) {
+            // Toggle edit mode for a field
+            const editEl = document.getElementById(`caConf${field.charAt(0).toUpperCase()+field.slice(1)}Edit`);
+            if (!editEl) {
+                // Handle camelCase fields
+                const map = { land: 'Land', branche: 'Branche', org: 'Org', persp: 'Persp' };
+                const el = document.getElementById(`caConf${map[field]}Edit`);
+                if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+                return;
+            }
+            editEl.style.display = editEl.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function caConfirmPick(field) {
+            const map = { land: 'Land', branche: 'Branche', org: 'Org', persp: 'Persp' };
+            const sel = document.getElementById(`caConf${map[field]}Select`);
+            if (!sel) return;
+            const val = sel.value;
+
+            const landLabels = { ch: '🇨🇭 Schweiz', at: '🇦🇹 Österreich', de: '🇩🇪 Deutschland', custom_macro: '🌍 Anderes Land' };
+            const brancheLabels = { finance: '🏦 Finanzdienstleistung', health: '🏥 Gesundheit', public: '🏛️ Öffentlicher Sektor', energy: '⚡ Energie', retail: '🛍️ Retail', tech: '💻 Technologie', education: '🎓 Bildung', custom_meso: '🏢 Andere' };
+            const orgLabels = { company: '🏢 Unternehmen', public: '🏛️ Behörde', healthcare: '🏥 Gesundheitseinrichtung', general: '👤 Allgemein' };
+            const perspLabels = { kunden: '🛒 Kunden', mitarbeitende: '👔 Mitarbeitende', management: '📊 Management', alle: '🔄 Alle Perspektiven' };
+
+            if (field === 'land') {
+                caState.macro = val;
+                document.getElementById('caConfLandValue').innerHTML = landLabels[val] || val;
+                document.getElementById('caConfLandCustom').style.display = val === 'custom_macro' ? 'block' : 'none';
+            } else if (field === 'branche') {
+                caState.meso = val;
+                document.getElementById('caConfBrancheValue').innerHTML = brancheLabels[val] || val;
+                document.getElementById('caConfBrancheCustom').style.display = val === 'custom_meso' ? 'block' : 'none';
+            } else if (field === 'org') {
+                caState.orgType = val;
+                document.getElementById('caConfOrgValue').innerHTML = orgLabels[val] || val;
+            } else if (field === 'persp') {
+                caState.perspective = val;
+                document.getElementById('caConfPerspValue').innerHTML = perspLabels[val] || val;
+            }
+
+            // Hide edit after pick
+            document.getElementById(`caConf${map[field]}Edit`).style.display = 'none';
+        }
+
+        function caConfirmDone() {
+            // Check custom fields
+            if (caState.macro === 'custom_macro') {
+                const custom = document.getElementById('caConfLandCustom')?.value?.trim();
+                if (custom) caState.macroCustom = custom;
+            }
+            if (caState.meso === 'custom_meso') {
+                const custom = document.getElementById('caConfBrancheCustom')?.value?.trim();
+                if (custom) caState.mesoCustom = custom;
+            }
+            const orgCustom = document.getElementById('caConfOrgCustom')?.value?.trim();
+            if (orgCustom) caState.orgName = orgCustom;
+
+            // Go to scenarios
+            caState.step = 2;
+            caShowPanel('caStepScenarios');
+            caUpdateProgress(2);
+            caRenderScenarios();
+        }
+
+        // ═══ SCENARIO CARDS ═══
+        function caRenderScenarios() {
+            const scenarios = caState.scenarios || [];
+            const container = document.getElementById('caScenarioChoices');
+            document.getElementById('caScenarioLoading').style.display = 'none';
+            document.getElementById('caScenarioCards').style.display = 'block';
+
+            let html = scenarios.map((s, i) => `
+                <div class="mb-choice" onclick="caPickScenario(${i})" data-scenario="${i}">
+                    <div class="mb-choice-num">${i+1}</div>
+                    <div class="mb-choice-icon">${s.icon || '📌'}</div>
+                    <div class="mb-choice-title">${s.title}</div>
+                    <div class="mb-choice-desc">${s.desc}</div>
+                </div>
+            `).join('');
+
+            // Custom scenario option
+            html += `
+                <div class="mb-choice custom-choice" onclick="caPickCustomScenario()" style="border-style:dashed">
+                    <div class="mb-choice-num">✎</div>
+                    <div class="mb-choice-icon">🎨</div>
+                    <div class="mb-choice-title">Eigenes Szenario</div>
+                    <div class="mb-choice-desc">Ort, Beteiligte, Zeitrahmen und mentalen Zustand selbst definieren.</div>
+                </div>`;
+
+            container.innerHTML = html;
+
+            // Update description with context
+            const desc = document.getElementById('caScenarioDesc');
+            if (caState.orgName && caState.orgName !== 'Allgemein') {
+                desc.textContent = `In welcher konkreten Situation befinden sich die ${caState.perspective === 'kunden' ? 'Kunden' : caState.perspective === 'mitarbeitende' ? 'Mitarbeitenden' : caState.perspective === 'management' ? 'Entscheider' : 'Stakeholder'} von ${caState.orgName}?`;
+            }
+        }
+
+        function caPickScenario(idx) {
+            const s = caState.scenarios[idx];
+            if (!s) return;
+            // Deselect all, select this
+            document.querySelectorAll('#caScenarioChoices .mb-choice').forEach(c => c.classList.remove('selected'));
+            document.querySelector(`#caScenarioChoices .mb-choice[data-scenario="${idx}"]`)?.classList.add('selected');
+            document.getElementById('caCustomScenario').style.display = 'none';
+
+            // Store micro from scenario
+            caState.micro = {
+                where: s.where || '',
+                social: s.social || '',
+                time: s.time || '',
+                cognitive: s.cognitive || '',
+                notes: s.desc || '',
+                scenario_title: s.title
+            };
+            document.getElementById('caScenarioBtn').disabled = false;
+        }
+
+        function caPickCustomScenario() {
+            document.querySelectorAll('#caScenarioChoices .mb-choice').forEach(c => c.classList.remove('selected'));
+            document.querySelector('#caScenarioChoices .custom-choice')?.classList.add('selected');
+            document.getElementById('caCustomScenario').style.display = 'block';
+            caState.micro = {}; // Will be filled from dropdowns
+            document.getElementById('caScenarioBtn').disabled = false;
+        }
+
+        function caAnalyzeFromScenario() {
+            // If custom scenario, collect from dropdowns
+            if (!caState.micro?.scenario_title) {
+                caState.micro = {
+                    where: document.getElementById('caMicroWhere')?.value || '',
+                    social: document.getElementById('caMicroSocial')?.value || '',
+                    time: document.getElementById('caMicroTime')?.value || '',
+                    cognitive: document.getElementById('caMicroCognitive')?.value || '',
+                    notes: document.getElementById('caMicroNotes')?.value?.trim() || ''
+                };
+            }
+            caState.step = 3;
+            caShowPanel('caStep4');
+            caUpdateProgress(3);
+            caRunAnalysis();
+        }
+
+        const CA_PANELS = ['caStep0','caStepConfirm','caStepScenarios','caStep4','caStep4'];
 
         function caNextStep(fromStep) {
             const next = fromStep + 1;
@@ -2961,26 +3348,17 @@
         }
 
         async function caAnalyze() {
-            // Collect MICRO data
+            // Collect MICRO data (fallback for old step)
             caState.micro = {
-                where: document.getElementById('caMicroWhere').value,
-                social: document.getElementById('caMicroSocial').value,
-                time: document.getElementById('caMicroTime').value,
-                cognitive: document.getElementById('caMicroCognitive').value,
-                notes: document.getElementById('caMicroNotes').value.trim()
+                where: document.getElementById('caMicroWhere')?.value || '',
+                social: document.getElementById('caMicroSocial')?.value || '',
+                time: document.getElementById('caMicroTime')?.value || '',
+                cognitive: document.getElementById('caMicroCognitive')?.value || '',
+                notes: document.getElementById('caMicroNotes')?.value?.trim() || ''
             };
-            caState.step = 6;
+            caState.step = 3;
             caShowPanel('caStep4');
-            caUpdateProgress(6);
-            // Run AI analysis
-            await caRunAnalysis();
-        }
-
-        async function caRunSchnell(question) {
-            caState.step = 6;
-            caShowPanel('caStep4');
-            document.getElementById('caProgress').style.display = 'flex';
-            caUpdateProgress(6);
+            caUpdateProgress(3);
             await caRunAnalysis();
         }
 
@@ -3003,7 +3381,7 @@
 
             const prompt = caState.mode === 'schnell'
                 ? `Führe eine vollständige EBF-Kontextanalyse durch für folgende Frage:\n"${caState.question}"\n\nAnalysiere alle 5 Ebenen (MACRO→MESO→MICRO→INDIVIDUAL→META) und alle 8 Ψ-Dimensionen.`
-                : `Führe eine EBF-Kontextanalyse durch:\nFrage: "${caState.question}"\nMACRO: ${caState.macro}${caState.macro==='custom_macro' ? ' ('+document.getElementById('caMacroCustom')?.value+')' : ''}\nMESO: ${caState.meso}${caState.meso==='custom_meso' ? ' ('+document.getElementById('caMesoCustom')?.value+')' : ''}${orgInfo}${perspInfo}\nMICRO: Ort=${caState.micro.where}, Sozial=${caState.micro.social}, Zeit=${caState.micro.time}, Kognitiv=${caState.micro.cognitive}${caState.micro.notes ? ', Notizen: '+caState.micro.notes : ''}`;
+                : `Führe eine EBF-Kontextanalyse durch:\nFrage: "${caState.question}"\nMACRO: ${caState.macro}${caState.macro==='custom_macro' ? ' ('+(caState.macroCustom || document.getElementById('caMacroCustom')?.value || '')+')' : ''}\nMESO: ${caState.meso}${caState.meso==='custom_meso' ? ' ('+(caState.mesoCustom || document.getElementById('caMesoCustom')?.value || '')+')' : ''}${orgInfo}${perspInfo}\nMICRO: Ort=${caState.micro?.where||''}, Sozial=${caState.micro?.social||''}, Zeit=${caState.micro?.time||''}, Kognitiv=${caState.micro?.cognitive||''}${caState.micro?.notes ? ', Notizen: '+caState.micro.notes : ''}${caState.micro?.scenario_title ? '\nSzenario: '+caState.micro.scenario_title : ''}`;
 
             const sysPrompt = `Du bist BEATRIX Kontext-Analyst. Analysiere mit dem EBF Ψ-Framework.
 
@@ -3139,7 +3517,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                 bcEl.style.display = bcParts.length ? 'flex' : 'none';
             }
 
-            caUpdateProgress(7);
+            caUpdateProgress(4);
 
             // Show "Kontext vertiefen" button only in schnell mode
             const deepenBtn = document.getElementById('caDeepenBtn');
@@ -3239,8 +3617,8 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             const payload = {
                 question: caState.question,
                 mode: caState.mode,
-                macro_context: caState.macro ? { country: caState.macro, custom: document.getElementById('caMacroCustom')?.value } : null,
-                meso_context: caState.meso ? { industry: caState.meso, custom: document.getElementById('caMesoCustom')?.value, org_type: caState.orgType, org_name: caState.orgName, perspective: caState.perspective } : null,
+                macro_context: caState.macro ? { country: caState.macro, custom: caState.macroCustom || document.getElementById('caMacroCustom')?.value } : null,
+                meso_context: caState.meso ? { industry: caState.meso, custom: caState.mesoCustom || document.getElementById('caMesoCustom')?.value, org_type: caState.orgType, org_name: caState.orgName, perspective: caState.perspective } : null,
                 micro_context: caState.micro || null,
                 psi_profile: r.psi_profile,
                 parameters: r.parameters,
