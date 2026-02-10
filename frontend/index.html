@@ -415,8 +415,10 @@
         @media (max-width:768px) { .mb-choices { grid-template-columns:1fr; } .mb-mode-cards { grid-template-columns:1fr 1fr; } }
         @media (max-width:768px) { .profile-grid { grid-template-columns:1fr; } .profile-row { grid-template-columns:1fr; } }
         @media (max-width:640px) {
-            .nav { padding:0 12px; flex-wrap:wrap; height:auto; min-height:56px; }
-            .nav-brand .nav-title { font-size:16px; }
+            .nav { padding:0 10px; flex-wrap:wrap; height:auto; min-height:48px; }
+            .nav-brand { gap:8px; }
+            .nav-brand .nav-title { font-size:15px; }
+            .nav-brand .nav-logo-img { width:28px; height:28px; }
             .nav-links { display:none; width:100%; order:3; flex-direction:column; padding:8px 0 12px; border-top:1px solid var(--border); }
             .nav-links.mobile-open { display:flex; }
             .nav-links .nav-link { padding:12px 16px; font-size:14px; border-radius:8px; }
@@ -425,11 +427,14 @@
             .nav-links .nav-dropdown-menu { position:static; background:rgba(15,30,55,0.6); border:none; box-shadow:none; margin:0; padding:0 0 0 20px; border-radius:0; }
             .nav-links .nav-dropdown-item { padding:10px 16px; font-size:13px; }
             .nav-links .nav-dropdown.open .nav-dropdown-menu { display:flex; flex-direction:column; }
-            .nav-right { order:2; gap:6px; }
-            .nav-right .nav-status { font-size:11px; padding:3px 8px; }
+            .nav-right { order:2; gap:4px; margin-left:auto; }
+            .nav-right .nav-status { display:none; }
             .nav-right .nav-logout { display:none; }
             .nav-right #appVersion { display:none; }
-            .nav-hamburger { display:flex; order:1; margin-left:auto; margin-right:8px; }
+            .nav-right .nav-user { font-size:11px; padding:4px 10px; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            .nav-right .admin-link { padding:4px; }
+            .nav-right .admin-link svg { width:13px; height:13px; }
+            .nav-hamburger { display:flex; order:1; margin-left:auto; margin-right:4px; width:32px; height:32px; }
             .hero { padding:48px 16px 40px; } .hero h1 { font-size:28px; }
             .hero-stats { gap:20px; } .container { padding:24px 16px 60px; } .db-selector { grid-template-columns:1fr; }
             .input-row { grid-template-columns:1fr; } .upload-zone { padding:36px 20px; } .actions { flex-direction:column; gap:12px; }
@@ -2965,19 +2970,40 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                 confidence: r.confidence,
                 customer_code: caState.customerCode || null,
                 project_slug: caState.projectSlug || null,
-                lineage_id: caState.lineageId || null  // null = auto-detect
+                lineage_id: caState.lineageId || null
             };
             try {
-                const resp = await fetch(`${API}/psi-analyses`, {
+                // Try new versioned endpoint first
+                let resp = await fetch(`${API}/psi-analyses`, {
                     method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                if (!resp.ok) throw new Error('Save failed');
-                const result = await resp.json();
-                showToast(`Ψ-Profil gespeichert: ${result.lineage_id} v${result.version}`, 'success');
-                // Store lineage for potential re-versioning
-                caState.lineageId = result.lineage_id;
-                caState.currentVersionId = result.id;
+                if (resp.ok) {
+                    const result = await resp.json();
+                    showToast(`Ψ-Profil gespeichert: ${result.lineage_id} v${result.version}`, 'success');
+                    caState.lineageId = result.lineage_id;
+                    caState.currentVersionId = result.id;
+                    return;
+                }
+                // Fallback: save to old contexts table
+                const fallback = {
+                    client: 'Ψ-Analyse',
+                    project: caState.question.substring(0, 80),
+                    domain: 'OTH',
+                    status: 'aktiv',
+                    situation: JSON.stringify(r.psi_profile || {}),
+                    goal: r.synthesis || '',
+                    constraints: r.confidence || ''
+                };
+                resp = await fetch(`${API}/contexts`, {
+                    method: 'POST', headers: { ...H(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(fallback)
+                });
+                if (resp.ok) {
+                    showToast('Ψ-Profil gespeichert (Legacy-Modus)', 'success');
+                } else {
+                    throw new Error('Both endpoints failed');
+                }
             } catch(e) {
                 console.error('Save error:', e);
                 showToast('Fehler beim Speichern', 'error');
@@ -3013,9 +3039,35 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             const container = document.getElementById('caHistoryList');
             container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.5)"><div class="spinner" style="margin:0 auto 12px"></div>Wird geladen...</div>';
             try {
-                const r = await fetch(`${API}/psi-analyses`, { headers: H() });
-                if (!r.ok) throw new Error('Load failed');
-                const analyses = await r.json();
+                let analyses = [];
+                // Try new versioned endpoint
+                let r = await fetch(`${API}/psi-analyses`, { headers: H() });
+                if (r.ok) {
+                    analyses = await r.json();
+                } else {
+                    // Fallback: load from old contexts table
+                    r = await fetch(`${API}/contexts`, { headers: H() });
+                    if (r.ok) {
+                        const old = await r.json();
+                        analyses = old.filter(c => c.client === 'Ψ-Analyse' || c.client === 'Kontextanalyse').map(c => {
+                            let psiProfile = {};
+                            try { psiProfile = JSON.parse(c.situation); } catch(e) {}
+                            return {
+                                id: c.id,
+                                lineage_id: `LEGACY-${c.id}`,
+                                version: 1,
+                                question: c.project || c.client || '–',
+                                mode: 'schnell',
+                                psi_profile: psiProfile,
+                                parameters: {},
+                                synthesis: c.goal || '',
+                                confidence: c.constraints || '',
+                                created_by: c.created_by,
+                                created_at: c.created_at
+                            };
+                        });
+                    }
+                }
                 if (!analyses.length) {
                     container.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Noch keine Ψ-Analysen gespeichert.</div>';
                     return;
@@ -3102,7 +3154,11 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
         async function caDeleteAnalysis(id) {
             if (!confirm('Ψ-Analyse wirklich löschen?')) return;
             try {
-                await fetch(`${API}/psi-analyses/${id}`, { method: 'DELETE', headers: H() });
+                let resp = await fetch(`${API}/psi-analyses/${id}`, { method: 'DELETE', headers: H() });
+                if (!resp.ok) {
+                    // Fallback: try old contexts endpoint
+                    resp = await fetch(`${API}/contexts/${id}`, { method: 'DELETE', headers: H() });
+                }
                 showToast('Analyse gelöscht', 'success');
                 caShowHistory();
             } catch(e) { showToast('Fehler', 'error'); }
