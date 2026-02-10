@@ -1387,6 +1387,9 @@
                 </div>
 
                 <div id="caAnalysisResult" style="display:none">
+                    <!-- Context Breadcrumb -->
+                    <div id="caResultBreadcrumb" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:16px"></div>
+
                     <!-- Allgemeine Perspektive: Big Picture -->
                     <div id="caPerspectiveBox" style="padding:20px 24px;background:linear-gradient(135deg,rgba(27,54,93,0.4),rgba(27,54,93,0.15));border:1px solid rgba(139,170,255,0.2);border-radius:var(--radius);margin-bottom:20px">
                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -3123,6 +3126,19 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             document.getElementById('caAnalysisResult').style.display = 'block';
             document.querySelector('#caStep4 .mb-step-title').textContent = 'Kontextprofil — Ergebnis';
             document.querySelector('#caStep4 .mb-step-desc').textContent = caState.question;
+
+            // Context breadcrumb
+            const bcParts = [];
+            if (caState.macro && caState.macro !== 'custom_macro') bcParts.push(caState.macro === 'ch' ? '🇨🇭 Schweiz' : caState.macro === 'at' ? '🇦🇹 Österreich' : caState.macro === 'de' ? '🇩🇪 Deutschland' : caState.macro);
+            if (caState.meso && caState.meso !== 'custom_meso') bcParts.push(caState.meso === 'finance' ? '🏦 Finanz' : caState.meso === 'health' ? '🏥 Gesundheit' : caState.meso === 'public' ? '🏛️ Öffentlich' : caState.meso);
+            if (caState.orgName && caState.orgName !== 'Allgemein') bcParts.push('🏢 ' + caState.orgName);
+            if (caState.perspective) bcParts.push(caState.perspective === 'alle' ? '🔄 Alle Perspektiven' : caState.perspective === 'kunden' ? '🛒 Kunden' : caState.perspective === 'mitarbeitende' ? '👔 Mitarbeitende' : '📊 Management');
+            const bcEl = document.getElementById('caResultBreadcrumb');
+            if (bcEl) {
+                bcEl.innerHTML = bcParts.length ? bcParts.map(p => `<span style="padding:3px 10px;background:rgba(91,138,245,0.1);border:1px solid rgba(91,138,245,0.2);border-radius:12px;font-size:11px;color:var(--accent-light)">${p}</span>`).join('') : '';
+                bcEl.style.display = bcParts.length ? 'flex' : 'none';
+            }
+
             caUpdateProgress(7);
 
             // Show "Kontext vertiefen" button only in schnell mode
