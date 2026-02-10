@@ -230,6 +230,9 @@
         .prj-tab.active { color:var(--accent-light);border-bottom-color:var(--accent);font-weight:600; }
         .prj-tab-content { display:none; }
         .prj-tab-content.active { display:block; }
+        .prj-main-tab-content { display:none; }
+        .prj-main-tab-content.active { display:block; }
+        .prj-inhalt-card:hover { border-color:rgba(42,127,142,0.4) !important; background:rgba(42,127,142,0.04) !important; }
         .nav-link.admin-link:hover,.nav-link.admin-link.active { color:var(--warning); background:rgba(251,191,36,0.08); }
 
         /* ── Password Modal ──────────────────────────────── */
@@ -2272,30 +2275,21 @@
             <div id="prjLandingView" style="display:none">
                 <!-- Sticky Header -->
                 <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-                    <button onclick="prjBackToList()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer">← Alle Projekte</button>
+                    <button onclick="prjBackToList()" id="prjBackBtn" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer">← Projekte</button>
                 </div>
 
                 <!-- Project Header Card -->
                 <div id="prjLandingHeader" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:0"></div>
 
-                <!-- Tab Bar -->
-                <div id="prjTabBar" style="display:flex;gap:2px;overflow-x:auto;padding:12px 0 0 0;margin-bottom:20px;border-bottom:1px solid var(--border);scrollbar-width:thin">
-                    <div class="prj-tab active" data-tab="overview" onclick="prjSwitchTab('overview')">🏠 Übersicht</div>
-                    <div class="prj-tab" data-tab="auftrag" onclick="prjSwitchTab('auftrag')">📋 Auftrag</div>
-                    <div class="prj-tab" data-tab="planung" onclick="prjSwitchTab('planung')">📅 Planung</div>
-                    <div class="prj-tab" data-tab="meetings" onclick="prjSwitchTab('meetings')">📝 Meetings</div>
-                    <div class="prj-tab" data-tab="deliverables" onclick="prjSwitchTab('deliverables')">📦 Deliverables</div>
-                    <div class="prj-tab" data-tab="dokumente" onclick="prjSwitchTab('dokumente')">📄 Dokumente</div>
-                    <div class="prj-tab" data-tab="modelle" onclick="prjSwitchTab('modelle')">🧬 Modelle</div>
-                    <div class="prj-tab" data-tab="risiken" onclick="prjSwitchTab('risiken')">⚠ Risiken</div>
-                    <div class="prj-tab" data-tab="kommunikation" onclick="prjSwitchTab('kommunikation')">💬 Kommunikation</div>
-                    <div class="prj-tab" data-tab="budget" onclick="prjSwitchTab('budget')">💰 Budget</div>
-                    <div class="prj-tab" data-tab="learnings" onclick="prjSwitchTab('learnings')">📊 Learnings</div>
+                <!-- 3 Main Tabs -->
+                <div id="prjTabBar" style="display:flex;gap:2px;padding:12px 0 0 0;margin-bottom:0;border-bottom:1px solid var(--border)">
+                    <div class="prj-tab active" data-tab="overview" onclick="prjSwitchMainTab('overview')" style="flex:1;text-align:center;font-weight:700">🏠 Übersicht</div>
+                    <div class="prj-tab" data-tab="inhalt" onclick="prjSwitchMainTab('inhalt')" style="flex:1;text-align:center;font-weight:700">🧠 Inhalt</div>
+                    <div class="prj-tab" data-tab="pm" onclick="prjSwitchMainTab('pm')" style="flex:1;text-align:center;font-weight:700">📋 PM</div>
                 </div>
 
-                <!-- Tab Content Area -->
-                <!-- Tab: Übersicht -->
-                <div class="prj-tab-content active" id="prjTabOverview">
+                <!-- ═══ TAB: ÜBERSICHT ═══ -->
+                <div class="prj-main-tab-content active" id="prjMainOverview" style="padding-top:20px">
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
                         <div>
                             <div style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Verfügbare Ressourcen</div>
@@ -2312,101 +2306,196 @@
                     </div>
                 </div>
 
-                <!-- Tab: Beratungsauftrag -->
-                <div class="prj-tab-content" id="prjTabAuftrag">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-                            <div style="font-size:16px;font-weight:700;color:white">📋 Beratungsauftrag</div>
-                            <button onclick="prjStartEdit('auftrag')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                <!-- ═══ TAB: INHALT (Behavioral Design im Projektkontext) ═══ -->
+                <div class="prj-main-tab-content" id="prjMainInhalt" style="padding-top:20px">
+                    <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px">Behavioral Design Arbeit für dieses Projekt — alle Analysen und Modelle werden hier gespeichert.</div>
+
+                    <!-- Inhalt Module Cards -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="prjInhaltModules">
+                        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,0.25);letter-spacing:1px;grid-column:1/-1;padding:4px 0">VERSTEHEN</div>
+
+                        <div class="prj-inhalt-card" onclick="prjLaunchModule('context')" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                                <span style="font-size:22px">🔬</span>
+                                <div style="font-size:14px;font-weight:700;color:white">Kontext-Analyse</div>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Land, Branche, Situation → Ψ-Profil</div>
+                            <div id="prjModStatus_context" style="margin-top:8px"></div>
                         </div>
-                        <div id="prjAuftragContent" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.8"></div>
-                    </div>
-                </div>
 
-                <!-- Tab: Projektplanung -->
-                <div class="prj-tab-content" id="prjTabPlanung">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-                            <div style="font-size:16px;font-weight:700;color:white">📅 Projektplanung</div>
-                            <button onclick="prjStartEdit('planung')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                        <div class="prj-inhalt-card" onclick="prjLaunchModule('segmente')" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                                <span style="font-size:22px">👥</span>
+                                <div style="font-size:14px;font-weight:700;color:white">Segment-Analyse</div>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Zielgruppen identifizieren & verstehen</div>
+                            <div id="prjModStatus_segmente" style="margin-top:8px"></div>
                         </div>
-                        <div id="prjPlanungContent" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.8"></div>
-                    </div>
-                </div>
 
-                <!-- Tab: Meetings -->
-                <div class="prj-tab-content" id="prjTabMeetings">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-                            <div style="font-size:16px;font-weight:700;color:white">📝 Meetings & Protokolle</div>
-                            <button onclick="prjAddMeeting()" style="padding:6px 14px;background:var(--accent);border:none;border-radius:8px;color:white;font-size:12px;font-weight:600;cursor:pointer">+ Neues Meeting</button>
+                        <div class="prj-inhalt-card" onclick="prjLaunchModule('journey')" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                                <span style="font-size:22px">🗺️</span>
+                                <div style="font-size:14px;font-weight:700;color:white">Behavioral Journey</div>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Awareness → Readiness → Action</div>
+                            <div id="prjModStatus_journey" style="margin-top:8px"></div>
                         </div>
-                        <div id="prjMeetingsContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
-                    </div>
-                </div>
 
-                <!-- Tab: Deliverables -->
-                <div class="prj-tab-content" id="prjTabDeliverables">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-                            <div style="font-size:16px;font-weight:700;color:white">📦 Deliverables & Ergebnisse</div>
-                            <button onclick="prjStartEdit('deliverables')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,0.25);letter-spacing:1px;grid-column:1/-1;padding:12px 0 4px 0">GESTALTEN</div>
+
+                        <div class="prj-inhalt-card" onclick="prjLaunchModule('nutzen')" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                                <span style="font-size:22px">💎</span>
+                                <div style="font-size:14px;font-weight:700;color:white">Nutzen & Anreize</div>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Nutzen, Kosten, Barrieren</div>
+                            <div id="prjModStatus_nutzen" style="margin-top:8px"></div>
                         </div>
-                        <div id="prjDeliverablesContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
-                    </div>
-                </div>
 
-                <!-- Tab: Dokumente -->
-                <div class="prj-tab-content" id="prjTabDokumente">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📄 Dokumente</div>
-                        <div id="prjDokumenteContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
-                    </div>
-                </div>
-
-                <!-- Tab: Modelle -->
-                <div class="prj-tab-content" id="prjTabModelle">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">🧬 Modelle & Analysen</div>
-                        <div id="prjModelleContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
-                    </div>
-                </div>
-
-                <!-- Tab: Risiken -->
-                <div class="prj-tab-content" id="prjTabRisiken">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-                            <div style="font-size:16px;font-weight:700;color:white">⚠ Risiken & Entscheidungen</div>
-                            <button onclick="prjStartEdit('risiken')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                        <div class="prj-inhalt-card" onclick="prjLaunchModule('architektur')" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                                <span style="font-size:22px">⚖️</span>
+                                <div style="font-size:14px;font-weight:700;color:white">Entscheidungsarchitektur</div>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Touchpoints, Defaults, Framing</div>
+                            <div id="prjModStatus_architektur" style="margin-top:8px"></div>
                         </div>
-                        <div id="prjRisikenContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
-                    </div>
-                </div>
 
-                <!-- Tab: Kommunikation -->
-                <div class="prj-tab-content" id="prjTabKommunikation">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">💬 Kommunikation</div>
-                        <div id="prjKommunikationContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
-                    </div>
-                </div>
-
-                <!-- Tab: Budget -->
-                <div class="prj-tab-content" id="prjTabBudget">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-                            <div style="font-size:16px;font-weight:700;color:white">💰 Budget & Abrechnung</div>
-                            <button onclick="prjStartEdit('budget')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                        <div class="prj-inhalt-card" onclick="prjLaunchModule('model')" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                                <span style="font-size:22px">🏗️</span>
+                                <div style="font-size:14px;font-weight:700;color:white">Modell-Building</div>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">EEE-Workflow: Gesamtmodell bauen</div>
+                            <div id="prjModStatus_model" style="margin-top:8px"></div>
                         </div>
-                        <div id="prjBudgetContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+
+                        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,0.25);letter-spacing:1px;grid-column:1/-1;padding:12px 0 4px 0">MESSEN & PRÜFEN</div>
+
+                        <div class="prj-inhalt-card" onclick="prjLaunchModule('audit')" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                                <span style="font-size:22px">📊</span>
+                                <div style="font-size:14px;font-weight:700;color:white">Behavioral Audit</div>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Ist-Zustand erheben</div>
+                            <div id="prjModStatus_audit" style="margin-top:8px"></div>
+                        </div>
+
+                        <div class="prj-inhalt-card" onclick="prjLaunchModule('wirkung')" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                                <span style="font-size:22px">📈</span>
+                                <div style="font-size:14px;font-weight:700;color:white">Wirkungsmessung</div>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Soll vs. Ist</div>
+                            <div id="prjModStatus_wirkung" style="margin-top:8px"></div>
+                        </div>
+
+                        <div class="prj-inhalt-card" onclick="prjLaunchModule('evidenz')" style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                                <span style="font-size:22px">🧪</span>
+                                <div style="font-size:14px;font-weight:700;color:white">Evidenz-Check</div>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Forschung, Theorien & Daten</div>
+                            <div id="prjModStatus_evidenz" style="margin-top:8px"></div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Tab: Learnings -->
-                <div class="prj-tab-content" id="prjTabLearnings">
-                    <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
-                        <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📊 Learnings & Evaluation</div>
-                        <div id="prjLearningsContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                <!-- ═══ TAB: PM (Projektmanagement) ═══ -->
+                <div class="prj-main-tab-content" id="prjMainPm" style="padding-top:12px">
+                    <!-- PM Sub-Tabs -->
+                    <div style="display:flex;gap:2px;overflow-x:auto;padding:0 0 0 0;margin-bottom:20px;border-bottom:1px solid var(--border);scrollbar-width:thin">
+                        <div class="prj-tab active" data-tab="auftrag" onclick="prjSwitchTab('auftrag')">📋 Auftrag</div>
+                        <div class="prj-tab" data-tab="planung" onclick="prjSwitchTab('planung')">📅 Planung</div>
+                        <div class="prj-tab" data-tab="meetings" onclick="prjSwitchTab('meetings')">📝 Meetings</div>
+                        <div class="prj-tab" data-tab="deliverables" onclick="prjSwitchTab('deliverables')">📦 Deliverables</div>
+                        <div class="prj-tab" data-tab="dokumente" onclick="prjSwitchTab('dokumente')">📄 Dokumente</div>
+                        <div class="prj-tab" data-tab="budget" onclick="prjSwitchTab('budget')">💰 Budget</div>
+                        <div class="prj-tab" data-tab="risiken" onclick="prjSwitchTab('risiken')">⚠ Risiken</div>
+                        <div class="prj-tab" data-tab="kommunikation" onclick="prjSwitchTab('kommunikation')">💬 Komm.</div>
+                        <div class="prj-tab" data-tab="learnings" onclick="prjSwitchTab('learnings')">📊 Learnings</div>
+                    </div>
+
+                    <!-- PM Sub-Tab Contents -->
+                    <div class="prj-tab-content active" id="prjTabAuftrag">
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                                <div style="font-size:16px;font-weight:700;color:white">📋 Beratungsauftrag</div>
+                                <button onclick="prjStartEdit('auftrag')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                            </div>
+                            <div id="prjAuftragContent" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.8"></div>
+                        </div>
+                    </div>
+
+                    <div class="prj-tab-content" id="prjTabPlanung">
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                                <div style="font-size:16px;font-weight:700;color:white">📅 Projektplanung</div>
+                                <button onclick="prjStartEdit('planung')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                            </div>
+                            <div id="prjPlanungContent" style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.8"></div>
+                        </div>
+                    </div>
+
+                    <div class="prj-tab-content" id="prjTabMeetings">
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                                <div style="font-size:16px;font-weight:700;color:white">📝 Meetings & Protokolle</div>
+                                <button onclick="prjAddMeeting()" style="padding:6px 14px;background:var(--accent);border:none;border-radius:8px;color:white;font-size:12px;font-weight:600;cursor:pointer">+ Neues Meeting</button>
+                            </div>
+                            <div id="prjMeetingsContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                        </div>
+                    </div>
+
+                    <div class="prj-tab-content" id="prjTabDeliverables">
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                                <div style="font-size:16px;font-weight:700;color:white">📦 Deliverables & Ergebnisse</div>
+                                <button onclick="prjStartEdit('deliverables')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                            </div>
+                            <div id="prjDeliverablesContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                        </div>
+                    </div>
+
+                    <div class="prj-tab-content" id="prjTabDokumente">
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                            <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📄 Dokumente</div>
+                            <div id="prjDokumenteContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                        </div>
+                    </div>
+
+                    <div class="prj-tab-content" id="prjTabBudget">
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                                <div style="font-size:16px;font-weight:700;color:white">💰 Budget & Abrechnung</div>
+                                <button onclick="prjStartEdit('budget')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                            </div>
+                            <div id="prjBudgetContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                        </div>
+                    </div>
+
+                    <div class="prj-tab-content" id="prjTabRisiken">
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                                <div style="font-size:16px;font-weight:700;color:white">⚠ Risiken & Entscheidungen</div>
+                                <button onclick="prjStartEdit('risiken')" style="padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer">✏ Bearbeiten</button>
+                            </div>
+                            <div id="prjRisikenContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                        </div>
+                    </div>
+
+                    <div class="prj-tab-content" id="prjTabKommunikation">
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                            <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">💬 Kommunikation</div>
+                            <div id="prjKommunikationContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                        </div>
+                    </div>
+
+                    <div class="prj-tab-content" id="prjTabLearnings">
+                        <div style="background:var(--navy-card);border:1px solid var(--border);border-radius:12px;padding:24px">
+                            <div style="font-size:16px;font-weight:700;color:white;margin-bottom:20px">📊 Learnings & Evaluation</div>
+                            <div id="prjLearningsContent" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -4950,7 +5039,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                 const catIcon = catIcons[cat] || '';
                 const catRgb = catColors[cat] || '255,255,255';
                 const code = p.project_code || '';
-                return `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="prjOpenLanding('${p.slug}');showSection('projects')">
+                return `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="prjCameFrom='myprojects';prjOpenLanding('${p.slug}');showSection('projects')">
                     <div style="width:8px;height:8px;border-radius:50%;background:${sc};flex-shrink:0"></div>
                     <div style="flex:1;min-width:0">
                         <div style="display:flex;align-items:center;gap:8px">
@@ -5006,7 +5095,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
                     const catIcon = catIcons[cat] || '';
                     const catRgb = catColors[cat] || '255,255,255';
                     const code = p.project_code || '';
-                    return `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="prjOpenLanding('${p.slug}')">
+                    return `<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'" onclick="prjCameFrom='projects';prjOpenLanding('${p.slug}')">
                         <div style="width:8px;height:8px;border-radius:50%;background:${sc};flex-shrink:0"></div>
                         <div style="flex:1;min-width:0">
                             <div style="display:flex;align-items:center;gap:8px">
@@ -5343,10 +5432,15 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
         // ════════════════════════════════════════════════
         let prjLandingData = null;
         let prjCurrentSlug = '';
+        let prjCameFrom = 'projects';
 
         function prjBackToList() {
             document.getElementById('prjLandingView').style.display = 'none';
-            document.getElementById('prjListView').style.display = '';
+            if (prjCameFrom === 'myprojects') {
+                showSection('myprojects');
+            } else {
+                document.getElementById('prjListView').style.display = '';
+            }
         }
 
         async function prjOpenLanding(slug) {
@@ -5357,11 +5451,16 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
             document.getElementById('prjLandingHeader').innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.3)">Lade Projektdaten…</div>';
             document.getElementById('prjLandingResources').innerHTML = '';
             document.getElementById('prjLandingData').innerHTML = '';
+            // Reset to Übersicht main tab
+            prjSwitchMainTab('overview');
+            const backBtn = document.getElementById('prjBackBtn');
+            if (backBtn) backBtn.textContent = prjCameFrom === 'myprojects' ? '← Meine Projekte' : '← Alle Projekte';
 
             try {
                 const resp = await fetch(`${API}/projects/${slug}/landing`, { headers: H() });
                 if (!resp.ok) throw new Error('Projekt nicht gefunden');
                 prjLandingData = await resp.json();
+                prjLandingData.slug = slug;
                 prjRenderLanding();
             } catch(e) {
                 document.getElementById('prjLandingHeader').innerHTML = `<div style="text-align:center;padding:20px;color:var(--error)">${e.message}</div>`;
@@ -5495,7 +5594,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
 
             // ── Left: Verfügbare Ressourcen ──
             const tile = (icon, label, available, detail, sub, tabTarget) => `
-                <div onclick="${tabTarget ? `prjSwitchTab('${tabTarget}')` : ''}" style="background:var(--navy-card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all 0.15s" onmouseover="this.style.borderColor='rgba(42,127,142,0.3)'" onmouseout="this.style.borderColor='var(--border)'">
+                <div onclick="${tabTarget ? `prjSwitchMainTab('pm');prjSwitchTab('${tabTarget}')` : ''}" style="background:var(--navy-card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all 0.15s" onmouseover="this.style.borderColor='rgba(42,127,142,0.3)'" onmouseout="this.style.borderColor='var(--border)'">
                     <div style="font-size:18px;width:32px;text-align:center">${icon}</div>
                     <div style="flex:1;min-width:0">
                         <div style="font-size:13px;font-weight:600;color:white">${label}</div>
@@ -5650,15 +5749,65 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
 
         let prjActiveTab = 'overview';
 
+        function prjSwitchMainTab(tab) {
+            // Main tabs: overview, inhalt, pm
+            document.querySelectorAll('#prjTabBar .prj-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+            document.querySelectorAll('.prj-main-tab-content').forEach(c => c.classList.remove('active'));
+            const mainMap = {overview:'prjMainOverview', inhalt:'prjMainInhalt', pm:'prjMainPm'};
+            const el = document.getElementById(mainMap[tab]);
+            if (el) el.classList.add('active');
+            // On PM open, render first sub-tab
+            if (tab === 'pm' && prjLandingData) {
+                prjSwitchTab('auftrag');
+            }
+            // On inhalt open, render module status badges
+            if (tab === 'inhalt' && prjLandingData) {
+                prjRenderModuleStatus();
+            }
+        }
+
         function prjSwitchTab(tab) {
             prjActiveTab = tab;
-            document.querySelectorAll('.prj-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-            document.querySelectorAll('.prj-tab-content').forEach(c => c.classList.remove('active'));
-            const tabMap = {overview:'prjTabOverview',auftrag:'prjTabAuftrag',planung:'prjTabPlanung',meetings:'prjTabMeetings',deliverables:'prjTabDeliverables',dokumente:'prjTabDokumente',modelle:'prjTabModelle',risiken:'prjTabRisiken',kommunikation:'prjTabKommunikation',budget:'prjTabBudget',learnings:'prjTabLearnings'};
+            // Only toggle PM sub-tabs
+            document.querySelectorAll('#prjMainPm .prj-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+            document.querySelectorAll('#prjMainPm .prj-tab-content').forEach(c => c.classList.remove('active'));
+            const tabMap = {auftrag:'prjTabAuftrag',planung:'prjTabPlanung',meetings:'prjTabMeetings',deliverables:'prjTabDeliverables',dokumente:'prjTabDokumente',risiken:'prjTabRisiken',kommunikation:'prjTabKommunikation',budget:'prjTabBudget',learnings:'prjTabLearnings'};
             const el = document.getElementById(tabMap[tab]);
             if (el) el.classList.add('active');
-            // Render tab content on first open
             if (prjLandingData) prjRenderTab(tab);
+        }
+
+        function prjLaunchModule(module) {
+            // Navigate to the Behavioral Design module with project context pre-loaded
+            const slug = prjLandingData?.slug || '';
+            const code = prjLandingData?.project?.metadata?.project_code || '';
+            const customerCode = prjLandingData?.project?.client?.customer_code || '';
+            const customerName = prjLandingData?.project?.client?.name || '';
+
+            // Store project context for the module
+            window._prjContext = { slug, code, customerCode, customerName, fromProject: true };
+
+            // Switch to the module section
+            navDropClick(module);
+
+            // Show toast with context info
+            showToast(`🔗 ${code || slug} → ${module.charAt(0).toUpperCase() + module.slice(1)}`, 'success');
+        }
+
+        function prjRenderModuleStatus() {
+            if (!prjLandingData) return;
+            const res = prjLandingData.resources || {};
+            const modules = ['context','segmente','journey','nutzen','architektur','model','audit','wirkung','evidenz'];
+            modules.forEach(mod => {
+                const el = document.getElementById('prjModStatus_' + mod);
+                if (!el) return;
+                const hasData = res[mod] || res[mod + '_analysis'];
+                if (hasData) {
+                    el.innerHTML = '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(52,211,153,0.1);color:#34d399;border:1px solid rgba(52,211,153,0.2)">✓ Daten vorhanden</span>';
+                } else {
+                    el.innerHTML = '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.06)">Noch leer</span>';
+                }
+            });
         }
 
         function prjRenderTab(tab) {
