@@ -634,6 +634,7 @@ def get_db():
                         created_by VARCHAR(320),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     # Contexts / Ausgangslage table
+                    conn.execute(text("ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS lead_code VARCHAR(30)"))
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS contexts (
                         id VARCHAR PRIMARY KEY, client VARCHAR(500),
                         project VARCHAR(500), domain VARCHAR(20),
@@ -8095,7 +8096,7 @@ async def crm_update_deal(did: str, request: Request, user=Depends(require_permi
     try:
         data = await request.json()
         sets, params = [], {"id": did}
-        for f in ["company_id","contact_id","title","stage","value","probability","source","next_action","next_action_date","owner","context_id","notes","lost_reason"]:
+        for f in ["company_id","contact_id","title","stage","value","probability","source","next_action","next_action_date","owner","context_id","notes","lost_reason","lead_code"]:
             if f in data:
                 sets.append(f"{f} = :{f}"); params[f] = data[f]
         if "stage" in data:
@@ -8123,6 +8124,77 @@ async def crm_delete_deal(did: str, user=Depends(require_permission("lead.delete
         return {"status": "deleted"}
     except Exception as e:
         db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.post("/api/crm/deals/generate-lead-codes")
+async def crm_generate_lead_codes(user=Depends(require_permission("lead.update"))):
+    """Generate lead_codes for all deals that don't have one. Schema: L-{PREFIX}-{B/N}-{YY}-{NNN}"""
+    # Prefix mapping: company name fragments → code
+    PREFIX_MAP = {
+        "ubs": "UBS", "alpla": "ALP", "porr": "PORR", "lukb": "LUKB", "helsana": "HELS",
+        "helvetia": "HELV", "geberit": "GEB", "sbb": "SBB", "swisscom": "SWC", "roche": "ROC",
+        "bmw": "BMW", "css": "CSS", "kpt": "KPT", "denner": "DEN", "post ": "POST",
+        "postfinance": "POSTF", "a1 ": "A1", "a1 telekom": "A1", "migros-gen": "MIG",
+        "migrosbank": "MGB", "assura": "ASSUR", "raiffeisen": "RBI", "ringier": "RIN",
+        "kaufland": "KAUF", "innosuisse": "INNO", "mövenpick": "MOV", "energie": "ENS",
+        "lindt": "LINDT", "ds studio": "DSS", "david schärer": "DSS", "sob": "SOB",
+        "südostbahn": "SOB", "erz ": "ERZ", "entsorgung": "ERZ", "basel": "BST",
+        "klima zürich": "KLZH", "kanton zürich": "KTZH", "ypsomed": "YPS",
+        "hofer": "HOT", "bfe": "BFE", "bundesamt": "BFE", "industriellen": "IVOO",
+        "iv-oö": "IVOO", "verband schweizer": "VSM", "puc": "PUC",
+        "auto-suisse": "AUTS", "österreichische post": "POSTA",
+        "schweiz. post": "POST", "schweizerische post": "POST",
+    }
+    # Known FehrAdvice customers (Bestandskunden)
+    BESTANDS = {"UBS","ALP","PORR","LUKB","HELS","HELV","GEB","SBB","SWC","ROC","BMW","CSS",
+                "KPT","DEN","POST","A1","MIG","MGB","RBI","RIN","LINDT","SOB","BFE","MOV",
+                "DSS","HOT","YPS","ERZ","BST","POSTA","ENS","ASSUR","PUC","IVOO"}
+
+    db = get_db()
+    try:
+        rows = db.execute(text("SELECT id, company_name, title, created_at, lead_code FROM crm_deals ORDER BY created_at")).fetchall()
+        counters = {}  # PREFIX-B/N-YY → count
+        updated = 0
+        results = []
+        for r in rows:
+            if r.lead_code:
+                results.append({"id": r.id, "lead_code": r.lead_code, "status": "exists"})
+                # Track counter
+                parts = r.lead_code.split("-")
+                if len(parts) >= 5:
+                    key = f"{parts[1]}-{parts[2]}-{parts[3]}"
+                    try: counters[key] = max(counters.get(key, 0), int(parts[4]))
+                    except: pass
+                continue
+            # Map company name to prefix
+            cname = (r.company_name or r.title or "").lower()
+            prefix = None
+            for frag, code in PREFIX_MAP.items():
+                if frag in cname:
+                    prefix = code; break
+            if not prefix:
+                # Try first word
+                first = cname.split()[0].upper()[:4] if cname.strip() else "UNK"
+                prefix = first
+            # B or N
+            typ = "B" if prefix in BESTANDS else "N"
+            # Year from created_at
+            yr = str(r.created_at)[:4][-2:] if r.created_at else "26"
+            # Counter
+            key = f"{prefix}-{typ}-{yr}"
+            counters[key] = counters.get(key, 0) + 1
+            num = str(counters[key]).zfill(3)
+            lead_code = f"L-{prefix}-{typ}-{yr}-{num}"
+            db.execute(text("UPDATE crm_deals SET lead_code = :lc, updated_at = CURRENT_TIMESTAMP WHERE id = :id"),
+                       {"lc": lead_code, "id": r.id})
+            updated += 1
+            results.append({"id": r.id, "company": r.company_name, "lead_code": lead_code})
+        db.commit()
+        return {"updated": updated, "total": len(rows), "results": results}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lead code generation: {e}")
+        raise HTTPException(500, str(e))
     finally: db.close()
 
 # ── Activities ──
