@@ -7023,6 +7023,135 @@ async def admin_embed_all(user=Depends(require_permission("document.manage_embed
 
 # ── Leads API ────────────────────────────────────
 # ══════════════════════════════════════════════════════
+# ── Zefix (Swiss Commercial Register) via LINDAS SPARQL ──
+# ═════════════════════════════════════════════════════════
+
+ZEFIX_SPARQL_URL = "https://lindas.admin.ch/query"
+
+def _zefix_sparql(query: str, timeout: int = 15) -> list:
+    """Execute SPARQL query against LINDAS Zefix endpoint."""
+    import urllib.parse
+    params = urllib.parse.urlencode({"query": query})
+    url = f"{ZEFIX_SPARQL_URL}?{params}"
+    headers = {"Accept": "application/sparql-results+json", "User-Agent": "BEATRIX/3.7"}
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    req = urllib.request.Request(url, headers=headers)
+    resp = urllib.request.urlopen(req, context=ctx, timeout=timeout)
+    data = json.loads(resp.read().decode())
+    return data.get("results", {}).get("bindings", [])
+
+def _zefix_search(name: str, limit: int = 10) -> list:
+    """Search Zefix by company name, return structured results."""
+    # Escape single quotes
+    safe_name = name.replace("'", "\\'")
+    query = f"""
+    PREFIX schema: <http://schema.org/>
+    PREFIX admin: <https://schema.ld.admin.ch/>
+    SELECT DISTINCT ?company ?legalName ?name ?uid ?legalForm ?street ?locality ?postalCode ?municipality ?desc
+    FROM <https://lindas.admin.ch/foj/zefix>
+    WHERE {{
+      ?company a admin:ZefixOrganisation ;
+               schema:legalName ?legalName .
+      FILTER(CONTAINS(LCASE(?legalName), LCASE('{safe_name}')))
+      OPTIONAL {{ ?company schema:name ?name . FILTER(LANG(?name) = '' || LANG(?name) = 'de') }}
+      OPTIONAL {{ ?company schema:description ?desc }}
+      OPTIONAL {{ ?company schema:identifier ?uidNode . FILTER(CONTAINS(STR(?uidNode), 'UID')) . ?uidNode schema:value ?uid }}
+      OPTIONAL {{ ?company schema:additionalType/schema:name ?legalForm . FILTER(LANG(?legalForm) = 'de') }}
+      OPTIONAL {{ ?company schema:address ?addr . ?addr schema:streetAddress ?street }}
+      OPTIONAL {{ ?company schema:address ?addr2 . ?addr2 schema:addressLocality ?locality }}
+      OPTIONAL {{ ?company schema:address ?addr3 . ?addr3 schema:postalCode ?postalCode }}
+      OPTIONAL {{ ?company admin:municipality/schema:name ?municipality }}
+    }}
+    LIMIT {limit}
+    """
+    raw = _zefix_sparql(query)
+
+    # Deduplicate by company IRI (multiple language names create dupes)
+    seen = {}
+    for r in raw:
+        cid = r.get("company", {}).get("value", "")
+        if cid not in seen:
+            seen[cid] = {
+                "zefix_id": cid.split("/")[-1] if cid else "",
+                "legal_name": r.get("legalName", {}).get("value", ""),
+                "name": r.get("name", {}).get("value", ""),
+                "uid": r.get("uid", {}).get("value", ""),
+                "legal_form": r.get("legalForm", {}).get("value", ""),
+                "street": r.get("street", {}).get("value", ""),
+                "locality": r.get("locality", {}).get("value", ""),
+                "postal_code": r.get("postalCode", {}).get("value", ""),
+                "municipality": r.get("municipality", {}).get("value", ""),
+                "description": (r.get("desc", {}).get("value", "") or "")[:300],
+            }
+        else:
+            # Merge: prefer German name, fill blanks
+            existing = seen[cid]
+            for field in ["name", "uid", "legal_form", "street", "locality", "postal_code", "municipality", "description"]:
+                if not existing.get(field) and r.get(field, {}).get("value"):
+                    val = r.get(field, {}).get("value", "")
+                    existing[field] = val[:300] if field == "description" else val
+
+    return list(seen.values())
+
+@app.get("/api/zefix/search")
+async def zefix_search(q: str = "", limit: int = 10, user=Depends(require_permission("crm.read"))):
+    """Search Swiss Commercial Register (Zefix) via LINDAS SPARQL. Free, no auth needed."""
+    if not q or len(q) < 2:
+        raise HTTPException(400, "Query must be at least 2 characters")
+    try:
+        results = _zefix_search(q, min(limit, 25))
+        return {"query": q, "count": len(results), "source": "zefix_lindas_sparql", "results": results}
+    except Exception as e:
+        logger.error(f"Zefix search error: {e}")
+        raise HTTPException(502, f"Zefix SPARQL error: {str(e)[:200]}")
+
+@app.get("/api/zefix/lookup/{uid}")
+async def zefix_lookup_uid(uid: str, user=Depends(require_permission("crm.read"))):
+    """Lookup a company by UID (CHE number)."""
+    safe_uid = uid.replace("'", "").replace('"', '').strip()
+    query = f"""
+    PREFIX schema: <http://schema.org/>
+    PREFIX admin: <https://schema.ld.admin.ch/>
+    SELECT ?company ?legalName ?name ?legalForm ?street ?locality ?postalCode ?municipality ?desc
+    FROM <https://lindas.admin.ch/foj/zefix>
+    WHERE {{
+      ?company a admin:ZefixOrganisation ;
+               schema:legalName ?legalName ;
+               schema:identifier ?uidNode .
+      ?uidNode schema:value '{safe_uid}' .
+      FILTER(CONTAINS(STR(?uidNode), 'UID'))
+      OPTIONAL {{ ?company schema:name ?name }}
+      OPTIONAL {{ ?company schema:description ?desc }}
+      OPTIONAL {{ ?company schema:additionalType/schema:name ?legalForm . FILTER(LANG(?legalForm) = 'de') }}
+      OPTIONAL {{ ?company schema:address ?addr . ?addr schema:streetAddress ?street }}
+      OPTIONAL {{ ?company schema:address ?addr2 . ?addr2 schema:addressLocality ?locality }}
+      OPTIONAL {{ ?company schema:address ?addr3 . ?addr3 schema:postalCode ?postalCode }}
+      OPTIONAL {{ ?company admin:municipality/schema:name ?municipality }}
+    }}
+    LIMIT 5
+    """
+    try:
+        raw = _zefix_sparql(query)
+        if not raw:
+            return {"uid": safe_uid, "found": False}
+        r = raw[0]
+        return {
+            "uid": safe_uid, "found": True,
+            "legal_name": r.get("legalName", {}).get("value", ""),
+            "name": r.get("name", {}).get("value", ""),
+            "legal_form": r.get("legalForm", {}).get("value", ""),
+            "street": r.get("street", {}).get("value", ""),
+            "locality": r.get("locality", {}).get("value", ""),
+            "postal_code": r.get("postalCode", {}).get("value", ""),
+            "municipality": r.get("municipality", {}).get("value", ""),
+            "description": (r.get("desc", {}).get("value", "") or "")[:300],
+        }
+    except Exception as e:
+        logger.error(f"Zefix UID lookup error: {e}")
+        raise HTTPException(502, f"Zefix error: {str(e)[:200]}")
+
 # ── CRM API ──────────────────────────────────────────
 # ══════════════════════════════════════════════════════
 
@@ -8060,7 +8189,36 @@ async def crm_create_company(request: Request, user=Depends(require_permission("
             logger.warning(f"GitHub registry: {ge}")
             gh_status = f"error: {ge}"
 
-        return {"id": cid, "code": code, "status": "created", "github": gh_status}
+        # 3. Auto-enrich from Zefix (Swiss Commercial Register)
+        zefix_data = None
+        try:
+            zefix_results = _zefix_search(name, 3)
+            if zefix_results:
+                # Find best match (exact or closest)
+                best = None
+                for zr in zefix_results:
+                    if zr.get("legal_name", "").lower() == name.lower():
+                        best = zr; break
+                if not best:
+                    best = zefix_results[0]
+                zefix_data = best
+                # Auto-fill address in DB if not provided
+                if best.get("locality") and not data.get("address"):
+                    addr_parts = [best.get("street",""), f"{best.get('postal_code','')} {best.get('locality','')}".strip()]
+                    addr = ", ".join(p for p in addr_parts if p)
+                    if addr:
+                        db.execute(text("UPDATE crm_companies SET address = :addr WHERE id = :id AND (address IS NULL OR address = '')"),
+                            {"addr": addr, "id": cid})
+                        db.commit()
+                # Store UID in notes if found
+                if best.get("uid") and not data.get("notes"):
+                    db.execute(text("UPDATE crm_companies SET notes = :n WHERE id = :id AND (notes IS NULL OR notes = '')"),
+                        {"n": f"UID: {best['uid']} | Rechtsform: {best.get('legal_form','')} | Zweck: {best.get('description','')[:150]}", "id": cid})
+                    db.commit()
+        except Exception as ze:
+            logger.warning(f"Zefix enrichment: {ze}")
+
+        return {"id": cid, "code": code, "status": "created", "github": gh_status, "zefix": zefix_data}
     except HTTPException: raise
     except Exception as e:
         db.rollback(); raise HTTPException(500, str(e))
