@@ -4739,8 +4739,9 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
     history = body.get("history", [])
     current_draft = body.get("current_draft", {})
     forced_intent = body.get("intent", "")
+    attachments = body.get("attachments", [])
 
-    if not message:
+    if not message and not attachments:
         return JSONResponse({"error": "message required"}, status_code=400)
     if not ANTHROPIC_API_KEY:
         return JSONResponse({"error": "Claude API nicht konfiguriert"}, status_code=501)
@@ -4831,7 +4832,26 @@ Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
     draft_note = ""
     if current_draft:
         draft_note = f"\n\nAKTUELLER ENTWURF:\n{json.dumps(current_draft, ensure_ascii=False, indent=2)}\nDer User möchte diesen Entwurf anpassen."
-    messages.append({"role": "user", "content": message})
+
+    # Build user message content with attachments (images + documents)
+    user_content = []
+    doc_context = ""
+    for att in attachments:
+        if att.get("type") == "image" and att.get("image_base64"):
+            user_content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": att.get("media_type", "image/png"),
+                    "data": att["image_base64"]
+                }
+            })
+        elif att.get("type") == "document" and att.get("content_text"):
+            doc_context += f"\n\n--- DOKUMENT: {att.get('name', 'Datei')} ---\n{att['content_text'][:30000]}\n--- ENDE DOKUMENT ---\n"
+    if doc_context:
+        message += f"\n\nHochgeladene Dokumente:{doc_context}"
+    user_content.append({"type": "text", "text": message})
+    messages.append({"role": "user", "content": user_content})
 
     async def event_generator():
         ctx = _ssl.create_default_context()
