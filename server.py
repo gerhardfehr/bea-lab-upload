@@ -7160,6 +7160,149 @@ async def zefix_lookup_uid(uid: str, user=Depends(require_permission("crm.read")
         logger.error(f"Zefix UID lookup error: {e}")
         raise HTTPException(502, f"Zefix error: {str(e)[:200]}")
 
+# ── Handelsregister.ai (German Commercial Register) ──
+# ══════════════════════════════════════════════════════
+HANDELSREGISTER_API_KEY = os.getenv("HANDELSREGISTER_API_KEY", "")
+
+def _hr_api_request(endpoint: str, params: dict, timeout: int = 15) -> dict:
+    """Make a request to handelsregister.ai API."""
+    import urllib.parse, urllib.request, ssl, json as _json
+    if not HANDELSREGISTER_API_KEY:
+        raise ValueError("HANDELSREGISTER_API_KEY not configured")
+    query_string = urllib.parse.urlencode(params, doseq=True)
+    url = f"https://handelsregister.ai/api/v1/{endpoint}?{query_string}"
+    headers = {
+        "x-api-key": HANDELSREGISTER_API_KEY,
+        "Accept": "application/json",
+        "User-Agent": "BEATRIX/3.7"
+    }
+    ctx = ssl.create_default_context()
+    req = urllib.request.Request(url, headers=headers)
+    resp = urllib.request.urlopen(req, context=ctx, timeout=timeout)
+    return _json.loads(resp.read().decode())
+
+def _hr_search(name: str, limit: int = 10) -> list:
+    """Search German Commercial Register via handelsregister.ai."""
+    data = _hr_api_request("search-organizations", {"q": name, "limit": min(limit, 25)})
+    results = []
+    for item in (data if isinstance(data, list) else data.get("results", data.get("data", []))):
+        if isinstance(item, dict):
+            addr = item.get("address", {}) or {}
+            reg = item.get("registration", {}) or {}
+            results.append({
+                "name": item.get("name", ""),
+                "legal_form": item.get("legal_form", ""),
+                "register_type": reg.get("register_type", item.get("register_type", "")),
+                "register_number": reg.get("register_number", item.get("register_number", "")),
+                "register_court": reg.get("court", item.get("register_court", "")),
+                "status": item.get("status", ""),
+                "street": addr.get("street", ""),
+                "house_number": addr.get("house_number", ""),
+                "zip_code": addr.get("zip_code", addr.get("postal_code", "")),
+                "city": addr.get("city", ""),
+                "country": addr.get("country_code", "DE"),
+                "description": (item.get("purpose", item.get("description", "")) or "")[:400],
+                "company_id": item.get("id", item.get("company_id", "")),
+            })
+    return results
+
+def _hr_fetch(query: str) -> dict | None:
+    """Fetch detailed company info from handelsregister.ai."""
+    try:
+        data = _hr_api_request("fetch-organization", {"q": query, "ai_search": "on-default"})
+        if not data or (isinstance(data, dict) and data.get("error")):
+            return None
+        addr = data.get("address", {}) or {}
+        reg = data.get("registration", {}) or {}
+        cap = data.get("capital", {}) or {}
+        mgmt = data.get("management", {}) or {}
+        return {
+            "name": data.get("name", ""),
+            "legal_form": data.get("legal_form", ""),
+            "register_type": reg.get("register_type", ""),
+            "register_number": reg.get("register_number", ""),
+            "register_court": reg.get("court", ""),
+            "status": data.get("status", ""),
+            "street": f"{addr.get('street', '')} {addr.get('house_number', '')}".strip(),
+            "zip_code": addr.get("zip_code", addr.get("postal_code", "")),
+            "city": addr.get("city", ""),
+            "country": addr.get("country_code", "DE"),
+            "description": (data.get("purpose", data.get("description", "")) or "")[:400],
+            "capital_amount": cap.get("amount"),
+            "capital_currency": cap.get("currency", "EUR"),
+            "managing_director": mgmt.get("managing_director", {}).get("name", "") if isinstance(mgmt.get("managing_director"), dict) else "",
+            "company_id": data.get("id", ""),
+        }
+    except Exception as e:
+        logger.warning(f"HR fetch error: {e}")
+        return None
+
+@app.get("/api/handelsregister/search")
+async def handelsregister_search(q: str = "", limit: int = 10, user=Depends(require_permission("crm.read"))):
+    """Search German Commercial Register via handelsregister.ai API."""
+    if not HANDELSREGISTER_API_KEY:
+        raise HTTPException(503, "Handelsregister API key not configured. Set HANDELSREGISTER_API_KEY on Railway.")
+    if not q or len(q) < 2:
+        raise HTTPException(400, "Query must be at least 2 characters")
+    try:
+        results = _hr_search(q, min(limit, 25))
+        return {"query": q, "count": len(results), "source": "handelsregister_ai", "results": results}
+    except Exception as e:
+        logger.error(f"Handelsregister search error: {e}")
+        raise HTTPException(502, f"Handelsregister API error: {str(e)[:200]}")
+
+@app.get("/api/handelsregister/lookup")
+async def handelsregister_lookup(q: str = "", user=Depends(require_permission("crm.read"))):
+    """Fetch detailed company info from handelsregister.ai."""
+    if not HANDELSREGISTER_API_KEY:
+        raise HTTPException(503, "Handelsregister API key not configured")
+    if not q or len(q) < 2:
+        raise HTTPException(400, "Query must be at least 2 characters")
+    try:
+        result = _hr_fetch(q)
+        if not result:
+            return {"query": q, "found": False}
+        return {"query": q, "found": True, **result}
+    except Exception as e:
+        logger.error(f"Handelsregister lookup error: {e}")
+        raise HTTPException(502, f"Handelsregister error: {str(e)[:200]}")
+
+@app.get("/api/registry/search")
+async def unified_registry_search(q: str = "", limit: int = 10, country: str = "", user=Depends(require_permission("crm.read"))):
+    """Unified search across all connected company registers (CH: Zefix, DE: Handelsregister.ai)."""
+    if not q or len(q) < 2:
+        raise HTTPException(400, "Query must be at least 2 characters")
+    all_results = []
+    errors = []
+    # Search Zefix (CH) - always free
+    if country in ("", "CH", "ch"):
+        try:
+            ch_results = _zefix_search(q, min(limit, 10))
+            for r in ch_results:
+                r["_source"] = "zefix"
+                r["_country"] = "CH"
+                r["_flag"] = "🇨🇭"
+            all_results.extend(ch_results)
+        except Exception as e:
+            errors.append(f"Zefix: {str(e)[:100]}")
+    # Search Handelsregister (DE) - needs API key
+    if country in ("", "DE", "de") and HANDELSREGISTER_API_KEY:
+        try:
+            de_results = _hr_search(q, min(limit, 10))
+            for r in de_results:
+                r["_source"] = "handelsregister_ai"
+                r["_country"] = "DE"
+                r["_flag"] = "🇩🇪"
+            all_results.extend(de_results)
+        except Exception as e:
+            errors.append(f"Handelsregister: {str(e)[:100]}")
+    return {
+        "query": q, "count": len(all_results),
+        "sources": {"zefix": country in ("","CH","ch"), "handelsregister": bool(HANDELSREGISTER_API_KEY) and country in ("","DE","de")},
+        "results": all_results,
+        "errors": errors if errors else None
+    }
+
 # ── CRM API ──────────────────────────────────────────
 # ══════════════════════════════════════════════════════
 
@@ -8239,7 +8382,48 @@ async def crm_create_company(request: Request, user=Depends(require_permission("
         except Exception as ze:
             logger.warning(f"Zefix enrichment: {ze}")
 
-        return {"id": cid, "code": code, "status": "created", "github": gh_status, "zefix": zefix_data}
+        # 4. Auto-enrich from Handelsregister.ai (DE) if no Zefix match
+        hr_data = None
+        if not zefix_data and HANDELSREGISTER_API_KEY:
+            try:
+                hr_results = _hr_search(name, 3)
+                if hr_results:
+                    best = None
+                    for hr in hr_results:
+                        if hr.get("name", "").lower() == name.lower():
+                            best = hr; break
+                    if not best:
+                        best = hr_results[0]
+                    hr_data = best
+                    # Store HR data in DB
+                    hr_updates, hr_params = [], {"id": cid}
+                    if best.get("legal_form"):
+                        hr_updates.append("legal_form = :lf"); hr_params["lf"] = best["legal_form"]
+                    if best.get("zip_code"):
+                        hr_updates.append("postal_code = :pc"); hr_params["pc"] = best["zip_code"]
+                    if best.get("city"):
+                        hr_updates.append("locality = :loc"); hr_params["loc"] = best["city"]
+                    if best.get("description"):
+                        hr_updates.append("zefix_description = :zd"); hr_params["zd"] = best["description"][:500]
+                    if best.get("register_number"):
+                        reg_id = f"{best.get('register_type','')} {best.get('register_number','')}".strip()
+                        if best.get("register_court"):
+                            reg_id += f" ({best['register_court']})"
+                        hr_updates.append("uid = :uid"); hr_params["uid"] = reg_id
+                    if best.get("city") and not data.get("address"):
+                        addr_parts = [f"{best.get('street','')} {best.get('house_number','')}".strip(),
+                                      f"{best.get('zip_code','')} {best.get('city','')}".strip()]
+                        addr = ", ".join(p for p in addr_parts if p)
+                        if addr:
+                            hr_updates.append("address = :addr"); hr_params["addr"] = addr
+                    if hr_updates:
+                        hr_updates.append("updated_at = CURRENT_TIMESTAMP")
+                        db.execute(text(f"UPDATE crm_companies SET {', '.join(hr_updates)} WHERE id = :id"), hr_params)
+                        db.commit()
+            except Exception as he:
+                logger.warning(f"Handelsregister enrichment: {he}")
+
+        return {"id": cid, "code": code, "status": "created", "github": gh_status, "zefix": zefix_data, "handelsregister": hr_data}
     except HTTPException: raise
     except Exception as e:
         db.rollback(); raise HTTPException(500, str(e))
@@ -8387,6 +8571,70 @@ async def crm_zefix_enrich_all(user=Depends(require_permission("crm.write"))):
         # Invalidate cache
         _github_companies_cache["ts"] = 0
         return results
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+# ── Handelsregister Enrichment ──
+@app.post("/api/crm/companies/{cid}/hr-enrich")
+async def crm_hr_enrich_company(cid: str, user=Depends(require_permission("crm.write"))):
+    """Enrich a single company with Handelsregister.ai data (German companies)."""
+    if not HANDELSREGISTER_API_KEY:
+        raise HTTPException(503, "HANDELSREGISTER_API_KEY not configured")
+    db = get_db()
+    try:
+        row = db.execute(text("SELECT * FROM crm_companies WHERE id = :id"), {"id": cid}).fetchone()
+        if not row:
+            raise HTTPException(404, "Firma nicht gefunden")
+        company = dict(row._mapping)
+        name = company.get("name", "")
+        if not name:
+            return {"status": "skip", "reason": "no name"}
+
+        results = _hr_search(name, 5)
+        if not results:
+            return {"status": "not_found", "name": name}
+
+        # Find best match
+        best = None
+        name_lower = name.lower()
+        for hr in results:
+            if hr.get("name", "").lower() == name_lower:
+                best = hr; break
+        if not best:
+            for hr in results:
+                if name_lower in hr.get("name", "").lower() or hr.get("name", "").lower() in name_lower:
+                    best = hr; break
+        if not best:
+            best = results[0]
+
+        # Update DB
+        hr_updates, hr_params = [], {"id": cid}
+        if best.get("legal_form"):
+            hr_updates.append("legal_form = :lf"); hr_params["lf"] = best["legal_form"]
+        if best.get("zip_code"):
+            hr_updates.append("postal_code = :pc"); hr_params["pc"] = best["zip_code"]
+        if best.get("city"):
+            hr_updates.append("locality = :loc"); hr_params["loc"] = best["city"]
+        if best.get("description"):
+            hr_updates.append("zefix_description = :zd"); hr_params["zd"] = best["description"][:500]
+        if best.get("register_number"):
+            reg_id = f"{best.get('register_type','')} {best.get('register_number','')}".strip()
+            if best.get("register_court"):
+                reg_id += f" ({best['register_court']})"
+            hr_updates.append("uid = :uid"); hr_params["uid"] = reg_id
+        if best.get("city") and not company.get("address"):
+            addr_parts = [f"{best.get('street','')} {best.get('house_number','')}".strip(),
+                          f"{best.get('zip_code','')} {best.get('city','')}".strip()]
+            addr = ", ".join(p for p in addr_parts if p)
+            if addr:
+                hr_updates.append("address = :addr"); hr_params["addr"] = addr
+        if hr_updates:
+            hr_updates.append("updated_at = CURRENT_TIMESTAMP")
+            db.execute(text(f"UPDATE crm_companies SET {', '.join(hr_updates)} WHERE id = :id"), hr_params)
+            db.commit()
+        return {"status": "enriched", "company": cid, "handelsregister": best, "fields_updated": len(hr_updates)-1}
     except HTTPException: raise
     except Exception as e:
         db.rollback(); raise HTTPException(500, str(e))
