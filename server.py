@@ -4783,6 +4783,108 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
     except Exception as e: db.rollback(); raise HTTPException(500, f"Datenbankfehler: {e}")
     finally: db.close()
 
+@app.post("/api/text/analyze")
+async def analyze_text(request: Request, user=Depends(require_auth)):
+    """Analyze pasted text: detect paper, extract title/language/category/tags via Claude."""
+    body = await request.json()
+    text = (body.get("text", "") or "").strip()
+    if not text or len(text) < 100:
+        return {"ok": False, "error": "Text zu kurz für Analyse"}
+
+    # 1. Paper detection (instant, no API call)
+    detection = detect_scientific_paper(text)
+
+    # 2. Claude metadata extraction (fast, small prompt)
+    title = ""
+    language = "de"
+    category = "general"
+    tags = []
+
+    if ANTHROPIC_API_KEY:
+        try:
+            import urllib.request, ssl
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            # Use first 3000 chars for analysis
+            excerpt = text[:3000]
+            prompt = f"""Analysiere diesen Text und extrahiere Metadaten. Antworte NUR mit validem JSON, kein anderer Text.
+
+TEXT (Anfang):
+{excerpt}
+
+Gib zurück:
+{{
+  "title": "exakter Titel des Dokuments/Papers (aus dem Text, nicht erfinden)",
+  "language": "de" oder "en" (Hauptsprache des Textes),
+  "category": "paper" oder "axiom" oder "note" oder "general",
+  "tags": ["max 5 relevante Schlagwörter"],
+  "summary": "1 Satz Zusammenfassung"
+}}"""
+
+            payload = json.dumps({
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 300,
+                "messages": [{"role": "user", "content": prompt}]
+            }).encode()
+
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=payload, method="POST",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json"
+                }
+            )
+            resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+            raw = resp.get("content", [{}])[0].get("text", "")
+
+            # Parse JSON from response
+            import re
+            json_match = re.search(r'\{[^{}]*\}', raw, re.DOTALL)
+            if json_match:
+                meta = json.loads(json_match.group())
+                title = meta.get("title", "")
+                language = meta.get("language", "de")
+                category = meta.get("category", "general")
+                tags = meta.get("tags", [])
+                summary = meta.get("summary", "")
+            else:
+                summary = ""
+        except Exception as e:
+            logger.warning(f"Text analysis Claude error: {e}")
+            summary = ""
+    else:
+        summary = ""
+
+    # 3. Fallback: heuristic title extraction if Claude failed
+    if not title:
+        lines = [l.strip() for l in text[:500].split('\n') if l.strip()]
+        title = lines[0][:100] if lines else "Untitled"
+
+    # 4. Auto-detect database target
+    db_target = "knowledge_base"
+    if detection["is_paper"]:
+        db_target = "research"
+        if category != "paper":
+            category = "paper"
+
+    return {
+        "ok": True,
+        "title": title,
+        "language": language,
+        "category": category,
+        "tags": tags[:5],
+        "summary": summary if 'summary' in dir() else "",
+        "database": db_target,
+        "paper_detected": detection["is_paper"],
+        "paper_score": detection["score"],
+        "paper_signals": detection["signals"][:8],
+        "chars": len(text)
+    }
+
 @app.get("/api/documents")
 async def list_documents(database: Optional[str] = None, limit: int = 50, user=Depends(require_auth)):
     db = get_db()
