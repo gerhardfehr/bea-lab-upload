@@ -702,13 +702,16 @@
                 <div class="file-list" id="fileList"></div>
             </div>
             <div class="text-section" id="text-section">
+                <div id="textAnalysisPreview" style="display:none;margin-bottom:16px;padding:14px 18px;background:rgba(42,127,142,0.06);border:1px solid rgba(42,127,142,0.2);border-radius:12px">
+                    <div id="textAnalysisContent" style="font-size:12px;color:var(--text-secondary)"></div>
+                </div>
                 <div class="input-group"><label>Titel</label><input type="text" class="input-field" id="textTitle" placeholder="z.B. Axiom INU-3200 Definition"></div>
                 <div class="input-row">
                     <div class="input-group"><label>Kategorie</label><select class="input-field" id="textCategory"><option value="general">Allgemein</option><option value="axiom">Axiom</option><option value="paper">Paper</option><option value="note">Notiz</option></select></div>
                     <div class="input-group"><label>Sprache</label><select class="input-field" id="textLang"><option value="de">Deutsch</option><option value="en">English</option></select></div>
                 </div>
                 <div class="input-group"><label>Tags</label><div class="tag-container" onclick="this.querySelector('.tag-input').focus()"><input type="text" class="tag-input" id="tagInput" placeholder="Tag eingeben + Enter"></div></div>
-                <div class="input-group"><label>Inhalt</label><textarea class="textarea-field" id="textContent" placeholder="Text oder Axiom-Definition hier einfügen..."></textarea></div>
+                <div class="input-group"><label>Inhalt</label><textarea class="textarea-field" id="textContent" placeholder="Text oder Axiom-Definition hier einfügen..." onpaste="setTimeout(()=>analyzeTextContent(),300)" oninput="debounceTextAnalysis()"></textarea></div>
             </div>
             <div class="actions">
                 <span class="upload-count" id="uploadCount"></span>
@@ -3117,6 +3120,100 @@
         function removeTag(t){tags=tags.filter(x=>x!==t);renderTags();}
         function renderTags(){const c=document.getElementById('tagContainer'),inp=document.getElementById('tagInput');c.innerHTML='';tags.forEach(t=>{const s=document.createElement('span');s.className='tag';s.innerHTML=`${t} <button onclick="removeTag('${t}')">&times;</button>`;c.appendChild(s);});c.appendChild(inp);}
 
+        // ── Text Auto-Analysis (on paste / input) ──
+        let textAnalysisTimer = null;
+        let lastAnalyzedLength = 0;
+
+        function debounceTextAnalysis() {
+            clearTimeout(textAnalysisTimer);
+            const text = document.getElementById('textContent').value;
+            updateCount();
+            // Only trigger if text changed significantly (>500 chars difference or first time)
+            if (Math.abs(text.length - lastAnalyzedLength) > 500 || (text.length > 300 && lastAnalyzedLength === 0)) {
+                textAnalysisTimer = setTimeout(() => analyzeTextContent(), 1500);
+            }
+        }
+
+        async function analyzeTextContent() {
+            const text = document.getElementById('textContent').value.trim();
+            const preview = document.getElementById('textAnalysisPreview');
+            const content = document.getElementById('textAnalysisContent');
+
+            if (text.length < 100) {
+                preview.style.display = 'none';
+                return;
+            }
+
+            lastAnalyzedLength = text.length;
+            preview.style.display = '';
+            content.innerHTML = '<span style="animation:blink 0.8s infinite">⏳</span> BEATRIX analysiert den Text...';
+
+            try {
+                const r = await fetch(`${API}/text/analyze`, {
+                    method: 'POST',
+                    headers: {...H(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text.slice(0, 5000)})
+                });
+                if (!r.ok) throw new Error('Analyse fehlgeschlagen');
+                const d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'Analyse fehlgeschlagen');
+
+                // Auto-fill fields
+                if (d.title && !document.getElementById('textTitle').value.trim()) {
+                    document.getElementById('textTitle').value = d.title;
+                }
+                if (d.language) {
+                    document.getElementById('textLang').value = d.language;
+                }
+                if (d.category) {
+                    document.getElementById('textCategory').value = d.category;
+                }
+                if (d.tags?.length && tags.length === 0) {
+                    tags = d.tags;
+                    renderTags();
+                }
+                // Auto-select database
+                if (d.database && d.database !== selectedDB) {
+                    const dbEl = document.querySelector(`.db-option[data-db="${d.database}"]`);
+                    if (dbEl) selectDB(dbEl);
+                }
+
+                // Show preview
+                const paperIcon = d.paper_detected ? '📚' : '📄';
+                const paperLabel = d.paper_detected
+                    ? `<span style="color:#34d399;font-weight:600">Wissenschaftliches Paper erkannt</span> (Score: ${d.paper_score})`
+                    : `<span style="color:var(--text-muted)">Kein Paper — normales Dokument</span>`;
+                const signalTags = d.paper_signals?.length
+                    ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${d.paper_signals.map(s => `<span style="padding:1px 6px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:4px;font-size:10px">${s}</span>`).join('')}</div>`
+                    : '';
+                const summaryHtml = d.summary
+                    ? `<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.02);border-radius:8px;font-style:italic;color:var(--text-secondary)">${d.summary}</div>`
+                    : '';
+                const autoFilled = [];
+                if (d.title) autoFilled.push(`Titel: "${d.title}"`);
+                if (d.language) autoFilled.push(`Sprache: ${d.language === 'en' ? 'English' : 'Deutsch'}`);
+                if (d.category) autoFilled.push(`Kategorie: ${d.category}`);
+                if (d.tags?.length) autoFilled.push(`Tags: ${d.tags.join(', ')}`);
+
+                content.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                        <span style="font-size:18px">${paperIcon}</span>
+                        <div>
+                            <div>${paperLabel}</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+                                ${d.chars?.toLocaleString() || '?'} Zeichen · ${autoFilled.length ? 'Felder auto-befüllt ✓' : ''}
+                            </div>
+                        </div>
+                    </div>
+                    ${signalTags}
+                    ${summaryHtml}
+                    ${d.paper_detected ? '<div style="margin-top:8px;font-size:11px;color:#34d399">→ Wird automatisch in die Paper-Datenbank auf GitHub übernommen</div>' : ''}
+                `;
+            } catch(e) {
+                content.innerHTML = `<span style="color:var(--error)">❌ ${e.message}</span>`;
+            }
+        }
+
         async function submitUpload() {
             const btn=document.getElementById('submitBtn');
             if(currentTab==='file'){
@@ -3129,7 +3226,7 @@
                 const title=document.getElementById('textTitle').value.trim(),content=document.getElementById('textContent').value.trim();
                 if(!content){showToast('Bitte Text eingeben','error');return;}
                 btn.disabled=true;btn.innerHTML='<div class="spinner"></div> Speichern...';
-                try{const r=await fetch(`${API}/text`,{method:'POST',headers:{...H(),'Content-Type':'application/json'},body:JSON.stringify({title:title||'Untitled',content,category:document.getElementById('textCategory').value,language:document.getElementById('textLang').value,tags,database:selectedDB})});if(r.status===401){doLogout();showToast('Sitzung abgelaufen','error');return;}if(!r.ok)throw new Error(await r.text());showToast('Text gespeichert','success');document.getElementById('textTitle').value='';document.getElementById('textContent').value='';tags=[];renderTags();}catch(e){showToast(e.message,'error');}
+                try{const r=await fetch(`${API}/text`,{method:'POST',headers:{...H(),'Content-Type':'application/json'},body:JSON.stringify({title:title||'Untitled',content,category:document.getElementById('textCategory').value,language:document.getElementById('textLang').value,tags,database:selectedDB})});if(r.status===401){doLogout();showToast('Sitzung abgelaufen','error');return;}if(!r.ok)throw new Error(await r.text());showToast('Text gespeichert','success');document.getElementById('textTitle').value='';document.getElementById('textContent').value='';tags=[];renderTags();lastAnalyzedLength=0;document.getElementById('textAnalysisPreview').style.display='none';}catch(e){showToast(e.message,'error');}
             }
             btn.disabled=false;btn.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> In Datenbank laden';loadStats();
         }
@@ -6904,7 +7001,7 @@ Parameter sind KONTEXTABHÄNGIG: λ(Ψ), β(Ψ), θ(Ψ) — KEINE Konstanten!`;
         }
 
         function showToast(msg,type='info'){const c=document.getElementById('toastContainer'),t=document.createElement('div');t.className=`toast ${type}`;t.innerHTML=`<span>${{success:'✓',error:'✗',info:'ℹ'}[type]||''}</span> ${msg}`;c.appendChild(t);setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(20px)';t.style.transition='0.3s';setTimeout(()=>t.remove(),300);},4000);}
-        function clearAll(){files=[];tags=[];renderFileList();renderTags();document.getElementById('textTitle').value='';document.getElementById('textContent').value='';updateCount();}
+        function clearAll(){files=[];tags=[];renderFileList();renderTags();document.getElementById('textTitle').value='';document.getElementById('textContent').value='';updateCount();lastAnalyzedLength=0;document.getElementById('textAnalysisPreview').style.display='none';}
         document.getElementById('textContent').addEventListener('input',updateCount);
 
         // ── Admin Dashboard ──────────────────────────────
