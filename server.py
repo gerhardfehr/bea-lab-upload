@@ -6335,7 +6335,16 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
     try:
         existing = db.query(Document).filter(Document.content_hash == content_hash).first()
         if existing:
-            raise HTTPException(409, f"Duplikat: Diese Datei wurde bereits hochgeladen als \"{existing.title}\" ({existing.created_at.strftime('%d.%m.%Y %H:%M')})")
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=409, content={
+                "duplicate": True,
+                "doc_id": str(existing.id),
+                "title": existing.title or "Unbekannt",
+                "date": existing.created_at.strftime('%d.%m.%Y %H:%M') if existing.created_at else "",
+                "category": existing.category or "document",
+                "tags": existing.tags.split(",") if existing.tags else [],
+                "message": f"Dieses Dokument wurde bereits am {existing.created_at.strftime('%d.%m.%Y')} erfolgreich in die BEATRIX-Wissensdatenbank aufgenommen."
+            })
         file_id = str(uuid.uuid4()); file_path = UPLOAD_DIR / f"{file_id}.{ext}"
         with open(file_path, "wb") as f: f.write(content_bytes)
         text_content = extract_text(str(file_path), ext)
@@ -6412,7 +6421,16 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
     try:
         existing = db.query(Document).filter(Document.content_hash == content_hash).first()
         if existing:
-            raise HTTPException(409, f"Duplikat: Dieser Text wurde bereits gespeichert als \"{existing.title}\" ({existing.created_at.strftime('%d.%m.%Y %H:%M')})")
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=409, content={
+                "duplicate": True,
+                "doc_id": str(existing.id),
+                "title": existing.title or "Unbekannt",
+                "date": existing.created_at.strftime('%d.%m.%Y %H:%M') if existing.created_at else "",
+                "category": existing.category or "document",
+                "tags": existing.tags.split(",") if existing.tags else [],
+                "message": f"Dieses Dokument wurde bereits am {existing.created_at.strftime('%d.%m.%Y')} erfolgreich in die BEATRIX-Wissensdatenbank aufgenommen."
+            })
 
         # Paper detection: only push papers to GitHub papers/evaluated/integrated/
         detection = detect_scientific_paper(request.content, request.title)
