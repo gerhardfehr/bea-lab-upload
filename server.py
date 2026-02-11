@@ -483,6 +483,7 @@ def get_db():
                         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages (session_id)"))
                     except Exception:
                         pass
+                    conn.commit()
                     # User insights / behavioral profiling table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS user_insights (
                         id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
