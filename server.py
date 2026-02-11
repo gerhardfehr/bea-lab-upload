@@ -483,6 +483,14 @@ def get_db():
                         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages (session_id)"))
                     except Exception:
                         pass
+                    # Chat sessions metadata table
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS chat_sessions (
+                        id VARCHAR(50) PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
+                        session_type VARCHAR(30) DEFAULT 'general',
+                        entities JSON DEFAULT '{}',
+                        context JSON DEFAULT '{}',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     conn.commit()
                     # User insights / behavioral profiling table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS user_insights (
@@ -793,7 +801,7 @@ def embed_document(db, doc_id: str):
     try:
         # Try pgvector first
         vec_str = f"[{','.join(str(v) for v in vec)}]"
-        db.execute(sql_text("UPDATE documents SET embedding = :vec WHERE id = :id"), {"vec": vec_str, "id": doc_id})
+        db.execute(text("UPDATE documents SET embedding = :vec WHERE id = :id"), {"vec": vec_str, "id": doc_id})
         db.commit()
         logger.info(f"Embedded doc (pgvector): {doc.title[:50]}")
         return True
@@ -802,7 +810,7 @@ def embed_document(db, doc_id: str):
         try:
             # Fallback: store as JSON text
             vec_json = json.dumps(vec)
-            db.execute(sql_text("UPDATE documents SET embedding_json = :vec WHERE id = :id"), {"vec": vec_json, "id": doc_id})
+            db.execute(text("UPDATE documents SET embedding_json = :vec WHERE id = :id"), {"vec": vec_json, "id": doc_id})
             db.commit()
             logger.info(f"Embedded doc (JSON): {doc.title[:50]}")
             return True
@@ -819,13 +827,13 @@ def embed_all_documents(db):
     from sqlalchemy import text as sql_text
     # Find docs without embeddings - try pgvector column first, then JSON
     try:
-        result = db.execute(sql_text("SELECT id, title, content FROM documents WHERE embedding IS NULL AND content IS NOT NULL"))
+        result = db.execute(text("SELECT id, title, content FROM documents WHERE embedding IS NULL AND content IS NOT NULL"))
         rows = result.fetchall()
         use_pgvector = True
     except Exception:
         db.rollback()
         try:
-            result = db.execute(sql_text("SELECT id, title, content FROM documents WHERE (embedding_json IS NULL OR embedding_json = '') AND content IS NOT NULL"))
+            result = db.execute(text("SELECT id, title, content FROM documents WHERE (embedding_json IS NULL OR embedding_json = '') AND content IS NOT NULL"))
             rows = result.fetchall()
             use_pgvector = False
         except Exception as e:
@@ -847,9 +855,9 @@ def embed_all_documents(db):
                 try:
                     if use_pgvector:
                         vec_str = f"[{','.join(str(v) for v in vec)}]"
-                        db.execute(sql_text("UPDATE documents SET embedding = :vec WHERE id = :id"), {"vec": vec_str, "id": batch[j][0]})
+                        db.execute(text("UPDATE documents SET embedding = :vec WHERE id = :id"), {"vec": vec_str, "id": batch[j][0]})
                     else:
-                        db.execute(sql_text("UPDATE documents SET embedding_json = :vec WHERE id = :id"), {"vec": json.dumps(vec), "id": batch[j][0]})
+                        db.execute(text("UPDATE documents SET embedding_json = :vec WHERE id = :id"), {"vec": json.dumps(vec), "id": batch[j][0]})
                     count += 1
                 except: pass
         db.commit()
@@ -1155,7 +1163,7 @@ def fact_check_user_claims(user_message: str, user_email: str, chat_doc_id: str 
             # Store in DB
             check_id = str(uuid.uuid4())
             try:
-                db.execute(sql_text("""
+                db.execute(text("""
                     INSERT INTO knowledge_checks (id, user_email, chat_doc_id, claim_text,
                         claim_topic, customer_code, verification_status, confidence_score,
                         evidence, evidence_source, is_quantitative, user_certainty)
@@ -1250,7 +1258,7 @@ def sync_user_profile_to_github(user_email: str):
         # ── 2) Knowledge Calibration from knowledge_checks ──
         calibration = {"total_claims": 0}
         try:
-            stats = db.execute(sql_text("""
+            stats = db.execute(text("""
                 SELECT COUNT(*),
                        SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END),
                        SUM(CASE WHEN verification_status='partially_verified' THEN 1 ELSE 0 END),
@@ -1273,11 +1281,11 @@ def sync_user_profile_to_github(user_email: str):
 
             # Overconfidence
             overconfident_pct = 0.0
-            certain_total = db.execute(sql_text(
+            certain_total = db.execute(text(
                 "SELECT COUNT(*) FROM knowledge_checks WHERE user_email=:e AND user_certainty='certain'"
             ), {"e": user_email}).scalar() or 0
             if certain_total > 0:
-                oc = db.execute(sql_text("""
+                oc = db.execute(text("""
                     SELECT COUNT(*) FROM knowledge_checks
                     WHERE user_email=:e AND user_certainty='certain'
                       AND verification_status IN ('unverified', 'novel')
@@ -1299,7 +1307,7 @@ def sync_user_profile_to_github(user_email: str):
                 label = "Wissensluecken"
 
             # Topic strengths & gaps
-            strengths = db.execute(sql_text("""
+            strengths = db.execute(text("""
                 SELECT claim_topic, COUNT(*) as cnt,
                        SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v
                 FROM knowledge_checks
@@ -1309,7 +1317,7 @@ def sync_user_profile_to_github(user_email: str):
                 LIMIT 5
             """), {"e": user_email}).fetchall()
 
-            gaps = db.execute(sql_text("""
+            gaps = db.execute(text("""
                 SELECT claim_topic, COUNT(*) as cnt,
                        SUM(CASE WHEN verification_status IN ('unverified','novel') THEN 1 ELSE 0 END) as g
                 FROM knowledge_checks
@@ -1320,7 +1328,7 @@ def sync_user_profile_to_github(user_email: str):
             """), {"e": user_email}).fetchall()
 
             # Customer knowledge
-            cust_knowledge = db.execute(sql_text("""
+            cust_knowledge = db.execute(text("""
                 SELECT customer_code, COUNT(*) as cnt,
                        SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v,
                        SUM(CASE WHEN verification_status='novel' THEN 1 ELSE 0 END) as n
@@ -1353,7 +1361,7 @@ def sync_user_profile_to_github(user_email: str):
         # ── 3) Behavioral Profile from user_insights (Ψ-dimensions) ──
         behavioral = {}
         try:
-            insights = db.execute(sql_text("""
+            insights = db.execute(text("""
                 SELECT question_category, answer_text, domain_signal, thinking_style,
                        abstraction_level, autonomy_signal, latency_ms
                 FROM user_insights WHERE user_email=:e
@@ -1387,17 +1395,17 @@ def sync_user_profile_to_github(user_email: str):
         # ── 4) Activity stats from chat ──
         activity = {}
         try:
-            chat_count = db.execute(sql_text(
+            chat_count = db.execute(text(
                 "SELECT COUNT(*) FROM documents WHERE source_type='chat_insight' AND uploaded_by=:e"
             ), {"e": user_email}).scalar() or 0
 
-            intent_dist = db.execute(sql_text("""
+            intent_dist = db.execute(text("""
                 SELECT category, COUNT(*) FROM documents
                 WHERE source_type='chat_insight' AND uploaded_by=:e
                 GROUP BY category ORDER BY COUNT(*) DESC
             """), {"e": user_email}).fetchall()
 
-            first_chat = db.execute(sql_text(
+            first_chat = db.execute(text(
                 "SELECT MIN(created_at) FROM documents WHERE source_type='chat_insight' AND uploaded_by=:e"
             ), {"e": user_email}).scalar()
 
@@ -1413,35 +1421,35 @@ def sync_user_profile_to_github(user_email: str):
         # ── 5) Belief & Bias Profile ──
         belief_profile = {}
         try:
-            b_total = db.execute(sql_text(
+            b_total = db.execute(text(
                 "SELECT COUNT(*) FROM belief_analyses WHERE user_email=:e"
             ), {"e": user_email}).scalar() or 0
             if b_total > 0:
-                avg_inf = db.execute(sql_text(
+                avg_inf = db.execute(text(
                     "SELECT AVG(informed_score) FROM belief_analyses WHERE user_email=:e AND bias_source='user'"
                 ), {"e": user_email}).scalar()
                 avg_inf = float(avg_inf or 0.5)
 
-                user_bias_count = db.execute(sql_text(
+                user_bias_count = db.execute(text(
                     "SELECT COUNT(*) FROM belief_analyses WHERE user_email=:e AND bias_source='user' AND belief_category='bias'"
                 ), {"e": user_email}).scalar() or 0
-                beatrix_bias_count = db.execute(sql_text(
+                beatrix_bias_count = db.execute(text(
                     "SELECT COUNT(*) FROM belief_analyses WHERE user_email=:e AND bias_source='beatrix'"
                 ), {"e": user_email}).scalar() or 0
                 belief_count = b_total - user_bias_count - beatrix_bias_count
 
-                top_biases = db.execute(sql_text("""
+                top_biases = db.execute(text("""
                     SELECT bias_type, COUNT(*) FROM belief_analyses
                     WHERE user_email=:e AND bias_type IS NOT NULL
                     GROUP BY bias_type ORDER BY COUNT(*) DESC LIMIT 8
                 """), {"e": user_email}).fetchall()
 
-                reasoning_dist = db.execute(sql_text("""
+                reasoning_dist = db.execute(text("""
                     SELECT reasoning_type, COUNT(*) FROM belief_analyses
                     WHERE user_email=:e AND bias_source='user' GROUP BY reasoning_type
                 """), {"e": user_email}).fetchall()
 
-                evidence_dist = db.execute(sql_text("""
+                evidence_dist = db.execute(text("""
                     SELECT evidence_basis, COUNT(*) FROM belief_analyses
                     WHERE user_email=:e AND bias_source='user' AND belief_category != 'bias'
                     GROUP BY evidence_basis
@@ -1492,7 +1500,7 @@ def sync_user_profile_to_github(user_email: str):
 
         # ── 7) Push calibration details separately (claim-level data) ──
         try:
-            recent_checks = db.execute(sql_text("""
+            recent_checks = db.execute(text("""
                 SELECT claim_text, claim_topic, customer_code, verification_status,
                        confidence_score, is_quantitative, user_certainty, created_at
                 FROM knowledge_checks WHERE user_email=:e
@@ -1526,7 +1534,7 @@ def sync_user_profile_to_github(user_email: str):
 
         # ── 9) Push beliefs & biases details to GitHub ──
         try:
-            recent_beliefs = db.execute(sql_text("""
+            recent_beliefs = db.execute(text("""
                 SELECT belief_text, belief_category, bias_type, bias_source,
                        informed_score, reasoning_type, evidence_basis, customer_code, created_at
                 FROM belief_analyses WHERE user_email=:e
@@ -1561,7 +1569,7 @@ def sync_user_profile_to_github(user_email: str):
 
         # ── 9) Push belief/bias details to GitHub ──
         try:
-            recent_beliefs = db.execute(sql_text("""
+            recent_beliefs = db.execute(text("""
                 SELECT belief_text, belief_category, bias_type, bias_source,
                        informed_score, reasoning_type, evidence_basis, customer_code, context, created_at
                 FROM belief_analyses WHERE user_email=:e
@@ -1749,7 +1757,7 @@ def analyze_beliefs_and_biases(user_message: str, beatrix_response: str, user_em
         for belief in beliefs[:5]:
             try:
                 bid = str(uuid.uuid4())
-                db.execute(sql_text("""
+                db.execute(text("""
                     INSERT INTO belief_analyses (id, user_email, chat_doc_id, belief_text,
                         belief_category, bias_type, bias_source, informed_score,
                         reasoning_type, evidence_basis, customer_code, context)
@@ -1776,7 +1784,7 @@ def analyze_beliefs_and_biases(user_message: str, beatrix_response: str, user_em
         for bias in user_biases[:3]:
             try:
                 bid = str(uuid.uuid4())
-                db.execute(sql_text("""
+                db.execute(text("""
                     INSERT INTO belief_analyses (id, user_email, chat_doc_id, belief_text,
                         belief_category, bias_type, bias_source, informed_score,
                         reasoning_type, evidence_basis, customer_code, context)
@@ -1800,7 +1808,7 @@ def analyze_beliefs_and_biases(user_message: str, beatrix_response: str, user_em
         for bias in beatrix_biases[:3]:
             try:
                 bid = str(uuid.uuid4())
-                db.execute(sql_text("""
+                db.execute(text("""
                     INSERT INTO belief_analyses (id, user_email, chat_doc_id, belief_text,
                         belief_category, bias_type, bias_source, informed_score,
                         reasoning_type, evidence_basis, customer_code, context)
@@ -1840,7 +1848,7 @@ def vector_search(db, query: str, limit: int = 8) -> list:
     # Try pgvector first
     try:
         vec_str = f"[{','.join(str(v) for v in query_vec)}]"
-        result = db.execute(sql_text("""
+        result = db.execute(text("""
             SELECT id, 1 - (embedding <=> :vec::vector) as similarity
             FROM documents WHERE embedding IS NOT NULL AND content IS NOT NULL
             ORDER BY embedding <=> :vec::vector LIMIT :lim
@@ -1857,7 +1865,7 @@ def vector_search(db, query: str, limit: int = 8) -> list:
         db.rollback()
     # Fallback: JSON embeddings + Python cosine similarity
     try:
-        result = db.execute(sql_text("SELECT id, embedding_json FROM documents WHERE embedding_json IS NOT NULL AND embedding_json != '' AND content IS NOT NULL"))
+        result = db.execute(text("SELECT id, embedding_json FROM documents WHERE embedding_json IS NOT NULL AND embedding_json != '' AND content IS NOT NULL"))
         rows = result.fetchall()
         if not rows: return []
         import math
@@ -1887,7 +1895,7 @@ def fulltext_search(db, query: str, limit: int = 8) -> list:
     from sqlalchemy import text as sql_text
     try:
         # Use plainto_tsquery for natural language queries (handles German + English)
-        result = db.execute(sql_text("""
+        result = db.execute(text("""
             SELECT id, 
                    ts_rank_cd(
                        setweight(to_tsvector('simple', COALESCE(title, '')), 'A') ||
@@ -2879,11 +2887,11 @@ async def admin_kb_stats(user=Depends(require_permission("platform.view_analytic
     from sqlalchemy import text as sql_text
     db = get_db()
     try:
-        total = db.execute(sql_text("SELECT COUNT(*) FROM documents")).scalar()
-        chat_insights = db.execute(sql_text("SELECT COUNT(*) FROM documents WHERE source_type='chat_insight'")).scalar()
-        by_intent = db.execute(sql_text("SELECT category, COUNT(*) as cnt FROM documents WHERE source_type='chat_insight' GROUP BY category ORDER BY cnt DESC")).fetchall()
-        by_user = db.execute(sql_text("SELECT uploaded_by, COUNT(*) as cnt FROM documents WHERE source_type='chat_insight' GROUP BY uploaded_by ORDER BY cnt DESC")).fetchall()
-        recent = db.execute(sql_text("SELECT title, category, uploaded_by, created_at FROM documents WHERE source_type='chat_insight' ORDER BY created_at DESC LIMIT 10")).fetchall()
+        total = db.execute(text("SELECT COUNT(*) FROM documents")).scalar()
+        chat_insights = db.execute(text("SELECT COUNT(*) FROM documents WHERE source_type='chat_insight'")).scalar()
+        by_intent = db.execute(text("SELECT category, COUNT(*) as cnt FROM documents WHERE source_type='chat_insight' GROUP BY category ORDER BY cnt DESC")).fetchall()
+        by_user = db.execute(text("SELECT uploaded_by, COUNT(*) as cnt FROM documents WHERE source_type='chat_insight' GROUP BY uploaded_by ORDER BY cnt DESC")).fetchall()
+        recent = db.execute(text("SELECT title, category, uploaded_by, created_at FROM documents WHERE source_type='chat_insight' ORDER BY created_at DESC LIMIT 10")).fetchall()
         return {
             "total_documents": total,
             "chat_insights": chat_insights,
@@ -2901,12 +2909,12 @@ async def admin_knowledge_calibration(user=Depends(require_permission("platform.
     db = get_db()
     try:
         # Total checks
-        total = db.execute(sql_text("SELECT COUNT(*) FROM knowledge_checks")).scalar() or 0
+        total = db.execute(text("SELECT COUNT(*) FROM knowledge_checks")).scalar() or 0
         if total == 0:
             return {"total_checks": 0, "users": [], "summary": "Noch keine Fact-Checks. Daten werden automatisch bei Chat-Interaktionen gesammelt."}
 
         # Per-user calibration profile
-        user_stats = db.execute(sql_text("""
+        user_stats = db.execute(text("""
             SELECT user_email,
                    COUNT(*) as total_claims,
                    SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as verified,
@@ -2937,7 +2945,7 @@ async def admin_knowledge_calibration(user=Depends(require_permission("platform.
             # Overconfidence: certain claims that are unverified
             overconfident = 0
             if certain > 0:
-                oc_result = db.execute(sql_text("""
+                oc_result = db.execute(text("""
                     SELECT COUNT(*) FROM knowledge_checks
                     WHERE user_email = :email
                       AND user_certainty = 'certain'
@@ -2946,7 +2954,7 @@ async def admin_knowledge_calibration(user=Depends(require_permission("platform.
                 overconfident = round(oc_result / certain * 100, 1)
 
             # Top topics
-            topics = db.execute(sql_text("""
+            topics = db.execute(text("""
                 SELECT claim_topic, COUNT(*) as cnt,
                        SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v
                 FROM knowledge_checks
@@ -2955,7 +2963,7 @@ async def admin_knowledge_calibration(user=Depends(require_permission("platform.
             """), {"email": r[0]}).fetchall()
 
             # Top customers
-            customers = db.execute(sql_text("""
+            customers = db.execute(text("""
                 SELECT customer_code, COUNT(*) as cnt,
                        SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v
                 FROM knowledge_checks
@@ -3014,7 +3022,7 @@ async def admin_knowledge_checks(user=Depends(require_permission("platform.view_
             query += " AND verification_status = :status"
             params["status"] = status
         query += " ORDER BY created_at DESC LIMIT :lim"
-        rows = db.execute(sql_text(query), params).fetchall()
+        rows = db.execute(text(query), params).fetchall()
         return [
             {
                 "id": r[0], "user": r[1], "claim": r[2], "topic": r[3],
@@ -3031,12 +3039,12 @@ async def admin_belief_analysis(user=Depends(require_permission("platform.view_a
     from sqlalchemy import text as sql_text
     db = get_db()
     try:
-        total = db.execute(sql_text("SELECT COUNT(*) FROM belief_analyses")).scalar() or 0
+        total = db.execute(text("SELECT COUNT(*) FROM belief_analyses")).scalar() or 0
         if total == 0:
             return {"total": 0, "users": [], "summary": "Noch keine Belief-Analysen. Werden automatisch bei Chat-Interaktionen erfasst."}
 
         # Per-user belief profile
-        user_stats = db.execute(sql_text("""
+        user_stats = db.execute(text("""
             SELECT user_email,
                    COUNT(*) as total,
                    AVG(informed_score) as avg_informed,
@@ -3049,20 +3057,20 @@ async def admin_belief_analysis(user=Depends(require_permission("platform.view_a
         users = []
         for r in user_stats:
             # Top bias types for this user
-            bias_types = db.execute(sql_text("""
+            bias_types = db.execute(text("""
                 SELECT bias_type, COUNT(*) as cnt FROM belief_analyses
                 WHERE user_email=:e AND bias_type IS NOT NULL
                 GROUP BY bias_type ORDER BY cnt DESC LIMIT 5
             """), {"e": r[0]}).fetchall()
 
             # Reasoning distribution
-            reasoning = db.execute(sql_text("""
+            reasoning = db.execute(text("""
                 SELECT reasoning_type, COUNT(*) FROM belief_analyses
                 WHERE user_email=:e AND bias_source='user' GROUP BY reasoning_type
             """), {"e": r[0]}).fetchall()
 
             # Evidence basis distribution
-            evidence = db.execute(sql_text("""
+            evidence = db.execute(text("""
                 SELECT evidence_basis, COUNT(*) FROM belief_analyses
                 WHERE user_email=:e AND bias_source='user' AND belief_category != 'bias'
                 GROUP BY evidence_basis
@@ -3088,7 +3096,7 @@ async def admin_belief_analysis(user=Depends(require_permission("platform.view_a
             })
 
         # Global bias frequency
-        global_biases = db.execute(sql_text("""
+        global_biases = db.execute(text("""
             SELECT bias_type, bias_source, COUNT(*) FROM belief_analyses
             WHERE bias_type IS NOT NULL GROUP BY bias_type, bias_source ORDER BY COUNT(*) DESC LIMIT 15
         """)).fetchall()
@@ -3111,7 +3119,7 @@ async def admin_beliefs(user=Depends(require_permission("platform.view_analytics
         if email: q += " AND user_email=:email"; params["email"] = email
         if source: q += " AND bias_source=:source"; params["source"] = source
         q += " ORDER BY created_at DESC LIMIT :lim"
-        rows = db.execute(sql_text(q), params).fetchall()
+        rows = db.execute(text(q), params).fetchall()
         return [{
             "id": r[0], "user": r[1], "text": r[2][:200], "category": r[3],
             "bias_type": r[4], "source": r[5], "informed_score": round(float(r[6] or 0.5), 2),
@@ -3127,11 +3135,11 @@ async def user_knowledge_profile(user=Depends(require_auth)):
     db = get_db()
     email = user["sub"]
     try:
-        total = db.execute(sql_text("SELECT COUNT(*) FROM knowledge_checks WHERE user_email=:e"), {"e": email}).scalar() or 0
+        total = db.execute(text("SELECT COUNT(*) FROM knowledge_checks WHERE user_email=:e"), {"e": email}).scalar() or 0
         if total == 0:
             return {"total_claims": 0, "message": "Noch keine Daten. Chatte mit BEATRIX und dein Wissensprofil baut sich automatisch auf."}
 
-        stats = db.execute(sql_text("""
+        stats = db.execute(text("""
             SELECT
                 SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END),
                 SUM(CASE WHEN verification_status='partially_verified' THEN 1 ELSE 0 END),
@@ -3147,13 +3155,13 @@ async def user_knowledge_profile(user=Depends(require_auth)):
         accuracy = round((verified or 0) / checkable * 100, 1) if checkable > 0 else None
 
         # Recent checks
-        recent = db.execute(sql_text("""
+        recent = db.execute(text("""
             SELECT claim_text, verification_status, claim_topic, customer_code, confidence_score, created_at
             FROM knowledge_checks WHERE user_email=:e ORDER BY created_at DESC LIMIT 10
         """), {"e": email}).fetchall()
 
         # Strengths = topics with high verified rate
-        strengths = db.execute(sql_text("""
+        strengths = db.execute(text("""
             SELECT claim_topic, COUNT(*) as cnt,
                    SUM(CASE WHEN verification_status='verified' THEN 1 ELSE 0 END) as v
             FROM knowledge_checks
@@ -3164,7 +3172,7 @@ async def user_knowledge_profile(user=Depends(require_auth)):
         """), {"e": email}).fetchall()
 
         # Gaps = topics with low verified rate
-        gaps = db.execute(sql_text("""
+        gaps = db.execute(text("""
             SELECT claim_topic, COUNT(*) as cnt,
                    SUM(CASE WHEN verification_status IN ('unverified','novel') THEN 1 ELSE 0 END) as g
             FROM knowledge_checks
@@ -3178,22 +3186,22 @@ async def user_knowledge_profile(user=Depends(require_auth)):
         belief_stats = {"total": 0, "avg_informed_score": None, "reasoning_label": None,
                         "top_biases": [], "recent_beliefs": []}
         try:
-            b_total = db.execute(sql_text(
+            b_total = db.execute(text(
                 "SELECT COUNT(*) FROM belief_analyses WHERE user_email=:e"
             ), {"e": email}).scalar() or 0
             if b_total > 0:
-                avg_inf = db.execute(sql_text(
+                avg_inf = db.execute(text(
                     "SELECT AVG(informed_score) FROM belief_analyses WHERE user_email=:e AND bias_source='user'"
                 ), {"e": email}).scalar()
                 avg_inf = float(avg_inf or 0.5)
 
-                top_biases = db.execute(sql_text("""
+                top_biases = db.execute(text("""
                     SELECT bias_type, COUNT(*) FROM belief_analyses
                     WHERE user_email=:e AND bias_type IS NOT NULL
                     GROUP BY bias_type ORDER BY COUNT(*) DESC LIMIT 5
                 """), {"e": email}).fetchall()
 
-                recent_b = db.execute(sql_text("""
+                recent_b = db.execute(text("""
                     SELECT belief_text, belief_category, bias_type, bias_source,
                            informed_score, reasoning_type, evidence_basis, created_at
                     FROM belief_analyses WHERE user_email=:e ORDER BY created_at DESC LIMIT 10
@@ -3344,6 +3352,107 @@ async def admin_toggle_admin(user_id: str, request: Request, user=Depends(requir
         logger.info(f"Admin toggle: {target.email} → admin={target.is_admin}")
         return {"email": target.email, "is_admin": target.is_admin}
     finally: db.close()
+
+# ── Session Context Management ──────────────────────────────────────────
+SESSION_TYPES = {
+    "lead": {"label": "Lead Management", "icon": "🎯", "color": "251,191,36"},
+    "project": {"label": "Projekt", "icon": "📋", "color": "52,211,153"},
+    "model": {"label": "BCM Modell", "icon": "🔬", "color": "139,170,255"},
+    "context": {"label": "Kontext-Analyse", "icon": "🧠", "color": "232,163,61"},
+    "research": {"label": "Research", "icon": "📚", "color": "168,162,255"},
+    "general": {"label": "Allgemein", "icon": "💬", "color": "42,127,142"},
+}
+
+SESSION_RULES = {
+    "lead": """SESSION-REGELN (Lead Management):
+- Du arbeitest in einer LEAD-SESSION. Alle Nachrichten beziehen sich auf Lead/Sales.
+- Behalte den Kundenkontext: Wenn ein Kunde erkannt wurde, gilt er für die ganze Session.
+- Wenn der User ein Bild schickt, lies es SOFORT aus und extrahiere Kontaktdaten, Firmeninfos etc.
+- Frage NICHT nach Infos die bereits in der Konversation stehen!
+- Nutze bekannte Kundendaten um Felder automatisch zu befüllen.
+- Ansprechpartner, Werte und Details aus früheren Nachrichten MERKEN und wiederverwenden.""",
+
+    "project": """SESSION-REGELN (Projekt):
+- Du arbeitest in einer PROJEKT-SESSION. Alle Nachrichten beziehen sich auf Projektverwaltung.
+- Behalte den Projekt- und Kundenkontext über Nachrichten hinweg.
+- Wenn Bilder/Dokumente geteilt werden, extrahiere relevante Projektinfos.
+- Schlage das nächste Projektkürzel vor wenn nötig.
+- DUPLIKAT-CHECK: Prüfe ob ein ähnliches Projekt bereits existiert.""",
+
+    "model": """SESSION-REGELN (BCM Modell):
+- Du arbeitest in einer MODELL-SESSION für Behavioral Competence Modelling.
+- Behalte die Ψ-Dimensionen und Kontext-Vektoren über Nachrichten hinweg.
+- Baue iterativ auf vorherigen Antworten auf.""",
+
+    "context": """SESSION-REGELN (Kontext-Analyse):
+- Du arbeitest in einer KONTEXT-SESSION zur Analyse von Ausgangslage/Kundensituation.
+- Sammle systematisch Informationen über mehrere Nachrichten hinweg.
+- Fasse periodisch zusammen was du bereits weisst.""",
+
+    "research": """SESSION-REGELN (Research):
+- Du arbeitest in einer RESEARCH-SESSION.
+- Nutze die Knowledge Base für fundierte, wissenschaftliche Antworten.
+- Verknüpfe verschiedene Quellen und Konzepte.""",
+
+    "general": """SESSION-REGELN (Allgemein):
+- Beantworte Fragen basierend auf dem Kontext der Konversation.
+- Wenn sich ein spezifischer Modus ergibt (Lead, Projekt etc.), wechsle dorthin.""",
+}
+
+def get_or_create_session(db, session_id: str, user_email: str) -> dict:
+    """Load or create a chat session with its metadata."""
+    if not session_id:
+        return {"id": None, "type": "general", "entities": {}, "context": {}}
+    try:
+        row = db.execute(text(
+            "SELECT id, session_type, entities, context FROM chat_sessions WHERE id = :sid"
+        ), {"sid": session_id}).fetchone()
+        if row:
+            entities = row[2] if isinstance(row[2], dict) else json.loads(row[2] or '{}')
+            context = row[3] if isinstance(row[3], dict) else json.loads(row[3] or '{}')
+            return {"id": row[0], "type": row[1] or "general", "entities": entities, "context": context}
+        # Create new session
+        db.execute(text(
+            "INSERT INTO chat_sessions (id, user_email, session_type) VALUES (:sid, :email, 'general')"
+        ), {"sid": session_id, "email": user_email})
+        db.commit()
+        return {"id": session_id, "type": "general", "entities": {}, "context": {}}
+    except Exception as e:
+        logger.warning(f"Session load/create failed: {e}")
+        return {"id": session_id, "type": "general", "entities": {}, "context": {}}
+
+def update_session(db, session_id: str, session_type: str = None, entities: dict = None, context: dict = None):
+    """Update session metadata."""
+    if not session_id:
+        return
+    try:
+        updates = ["updated_at = CURRENT_TIMESTAMP"]
+        params = {"sid": session_id}
+        if session_type:
+            updates.append("session_type = :stype")
+            params["stype"] = session_type
+        if entities is not None:
+            updates.append("entities = :ent")
+            params["ent"] = json.dumps(entities, ensure_ascii=False)
+        if context is not None:
+            updates.append("context = :ctx")
+            params["ctx"] = json.dumps(context, ensure_ascii=False)
+        db.execute(text(f"UPDATE chat_sessions SET {', '.join(updates)} WHERE id = :sid"), params)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Session update failed: {e}")
+
+def get_session_history(db, session_id: str, limit: int = 10) -> list:
+    """Load recent messages from this session for conversation context."""
+    if not session_id:
+        return []
+    try:
+        rows = db.execute(text(
+            "SELECT role, content FROM chat_messages WHERE session_id = :sid ORDER BY created_at DESC LIMIT :lim"
+        ), {"sid": session_id, "lim": limit}).fetchall()
+        return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+    except Exception:
+        return []
 
 # ── BEATRIX Chat (RAG) ──────────────────────────────────────────────────
 class ChatMessage(Base):
@@ -4561,17 +4670,30 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
     history = body.get("history", [])
     current_draft = body.get("current_draft", {})
     forced_intent = body.get("intent", "")  # Frontend can force an intent
+    _session_id = body.get("session_id", "")
 
     if not message:
         return JSONResponse({"error": "message required"}, status_code=400)
     if not ANTHROPIC_API_KEY:
         return JSONResponse({"error": "Claude API nicht konfiguriert"}, status_code=501)
 
+    # ── Session Context ──
+    db_sess = get_db()
+    try:
+        session = get_or_create_session(db_sess, _session_id, user["sub"])
+    finally:
+        db_sess.close()
+    session_type = session.get("type", "general")
+    session_entities = session.get("entities", {})
+
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
     # ── Step 1: Route intent ──
     intent = forced_intent
     entities = {}
+    # If session already has a type, use it as default
+    if not intent and session_type != "general":
+        intent = session_type
 
     if not intent:
         # Quick classification call (Haiku = fast, 1-2s vs 3-5s Sonnet)
@@ -4600,12 +4722,29 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
             "intent": intent,
             "status": "redirect_kb",
             "message": "",
-            "entities": entities
+            "entities": entities,
+            "session_id": _session_id
         }
+
+    # ── Update session type + merge entities ──
+    merged_entities = {**session_entities, **entities}
+    db_upd = get_db()
+    try:
+        update_session(db_upd, _session_id, session_type=intent, entities=merged_entities)
+    finally:
+        db_upd.close()
+    session_entities = merged_entities
 
     # ── Step 3: Domain specialist ──
     _prompts = get_domain_prompts()
     domain_prompt = _prompts.get(intent, _prompts.get("project"))
+
+    # Inject session rules and entities
+    _sess_rules = SESSION_RULES.get(intent, SESSION_RULES.get("general", ""))
+    domain_prompt += f"\n\n{_sess_rules}"
+    if session_entities:
+        domain_prompt += f"\n\nSESSION-ENTITÄTEN (bereits erkannt): {json.dumps(session_entities, ensure_ascii=False)}"
+        domain_prompt += "\nNutze diese bekannten Daten! Frage NICHT erneut danach."
 
     # ── Project context enrichment ──
     project_slug = body.get("project_slug", "")
@@ -4748,17 +4887,30 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
     current_draft = body.get("current_draft", {})
     forced_intent = body.get("intent", "")
     attachments = body.get("attachments", [])
+    _session_id = body.get("session_id", "")
 
     if not message and not attachments:
         return JSONResponse({"error": "message required"}, status_code=400)
     if not ANTHROPIC_API_KEY:
         return JSONResponse({"error": "Claude API nicht konfiguriert"}, status_code=501)
 
+    # ── Session Context ──
+    db_sess = get_db()
+    try:
+        session = get_or_create_session(db_sess, _session_id, user["sub"])
+    finally:
+        db_sess.close()
+    session_type = session.get("type", "general")
+    session_entities = session.get("entities", {})
+
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
     # ── Step 1: Route intent (Haiku, fast) ──
     intent = forced_intent
     entities = {}
+    # If session already has a type, use it as default
+    if not intent and session_type != "general":
+        intent = session_type
     if not intent:
         try:
             router_messages = [{"role": "user", "content": message}]
@@ -4772,6 +4924,16 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
         except Exception:
             intent = "general"
 
+    # ── Update session type + merge entities ──
+    if intent not in ("knowledge", "general"):
+        merged_entities = {**session_entities, **entities}  # new entities override old
+        db_upd = get_db()
+        try:
+            update_session(db_upd, _session_id, session_type=intent, entities=merged_entities)
+        finally:
+            db_upd.close()
+        session_entities = merged_entities
+
     # ── Step 2: Redirect knowledge/general ──
     if intent in ("knowledge", "general"):
         import threading
@@ -4779,7 +4941,7 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
         threading.Thread(target=lambda: fact_check_user_claims(_fc_msg, _fc_user, customer_code=_fc_cust), daemon=True).start()
 
         async def _redirect_gen():
-            yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities, 'status': 'redirect_kb'})}\n\n"
+            yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities, 'status': 'redirect_kb', 'session_id': _session_id})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         return StreamingResponse(_redirect_gen(), media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
@@ -4787,6 +4949,13 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
     # ── Step 3: Build domain prompt (same enrichment as non-streaming) ──
     _prompts = get_domain_prompts()
     domain_prompt = _prompts.get(intent, _prompts.get("project"))
+
+    # Inject session rules and entities
+    session_rules = SESSION_RULES.get(intent, SESSION_RULES.get("general", ""))
+    domain_prompt += f"\n\n{session_rules}"
+    if session_entities:
+        domain_prompt += f"\n\nSESSION-ENTITÄTEN (bereits erkannt): {json.dumps(session_entities, ensure_ascii=False)}"
+        domain_prompt += "\nNutze diese bekannten Daten! Frage NICHT erneut danach."
 
     # Project context enrichment
     project_slug = body.get("project_slug", "")
@@ -4867,7 +5036,7 @@ Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
         ctx.verify_mode = _ssl.CERT_NONE
 
         # Send intent event immediately
-        yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities})}\n\n"
+        yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities, 'session_id': _session_id, 'session_type': intent})}\n\n"
 
         # Stream domain specialist
         payload = json.dumps({
@@ -5059,24 +5228,35 @@ async def chat_stream(request: ChatRequest, user=Depends(require_auth)):
     if not ANTHROPIC_API_KEY:
         raise HTTPException(501, "Claude API nicht konfiguriert")
 
+    # ── Session Context ──
     db = get_db()
     try:
-        # Search KB for context
+        session = get_or_create_session(db, _session_id, user["sub"])
+        session_history = get_session_history(db, _session_id, limit=10)
         results = search_knowledge_base(db, question)
         context = build_context(results) if results else ""
     finally:
         db.close()
 
-    system_prompt = """Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
+    session_type = session.get("type", "general")
+    session_entities = session.get("entities", {})
+    session_rules = SESSION_RULES.get(session_type, SESSION_RULES["general"])
+
+    system_prompt = f"""Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
 Du bist spezialisiert auf das Evidence-Based Framework (EBF), Behavioral Economics, das Behavioral Competence Model (BCM) und Decision Architecture.
 
 Dir steht vorhandenes Wissen aus der BEATRIX Knowledge Base zur Verfügung.
 
+{session_rules}
+
+{f"SESSION-KONTEXT: Bekannte Entitäten: {json.dumps(session_entities, ensure_ascii=False)}" if session_entities else ""}
+
 Deine Aufgabe:
-- Beantworte Fragen basierend auf dem bereitgestellten Kontext
+- Beantworte Fragen basierend auf dem bereitgestellten Kontext UND der bisherigen Konversation
+- Wenn der User Bilder schickt, lies sie IMMER aus und extrahiere alle relevanten Informationen
 - Antworte präzise, wissenschaftlich fundiert und praxisorientiert
 - Antworte auf Deutsch, es sei denn die Frage ist auf Englisch
-- Strukturiere deine Antwort klar mit Markdown-Überschriften und Absätzen
+- Halte dich an die Session-Regeln oben
 
 Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
 
@@ -5088,7 +5268,12 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
 
 {question}"""
 
-    # Build message content with attachments
+    # Build message list with session history
+    messages = []
+    for h in session_history[-8:]:  # Last 8 messages for context
+        messages.append({"role": h["role"], "content": h["content"]})
+
+    # Build current message content with attachments
     attachments = request.attachments or []
     user_content = []
     doc_context = ""
@@ -5122,7 +5307,7 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
             "max_tokens": 4000,
             "stream": True,
             "system": system_prompt,
-            "messages": [{"role": "user", "content": user_content}]
+            "messages": messages + [{"role": "user", "content": user_content}]
         }).encode()
 
         full_text = []
@@ -5765,6 +5950,39 @@ async def clear_chat_history(user=Depends(require_auth)):
         return {"message": "Chat-Verlauf gelöscht"}
     finally: db.close()
 
+@app.get("/api/chat/session/{session_id}")
+async def get_chat_session(session_id: str, user=Depends(require_auth)):
+    """Get current session metadata."""
+    db = get_db()
+    try:
+        session = get_or_create_session(db, session_id, user["sub"])
+        history = get_session_history(db, session_id, limit=5)
+        return {
+            "session_id": session["id"],
+            "type": session["type"],
+            "entities": session["entities"],
+            "context": session["context"],
+            "recent_messages": len(history),
+            "type_info": SESSION_TYPES.get(session["type"], SESSION_TYPES.get("general"))
+        }
+    finally:
+        db.close()
+
+@app.put("/api/chat/session/{session_id}/type")
+async def set_chat_session_type(session_id: str, request: Request, user=Depends(require_auth)):
+    """Manually set session type."""
+    body = await request.json()
+    new_type = body.get("type", "general")
+    if new_type not in SESSION_TYPES:
+        raise HTTPException(400, f"Unbekannter Session-Typ: {new_type}")
+    db = get_db()
+    try:
+        get_or_create_session(db, session_id, user["sub"])
+        update_session(db, session_id, session_type=new_type)
+        return {"session_id": session_id, "type": new_type, "type_info": SESSION_TYPES[new_type]}
+    finally:
+        db.close()
+
 @app.get("/api/chat/sessions")
 async def chat_sessions(user=Depends(require_auth)):
     """List all chat sessions for the current user."""
@@ -5780,7 +5998,13 @@ async def chat_sessions(user=Depends(require_auth)):
             ChatMessage.user_email == user["sub"],
             ChatMessage.session_id.isnot(None)
         ).group_by(ChatMessage.session_id).order_by(sql_func.max(ChatMessage.created_at).desc()).limit(50).all()
-        return [{"session_id": s.session_id, "messages": s.msg_count, "started_at": s.started_at.isoformat(), "last_message": s.last_msg_at.isoformat()} for s in sessions]
+        result = []
+        for s in sessions:
+            st_row = db.execute(text("SELECT session_type FROM chat_sessions WHERE id = :sid"), {"sid": s.session_id}).fetchone()
+            st = st_row[0] if st_row else "general"
+            st_info = SESSION_TYPES.get(st, SESSION_TYPES.get("general", {}))
+            result.append({"session_id": s.session_id, "session_type": st, "session_icon": st_info.get("icon","💬"), "session_label": st_info.get("label","Allgemein"), "messages": s.msg_count, "started_at": s.started_at.isoformat(), "last_message": s.last_msg_at.isoformat()})
+        return result
     finally: db.close()
 
 @app.get("/api/admin/chat/sessions")
@@ -5807,10 +6031,19 @@ async def admin_chat_sessions(limit: int = 100, email: str = None, user=Depends(
                 ChatMessage.session_id == s.session_id,
                 ChatMessage.role == "user"
             ).order_by(ChatMessage.created_at.asc()).first()
+            # Get session type from chat_sessions table
+            sess_type_row = db.execute(text(
+                "SELECT session_type FROM chat_sessions WHERE id = :sid"
+            ), {"sid": s.session_id}).fetchone()
+            sess_type = sess_type_row[0] if sess_type_row else "general"
             duration_sec = (s.last_msg_at - s.started_at).total_seconds() if s.last_msg_at and s.started_at else 0
+            st_info = SESSION_TYPES.get(sess_type, SESSION_TYPES.get("general", {}))
             result.append({
                 "session_id": s.session_id,
                 "user": s.user_email,
+                "session_type": sess_type,
+                "session_label": st_info.get("label", "Allgemein"),
+                "session_icon": st_info.get("icon", "💬"),
                 "messages": s.msg_count,
                 "started_at": s.started_at.isoformat(),
                 "last_message": s.last_msg_at.isoformat(),
@@ -6662,11 +6895,11 @@ async def embedding_stats(user=Depends(require_auth)):
     try:
         total = db.query(Document).filter(Document.content.isnot(None)).count()
         try:
-            embedded = db.execute(sql_text("SELECT COUNT(*) FROM documents WHERE embedding IS NOT NULL")).scalar()
+            embedded = db.execute(text("SELECT COUNT(*) FROM documents WHERE embedding IS NOT NULL")).scalar()
         except:
             db.rollback()
             try:
-                embedded = db.execute(sql_text("SELECT COUNT(*) FROM documents WHERE embedding_json IS NOT NULL AND embedding_json != ''")).scalar()
+                embedded = db.execute(text("SELECT COUNT(*) FROM documents WHERE embedding_json IS NOT NULL AND embedding_json != ''")).scalar()
             except:
                 db.rollback()
                 embedded = 0
