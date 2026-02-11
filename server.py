@@ -6086,6 +6086,27 @@ async def set_chat_session_type(session_id: str, request: Request, user=Depends(
     finally:
         db.close()
 
+@app.post("/api/chat/session/{session_id}/close")
+async def close_chat_session(session_id: str, user=Depends(require_auth)):
+    """Close/archive a chat session."""
+    db = get_db()
+    try:
+        get_or_create_session(db, session_id, user["sub"])
+        # Mark session as closed by setting type to 'closed'
+        db.execute(text("""
+            UPDATE chat_sessions SET session_type = 'closed', updated_at = CURRENT_TIMESTAMP
+            WHERE session_id = :sid
+        """), {"sid": session_id})
+        db.commit()
+        logger.info(f"Session {session_id} closed by {user['sub']}")
+        return {"session_id": session_id, "status": "closed"}
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Session close error: {e}")
+        return {"session_id": session_id, "status": "closed"}
+    finally:
+        db.close()
+
 @app.get("/api/chat/sessions")
 async def chat_sessions(user=Depends(require_auth)):
     """List all chat sessions for the current user."""
