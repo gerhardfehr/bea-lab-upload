@@ -4699,10 +4699,39 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
         file_id = str(uuid.uuid4()); file_path = UPLOAD_DIR / f"{file_id}.{ext}"
         with open(file_path, "wb") as f: f.write(content_bytes)
         text_content = extract_text(str(file_path), ext)
-        gh_result = push_to_github(file.filename, content_bytes)
-        github_url = gh_result.get("url", None); gh_status = "indexed+github" if github_url else "indexed"
-        doc = Document(id=file_id, title=file.filename or "Unnamed", content=text_content, source_type="file", file_type=ext, file_path=str(file_path), file_size=len(content_bytes), database_target=database, status=gh_status, github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash, doc_metadata={"original_filename": file.filename, "content_length": len(text_content), "github": gh_result})
+
+        # Paper detection: only push papers to GitHub papers/evaluated/integrated/
+        detection = detect_scientific_paper(text_content)
+        logger.info(f"File upload paper detection for '{file.filename}': score={detection['score']}, is_paper={detection['is_paper']}, signals={detection['signals']}")
+
+        gh_result = {}
+        github_url = None
+        if detection["is_paper"]:
+            gh_result = push_to_github(file.filename, content_bytes) or {}
+            github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
+            logger.info(f"Paper → GitHub push: {github_url}")
+
+        gh_status = "indexed+github" if github_url else "indexed"
+        doc = Document(
+            id=file_id, title=file.filename or "Unnamed", content=text_content,
+            source_type="file", file_type=ext, file_path=str(file_path),
+            file_size=len(content_bytes), database_target=database, status=gh_status,
+            github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash,
+            doc_metadata={
+                "original_filename": file.filename,
+                "content_length": len(text_content),
+                "github": gh_result or {},
+                "paper_detected": detection["is_paper"],
+                "paper_score": detection["score"],
+                "paper_signals": detection["signals"]
+            }
+        )
         db.add(doc); db.commit(); db.refresh(doc)
+        # Auto-embed for vector search
+        try:
+            embed_document(db, doc.id)
+        except Exception as e:
+            logger.warning(f"Embedding failed for {file.filename}: {e}")
         return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=doc.github_url)
     except HTTPException: raise
     except Exception as e: db.rollback(); raise HTTPException(500, f"Datenbankfehler: {e}")
@@ -4718,10 +4747,34 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
         existing = db.query(Document).filter(Document.content_hash == content_hash).first()
         if existing:
             raise HTTPException(409, f"Duplikat: Dieser Text wurde bereits gespeichert als \"{existing.title}\" ({existing.created_at.strftime('%d.%m.%Y %H:%M')})")
-        filename = f"{request.title.replace(' ', '_').replace('/', '-')}.txt"
-        gh_result = push_to_github(filename, request.content.encode("utf-8")) or {}
-        github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
-        doc = Document(title=request.title, content=request.content, source_type="text", database_target=request.database or "knowledge_base", category=request.category, language=request.language, tags=request.tags, status="indexed+github" if github_url else "indexed", github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash, doc_metadata={"content_length": len(request.content), "github": gh_result or {}})
+
+        # Paper detection: only push papers to GitHub papers/evaluated/integrated/
+        detection = detect_scientific_paper(request.content, request.title)
+        logger.info(f"Text upload paper detection for '{request.title}': score={detection['score']}, is_paper={detection['is_paper']}, signals={detection['signals']}")
+
+        gh_result = {}
+        github_url = None
+        if detection["is_paper"]:
+            filename = f"{request.title.replace(' ', '_').replace('/', '-')}.txt"
+            gh_result = push_to_github(filename, request.content.encode("utf-8")) or {}
+            github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
+            logger.info(f"Paper → GitHub push: {github_url}")
+
+        status = "indexed+github" if github_url else "indexed"
+        doc = Document(
+            title=request.title, content=request.content, source_type="text",
+            database_target=request.database or "knowledge_base",
+            category=request.category, language=request.language, tags=request.tags,
+            status=status, github_url=github_url, uploaded_by=user.get("sub"),
+            content_hash=content_hash,
+            doc_metadata={
+                "content_length": len(request.content),
+                "github": gh_result or {},
+                "paper_detected": detection["is_paper"],
+                "paper_score": detection["score"],
+                "paper_signals": detection["signals"]
+            }
+        )
         db.add(doc); db.commit(); db.refresh(doc)
         # Auto-embed for vector search
         embed_document(db, doc.id)
