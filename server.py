@@ -4878,7 +4878,7 @@ Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
                 "x-api-key": ANTHROPIC_API_KEY,
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
-                "User-Agent": "BEATRIXLab/3.21-stream"
+                "User-Agent": "BEATRIXLab/3.22-stream"
             })
             resp = conn.getresponse()
 
