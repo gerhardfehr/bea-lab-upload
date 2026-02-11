@@ -8300,7 +8300,7 @@ async def create_task(request: Request, user=Depends(require_auth)):
             "esc": body.get("escalation_after_days"),
             "ptid": body.get("parent_task_id"),
             "so": body.get("sort_order", 0),
-            "cb": user["email"]
+            "cb": user.get("email", user.get("sub", ""))
         })
         db.commit()
 
@@ -8342,7 +8342,7 @@ async def update_task(task_id: str, request: Request, user=Depends(require_auth)
             if new_status == "done":
                 updates.append("completed_at = CURRENT_TIMESTAMP")
                 updates.append("completed_by = :completed_by")
-                params["completed_by"] = user["email"]
+                params["completed_by"] = user.get("email", user.get("sub", ""))
             elif new_status == "waiting" and old_status != "waiting":
                 updates.append("waiting_since = CURRENT_TIMESTAMP")
             elif old_status == "done" and new_status != "done":
@@ -8379,7 +8379,7 @@ async def complete_task(task_id: str, user=Depends(require_auth)):
     try:
         db.execute(text("""UPDATE tasks SET status='done', completed_at=CURRENT_TIMESTAMP,
             completed_by=:cb, updated_at=CURRENT_TIMESTAMP WHERE id=:id"""),
-            {"id": task_id, "cb": user["email"]})
+            {"id": task_id, "cb": user.get("email", user.get("sub", ""))})
         db.commit()
         return {"id": task_id, "status": "done"}
     finally: db.close()
@@ -8446,7 +8446,7 @@ async def trigger_tasks(request: Request, user=Depends(require_auth)):
     context = body.get("context", {})
     if not event:
         raise HTTPException(400, "event required")
-    tasks = create_task_from_trigger(event, context, created_by=user["email"])
+    tasks = create_task_from_trigger(event, context, created_by=user.get("email", user.get("sub", "")))
     return {"event": event, "tasks_created": len(tasks), "tasks": tasks}
 
 
