@@ -4480,6 +4480,254 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.post("/api/chat/intent/stream")
+async def chat_intent_stream(request: Request, user=Depends(require_permission("chat.intent"))):
+    """SSE streaming version of intent chat – first token appears in ~2s instead of ~10s.
+
+    SSE event types:
+      {type: "intent", intent: "lead", entities: {...}}     — after routing
+      {type: "token", text: "..."}                          — streamed text chunks
+      {type: "data", data: {...}, status: "...", ...}       — final structured data
+      {type: "done"}                                        — end
+    """
+    import http.client, ssl as _ssl, re as _re
+
+    body = await request.json()
+    message = body.get("message", "").strip()
+    history = body.get("history", [])
+    current_draft = body.get("current_draft", {})
+    forced_intent = body.get("intent", "")
+
+    if not message:
+        return JSONResponse({"error": "message required"}, status_code=400)
+    if not ANTHROPIC_API_KEY:
+        return JSONResponse({"error": "Claude API nicht konfiguriert"}, status_code=501)
+
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    # ── Step 1: Route intent (Haiku, fast) ──
+    intent = forced_intent
+    entities = {}
+    if not intent:
+        try:
+            router_messages = [{"role": "user", "content": message}]
+            parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
+                                           model="claude-haiku-4-5-20251001", max_tokens=500)
+            if parsed:
+                intent = parsed.get("intent", "general")
+                entities = parsed.get("entities", {})
+            else:
+                intent = "general"
+        except Exception:
+            intent = "general"
+
+    # ── Step 2: Redirect knowledge/general ──
+    if intent in ("knowledge", "general"):
+        import threading
+        _fc_msg, _fc_user, _fc_cust = message, user["sub"], entities.get("customer", "")
+        threading.Thread(target=lambda: fact_check_user_claims(_fc_msg, _fc_user, customer_code=_fc_cust), daemon=True).start()
+
+        async def _redirect_gen():
+            yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities, 'status': 'redirect_kb'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        return StreamingResponse(_redirect_gen(), media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
+
+    # ── Step 3: Build domain prompt (same enrichment as non-streaming) ──
+    _prompts = get_domain_prompts()
+    domain_prompt = _prompts.get(intent, _prompts.get("project"))
+
+    # Project context enrichment
+    project_slug = body.get("project_slug", "")
+    if project_slug:
+        try:
+            prj_ctx = load_project_context_from_github(project_slug)
+            if prj_ctx.get("project"):
+                p = prj_ctx["project"]
+                client = p.get("client", {})
+                project_info = p.get("project", {})
+                meta = p.get("metadata", {})
+                ctx_lines = [f"\n\nPROJEKTKONTEXT (Projekt: {meta.get('project_code', project_slug)}):"]
+                if client.get("name"): ctx_lines.append(f"Kunde: {client['name']}")
+                if project_info.get("name"): ctx_lines.append(f"Projektname: {project_info['name']}")
+                domain_prompt += "\n".join(ctx_lines)
+        except Exception: pass
+
+    # Customer enrichment
+    detected_customer = entities.get("customer", "")
+    if detected_customer:
+        try:
+            detail = get_customer_detail(detected_customer)
+            if detail:
+                domain_prompt += f"\n\nSPEZIFISCHE KUNDENDATEN FÜR '{detected_customer.upper()}':\n{detail}\n\nNutze diese Daten um Felder AUTOMATISCH zu befüllen. Frage NICHT nach Infos die hier stehen!"
+        except Exception: pass
+
+    # ── Streaming prompt modification ──
+    # Tell Claude to output message text FIRST, then JSON block
+    stream_instruction = """
+
+AUSGABEFORMAT FÜR STREAMING:
+Schreibe ZUERST deine Nachricht als normalen Text (wird dem User live angezeigt).
+Dann schreibe auf einer NEUEN Zeile exakt: <<<JSON>>>
+Dann das JSON-Objekt mit den strukturierten Daten:
+{"intent": "...", "action": "...", "status": "...", "data": {...}, "missing": [...], "confidence": ...}
+
+Beispiel:
+Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
+- Geschätztes Projektvolumen
+- Konkrete Opportunity
+
+<<<JSON>>>
+{"intent": "lead", "action": "create", "status": "need_info", "data": {"customer_code": "helvetia"}, "missing": ["value", "opportunity"], "confidence": 0.6}"""
+
+    domain_prompt += stream_instruction
+
+    # Build messages
+    messages = []
+    for h in history[-10:]:
+        messages.append({"role": h["role"], "content": h["content"]})
+    draft_note = ""
+    if current_draft:
+        draft_note = f"\n\nAKTUELLER ENTWURF:\n{json.dumps(current_draft, ensure_ascii=False, indent=2)}\nDer User möchte diesen Entwurf anpassen."
+    messages.append({"role": "user", "content": message})
+
+    async def event_generator():
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+
+        # Send intent event immediately
+        yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities})}\n\n"
+
+        # Stream domain specialist
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 2500,
+            "stream": True,
+            "system": domain_prompt + draft_note + f"\n\nHeute ist: {today}",
+            "messages": messages
+        }).encode()
+
+        full_text = []
+        json_started = False
+        try:
+            conn = http.client.HTTPSConnection("api.anthropic.com", context=ctx)
+            conn.request("POST", "/v1/messages", body=payload, headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+                "User-Agent": "BEATRIXLab/3.21-stream"
+            })
+            resp = conn.getresponse()
+
+            if resp.status != 200:
+                error_body = resp.read().decode()
+                logger.error(f"Intent stream error: {resp.status} {error_body[:200]}")
+                yield f"data: {json.dumps({'type': 'error', 'text': 'Claude API Fehler'})}\n\n"
+                return
+
+            buffer = ""
+            while True:
+                chunk = resp.read(1024)
+                if not chunk:
+                    break
+                buffer += chunk.decode("utf-8", errors="replace")
+
+                while "\n\n" in buffer:
+                    event_str, buffer = buffer.split("\n\n", 1)
+                    for line in event_str.split("\n"):
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str.strip() == "[DONE]":
+                                continue
+                            try:
+                                event = json.loads(data_str)
+                                event_type = event.get("type", "")
+
+                                if event_type == "content_block_delta":
+                                    delta = event.get("delta", {})
+                                    if delta.get("type") == "text_delta":
+                                        text_chunk = delta.get("text", "")
+                                        full_text.append(text_chunk)
+
+                                        # Check if we've hit the JSON delimiter
+                                        current = "".join(full_text)
+                                        if "<<<JSON>>>" in current and not json_started:
+                                            json_started = True
+                                            # Don't stream JSON tokens to frontend
+                                            # But stream any text before the delimiter that wasn't sent yet
+                                            continue
+
+                                        if not json_started:
+                                            # Stream visible text to frontend
+                                            yield f"data: {json.dumps({'type': 'token', 'text': text_chunk})}\n\n"
+
+                            except json.JSONDecodeError:
+                                pass
+
+            conn.close()
+
+            # ── Parse complete response ──
+            complete_text = "".join(full_text)
+            resp_message = complete_text
+            parsed_data = {}
+
+            if "<<<JSON>>>" in complete_text:
+                parts = complete_text.split("<<<JSON>>>", 1)
+                resp_message = parts[0].strip()
+                json_part = parts[1].strip()
+                try:
+                    parsed_data = json.loads(json_part)
+                except:
+                    # Try extracting JSON from ```json blocks
+                    json_match = _re.search(r'```json\s*(.*?)\s*```', json_part, _re.DOTALL)
+                    if json_match:
+                        try: parsed_data = json.loads(json_match.group(1))
+                        except: pass
+            else:
+                # Fallback: try to parse entire response as JSON
+                json_match = _re.search(r'```json\s*(.*?)\s*```', complete_text, _re.DOTALL)
+                if json_match:
+                    try:
+                        parsed_data = json.loads(json_match.group(1))
+                        resp_message = parsed_data.get("message", resp_message)
+                    except: pass
+
+            # Send structured data event
+            resp_data = parsed_data.get("data", parsed_data) if isinstance(parsed_data, dict) else {}
+            yield f"data: {json.dumps({'type': 'data', 'intent': parsed_data.get('intent', intent), 'action': parsed_data.get('action', 'create'), 'status': parsed_data.get('status', 'need_info'), 'data': resp_data, 'missing': parsed_data.get('missing', []), 'confidence': parsed_data.get('confidence', 0), 'message': resp_message, 'entities': entities})}\n\n"
+
+            # Background tasks
+            def _bg():
+                try:
+                    meta = {"intent": intent}
+                    if isinstance(resp_data, dict):
+                        if resp_data.get("customer_code"): meta["customer_code"] = resp_data["customer_code"]
+                        if resp_data.get("project_slug"): meta["project_slug"] = resp_data["project_slug"]
+                    save_content = resp_message
+                    if resp_data:
+                        save_content = f"{resp_message}\n\nStrukturierte Daten ({intent}): {json.dumps(resp_data, ensure_ascii=False)}"
+                    doc_id = auto_save_chat_to_kb(message, save_content, user["sub"], intent=intent, metadata=meta)
+                    try: fact_check_user_claims(message, user["sub"], chat_doc_id=doc_id, customer_code=(resp_data.get("customer_code","") if isinstance(resp_data,dict) else ""))
+                    except: pass
+                    try: analyze_beliefs_and_biases(message, resp_message, user["sub"], chat_doc_id=doc_id)
+                    except: pass
+                except Exception as e:
+                    logger.warning(f"Intent stream bg failed: {e}")
+            import threading; threading.Thread(target=_bg, daemon=True).start()
+
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Intent stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+    )
+
 # Keep legacy endpoint as alias
 @app.post("/api/chat/project-intent")
 async def chat_project_intent(request: Request, user=Depends(require_permission("chat.intent"))):
