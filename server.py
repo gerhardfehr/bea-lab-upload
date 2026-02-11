@@ -4694,6 +4694,9 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
     db_sess = get_db()
     try:
         session = get_or_create_session(db_sess, _session_id, user["sub"])
+        # Save user message for session history
+        _intent_user_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="user", content=message)
+        db_sess.add(_intent_user_msg); db_sess.commit()
     finally:
         db_sess.close()
     session_type = session.get("type", "general")
@@ -4911,6 +4914,9 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
     db_sess = get_db()
     try:
         session = get_or_create_session(db_sess, _session_id, user["sub"])
+        # Save user message so session history works across messages
+        user_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="user", content=message)
+        db_sess.add(user_msg); db_sess.commit()
     finally:
         db_sess.close()
     session_type = session.get("type", "general")
@@ -5149,6 +5155,17 @@ Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
             resp_data = parsed_data.get("data", parsed_data) if isinstance(parsed_data, dict) else {}
             yield f"data: {json.dumps({'type': 'data', 'intent': parsed_data.get('intent', intent), 'action': parsed_data.get('action', 'create'), 'status': parsed_data.get('status', 'need_info'), 'data': resp_data, 'missing': parsed_data.get('missing', []), 'confidence': parsed_data.get('confidence', 0), 'message': resp_message, 'entities': entities})}\n\n"
 
+            # Save assistant message to chat_messages for session history
+            if resp_message:
+                db_save = get_db()
+                try:
+                    asst_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="assistant", content=resp_message)
+                    db_save.add(asst_msg); db_save.commit()
+                except Exception:
+                    pass
+                finally:
+                    db_save.close()
+
             # Background tasks
             def _bg():
                 try:
@@ -5246,6 +5263,9 @@ async def chat_stream(request: ChatRequest, user=Depends(require_auth)):
     try:
         session = get_or_create_session(db, _session_id, user["sub"])
         session_history = get_session_history(db, _session_id, limit=10)
+        # Save user message BEFORE streaming so next request sees it
+        user_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="user", content=question)
+        db.add(user_msg); db.commit()
         results = search_knowledge_base(db, question)
         context = build_context(results) if results else ""
     finally:
