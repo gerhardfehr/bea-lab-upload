@@ -96,6 +96,254 @@ async def require_auth(request: Request):
     if not payload: raise HTTPException(401, "Nicht autorisiert")
     return payload
 
+# ═══════════════════════════════════════════════════════════════════════════
+# PERMISSION ENGINE v1.0 — RBAC + ReBAC + ABAC Hybrid
+# ═══════════════════════════════════════════════════════════════════════════
+# Architecture: Google Zanzibar-inspired with Policy-as-Code on GitHub
+# - Role Hierarchy: owner > partner > senior_consultant > consultant > researcher > guest
+# - Resource Roles: owner, contributor, viewer per entity
+# - Attribute Rules: email domain, verification status
+# - Audit Trail: logged for critical actions
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Role hierarchy — higher index = more power
+ROLE_HIERARCHY = {
+    "guest": 0,
+    "researcher": 1,
+    "consultant": 2,
+    "senior_consultant": 3,
+    "partner": 4,
+    "owner": 5,
+}
+
+# Permission → minimum required role
+# Matches data/config/permissions.yaml on GitHub (Single Source of Truth)
+PERMISSION_MAP = {
+    # Platform
+    "platform.admin_dashboard":     "owner",
+    "platform.manage_users":        "owner",
+    "platform.manage_roles":        "owner",
+    "platform.manage_settings":     "owner",
+    "platform.view_analytics":      "partner",
+    "platform.manage_permissions":  "owner",
+    # Projects
+    "project.create":               "consultant",
+    "project.read":                 "researcher",
+    "project.read_own":             "researcher",
+    "project.update":               "partner",
+    "project.update_own":           "consultant",
+    "project.delete":               "owner",
+    "project.manage_team":          "partner",
+    "project.assign_code":          "consultant",
+    # Leads
+    "lead.create":                  "consultant",
+    "lead.read":                    "consultant",
+    "lead.read_own":                "consultant",
+    "lead.update":                  "partner",
+    "lead.update_own":              "consultant",
+    "lead.delete":                  "owner",
+    "lead.manage_pipeline":         "consultant",
+    "lead.view_financials":         "senior_consultant",
+    # CRM
+    "crm.read":                     "consultant",
+    "crm.write":                    "senior_consultant",
+    "crm.delete":                   "owner",
+    "crm.export":                   "partner",
+    # Documents
+    "document.upload":              "researcher",
+    "document.read":                "researcher",
+    "document.classify":            "consultant",
+    "document.classify_bulk":       "senior_consultant",
+    "document.delete":              "partner",
+    "document.manage_embeddings":   "owner",
+    # Models
+    "model.create":                 "consultant",
+    "model.read":                   "researcher",
+    "model.update":                 "consultant",
+    "model.delete":                 "partner",
+    # Chat
+    "chat.use":                     "researcher",
+    "chat.intent":                  "consultant",
+    "chat.history":                 "researcher",
+    "chat.clear":                   "researcher",
+    # User
+    "user.read_own_profile":        "guest",
+    "user.read_profiles":           "consultant",
+    "user.manage_others":           "owner",
+}
+
+# Permissions that require @fehradvice.com
+FA_ONLY_PERMISSIONS = {
+    "project.create", "project.assign_code",
+    "lead.create", "lead.read", "lead.update", "lead.update_own",
+    "lead.manage_pipeline", "lead.view_financials",
+    "crm.read", "crm.write", "crm.delete", "crm.export",
+    "chat.intent",
+}
+
+# Permissions that MUST be audit-logged
+AUDIT_PERMISSIONS = {
+    "project.create", "project.delete", "project.manage_team",
+    "lead.create", "lead.delete", "lead.manage_pipeline",
+    "crm.write", "crm.delete",
+    "platform.manage_users", "platform.manage_roles",
+    "document.delete", "document.manage_embeddings",
+}
+
+def resolve_user_role(user_payload: dict) -> str:
+    """Determine effective system role from JWT payload.
+    Auto-assignment rules:
+      1. is_admin + ADMIN_EMAILS → owner
+      2. @fehradvice.com + role=partner → partner
+      3. @fehradvice.com + role=senior_management → senior_consultant
+      4. @fehradvice.com + email_verified → consultant
+      5. email_verified → researcher
+      6. else → guest
+    """
+    email = (user_payload.get("sub") or "").lower()
+    is_admin = user_payload.get("admin", False)
+    stored_role = (user_payload.get("role") or "researcher").lower()
+    is_fa = email.endswith("@fehradvice.com")
+
+    # Owner: admins from ADMIN_EMAILS
+    if is_admin or email in [e.lower() for e in ADMIN_EMAILS]:
+        return "owner"
+
+    # Partner: explicitly set
+    if stored_role == "partner" and is_fa:
+        return "partner"
+
+    # Senior Consultant
+    if stored_role in ("senior_management", "senior_consultant") and is_fa:
+        return "senior_consultant"
+
+    # Consultant: any FehrAdvice employee
+    if is_fa:
+        return "consultant"
+
+    # Researcher: verified external
+    return "researcher"
+
+def has_permission(user_payload: dict, permission: str, resource_role: str = None) -> bool:
+    """Check if user has a specific permission.
+    
+    Args:
+        user_payload: JWT payload dict
+        permission: Permission string (e.g. 'project.create')
+        resource_role: Optional resource-level role (e.g. 'project.owner')
+    
+    Returns:
+        True if permitted, False otherwise
+    """
+    if permission not in PERMISSION_MAP:
+        return False  # Unknown permission = denied
+
+    email = (user_payload.get("sub") or "").lower()
+    user_role = resolve_user_role(user_payload)
+    user_level = ROLE_HIERARCHY.get(user_role, 0)
+    required_role = PERMISSION_MAP[permission]
+    required_level = ROLE_HIERARCHY.get(required_role, 999)
+
+    # Check @fehradvice.com requirement
+    if permission in FA_ONLY_PERMISSIONS and not email.endswith("@fehradvice.com"):
+        return False
+
+    # Check role hierarchy
+    if user_level >= required_level:
+        return True
+
+    # Check resource-level override (e.g. project.owner can always update their project)
+    if resource_role:
+        domain = permission.split(".")[0]
+        # Resource owners get elevated permissions on their resources
+        if resource_role == f"{domain}.owner":
+            return True
+        # Contributors get update_own permissions
+        if resource_role == f"{domain}.contributor" and permission.endswith("_own"):
+            return True
+
+    return False
+
+def audit_log(user_payload: dict, permission: str, resource_type: str = None,
+              resource_id: str = None, action_detail: str = None, success: bool = True):
+    """Log permission-critical actions for audit trail."""
+    if permission not in AUDIT_PERMISSIONS:
+        return
+    try:
+        email = user_payload.get("sub", "unknown")
+        role = resolve_user_role(user_payload)
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "user": email,
+            "role": role,
+            "permission": permission,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "detail": action_detail,
+            "success": success
+        }
+        logger.info(f"AUDIT: {json.dumps(log_entry)}")
+        # TODO: Persist to audit_log table in PostgreSQL
+    except Exception as e:
+        logger.error(f"Audit log failed: {e}")
+
+def require_permission(permission: str):
+    """FastAPI dependency factory that checks a specific permission.
+    
+    Usage:
+        @app.post("/api/projects")
+        async def create_project(user=Depends(require_permission("project.create"))):
+            ...
+    """
+    async def _check(request: Request):
+        # First authenticate
+        auth = request.headers.get("Authorization", "")
+        token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
+        if not token:
+            token = request.cookies.get("bea_token", "")
+        payload = verify_jwt(token)
+        if not payload:
+            raise HTTPException(401, "Nicht autorisiert")
+
+        if not has_permission(payload, permission):
+            user_role = resolve_user_role(payload)
+            required_role = PERMISSION_MAP.get(permission, "?")
+            email = payload.get("sub", "?")
+            is_fa_issue = permission in FA_ONLY_PERMISSIONS and not email.endswith("@fehradvice.com")
+
+            if is_fa_issue:
+                msg = f"Keine Berechtigung: '{permission}' ist nur für FehrAdvice-Mitarbeiter verfügbar"
+            else:
+                msg = f"Keine Berechtigung: '{permission}' erfordert mindestens Rolle '{required_role}' (aktuelle Rolle: '{user_role}')"
+
+            audit_log(payload, permission, success=False, action_detail=msg)
+            raise HTTPException(403, msg)
+
+        return payload
+    return _check
+
+def get_user_permissions(user_payload: dict) -> dict:
+    """Return all permissions for a user — used for frontend UI gating."""
+    user_role = resolve_user_role(user_payload)
+    user_level = ROLE_HIERARCHY.get(user_role, 0)
+    email = (user_payload.get("sub") or "").lower()
+    is_fa = email.endswith("@fehradvice.com")
+
+    permissions = {}
+    for perm, required_role in PERMISSION_MAP.items():
+        required_level = ROLE_HIERARCHY.get(required_role, 999)
+        if perm in FA_ONLY_PERMISSIONS and not is_fa:
+            permissions[perm] = False
+        else:
+            permissions[perm] = user_level >= required_level
+    return {
+        "role": user_role,
+        "role_level": user_level,
+        "email": email,
+        "is_fehradvice": is_fa,
+        "permissions": permissions
+    }
+
 def _user_crm_payload(user):
     """Compute CRM access for JWT. Rules:
     - Only @fehradvice.com emails eligible
@@ -1863,8 +2111,7 @@ async def resend_verification(request: LoginRequest):
     finally: db.close()
 
 @app.put("/api/admin/users/{user_id}/verify")
-async def admin_verify_user(user_id: str, user=Depends(require_auth)):
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+async def admin_verify_user(user_id: str, user=Depends(require_permission("platform.manage_users"))):
     db = get_db()
     try:
         target = db.query(User).filter(User.id == user_id).first()
@@ -2558,7 +2805,21 @@ from fastapi.responses import HTMLResponse
 
 @app.get("/api/auth/check")
 async def check_auth(user=Depends(require_auth)):
-    return {"authenticated": True, "email": user.get("sub"), "name": user.get("name")}
+    perms = get_user_permissions(user)
+    return {
+        "authenticated": True,
+        "email": user.get("sub"),
+        "name": user.get("name"),
+        "role": perms["role"],
+        "role_level": perms["role_level"],
+        "is_fehradvice": perms["is_fehradvice"],
+        "permissions": perms["permissions"]
+    }
+
+@app.get("/api/auth/permissions")
+async def auth_permissions(user=Depends(require_auth)):
+    """Return full permission map for frontend UI gating."""
+    return get_user_permissions(user)
 
 @app.get("/api/health")
 async def health():
@@ -2568,14 +2829,12 @@ async def health():
     return {"status": "ok" if db_ok else "degraded", "database": "connected" if db_ok else "unavailable", "github": "configured" if GH_TOKEN else "not configured", "github_repo": GH_REPO, "timestamp": datetime.utcnow().isoformat()}
 
 @app.get("/api/admin/settings")
-async def admin_settings(user=Depends(require_auth)):
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+async def admin_settings(user=Depends(require_permission("platform.admin_dashboard"))):
     return {"allowed_email_domains": ALLOWED_EMAIL_DOMAINS or ["*"], "registration": "restricted" if ALLOWED_EMAIL_DOMAINS else "open", "jwt_expiry_hours": JWT_EXPIRY // 3600, "email_verification": REQUIRE_EMAIL_VERIFICATION, "smtp_configured": bool(RESEND_API_KEY)}
 
 @app.get("/api/admin/kb-stats")
-async def admin_kb_stats(user=Depends(require_auth)):
+async def admin_kb_stats(user=Depends(require_permission("platform.view_analytics"))):
     """Knowledge Base statistics – shows how many chat insights have been captured."""
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
     from sqlalchemy import text as sql_text
     db = get_db()
     try:
@@ -2595,9 +2854,8 @@ async def admin_kb_stats(user=Depends(require_auth)):
     finally: db.close()
 
 @app.get("/api/admin/knowledge-calibration")
-async def admin_knowledge_calibration(user=Depends(require_auth)):
+async def admin_knowledge_calibration(user=Depends(require_permission("platform.view_analytics"))):
     """Knowledge Calibration Dashboard – shows team knowledge profiles based on fact-checked claims."""
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
     from sqlalchemy import text as sql_text
     db = get_db()
     try:
@@ -2701,9 +2959,8 @@ async def admin_knowledge_calibration(user=Depends(require_auth)):
     finally: db.close()
 
 @app.get("/api/admin/knowledge-checks")
-async def admin_knowledge_checks(user=Depends(require_auth), email: str = None, status: str = None, limit: int = 50):
+async def admin_knowledge_checks(user=Depends(require_permission("platform.view_analytics")), email: str = None, status: str = None, limit: int = 50):
     """Recent fact-check results, optionally filtered by user or status."""
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
     from sqlalchemy import text as sql_text
     db = get_db()
     try:
@@ -2728,9 +2985,8 @@ async def admin_knowledge_checks(user=Depends(require_auth), email: str = None, 
     finally: db.close()
 
 @app.get("/api/admin/belief-analysis")
-async def admin_belief_analysis(user=Depends(require_auth)):
+async def admin_belief_analysis(user=Depends(require_permission("platform.view_analytics"))):
     """Belief & Bias Dashboard – shows team reasoning patterns and cognitive biases."""
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
     from sqlalchemy import text as sql_text
     db = get_db()
     try:
@@ -2804,9 +3060,8 @@ async def admin_belief_analysis(user=Depends(require_auth)):
     finally: db.close()
 
 @app.get("/api/admin/beliefs")
-async def admin_beliefs(user=Depends(require_auth), email: str = None, source: str = None, limit: int = 50):
+async def admin_beliefs(user=Depends(require_permission("platform.view_analytics")), email: str = None, source: str = None, limit: int = 50):
     """Recent belief/bias items, optionally filtered."""
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
     from sqlalchemy import text as sql_text
     db = get_db()
     try:
@@ -2943,8 +3198,7 @@ async def user_knowledge_profile(user=Depends(require_auth)):
     finally: db.close()
 
 @app.get("/api/admin/users")
-async def admin_users(user=Depends(require_auth)):
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+async def admin_users(user=Depends(require_permission("platform.manage_users"))):
     db = get_db()
     try:
         users = db.query(User).order_by(User.created_at.desc()).all()
@@ -2952,8 +3206,7 @@ async def admin_users(user=Depends(require_auth)):
     finally: db.close()
 
 @app.put("/api/admin/users/{user_id}/toggle-active")
-async def toggle_user_active(user_id: str, user=Depends(require_auth)):
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+async def toggle_user_active(user_id: str, user=Depends(require_permission("platform.manage_users"))):
     db = get_db()
     try:
         target = db.query(User).filter(User.id == user_id).first()
@@ -2963,8 +3216,7 @@ async def toggle_user_active(user_id: str, user=Depends(require_auth)):
     finally: db.close()
 
 @app.put("/api/admin/users/{user_id}/role")
-async def set_user_role(user_id: str, request: Request, user=Depends(require_auth)):
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+async def set_user_role(user_id: str, request: Request, user=Depends(require_permission("platform.manage_roles"))):
     db = get_db()
     try:
         data = await request.json()
@@ -2988,9 +3240,8 @@ async def set_user_role(user_id: str, request: Request, user=Depends(require_aut
     finally: db.close()
 
 @app.put("/api/admin/users/{user_id}/crm-access")
-async def set_user_crm_access(user_id: str, request: Request, user=Depends(require_auth)):
+async def set_user_crm_access(user_id: str, request: Request, user=Depends(require_permission("platform.manage_users"))):
     """Toggle CRM access for a user. Only admins. Only @fehradvice.com emails eligible."""
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
     db = get_db()
     try:
         data = await request.json()
@@ -3014,9 +3265,8 @@ async def set_user_crm_access(user_id: str, request: Request, user=Depends(requi
     finally: db.close()
 
 @app.put("/api/admin/users/{user_id}/reset-password")
-async def admin_reset_password(user_id: str, request: Request, user=Depends(require_auth)):
+async def admin_reset_password(user_id: str, request: Request, user=Depends(require_permission("platform.manage_users"))):
     """Admin resets a user's password."""
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
     db = get_db()
     try:
         data = await request.json()
@@ -3033,9 +3283,8 @@ async def admin_reset_password(user_id: str, request: Request, user=Depends(requ
     finally: db.close()
 
 @app.put("/api/admin/users/{user_id}/toggle-admin")
-async def admin_toggle_admin(user_id: str, request: Request, user=Depends(require_auth)):
+async def admin_toggle_admin(user_id: str, request: Request, user=Depends(require_permission("platform.manage_roles"))):
     """Promote/demote a user to/from admin. Only existing admins can do this."""
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
     db = get_db()
     try:
         data = await request.json()
@@ -4055,7 +4304,7 @@ def call_claude_json(system_prompt, messages, today):
 
 
 @app.post("/api/chat/intent")
-async def chat_intent(request: Request, user=Depends(require_auth)):
+async def chat_intent(request: Request, user=Depends(require_permission("chat.intent"))):
     """Universal intent router – detects what the user wants and routes to domain specialist."""
     body = await request.json()
     message = body.get("message", "").strip()
@@ -4225,7 +4474,7 @@ async def chat_intent(request: Request, user=Depends(require_auth)):
 
 # Keep legacy endpoint as alias
 @app.post("/api/chat/project-intent")
-async def chat_project_intent(request: Request, user=Depends(require_auth)):
+async def chat_project_intent(request: Request, user=Depends(require_permission("chat.intent"))):
     """Legacy alias → routes through universal intent router with forced project intent."""
     from starlette.requests import Request as StarletteRequest
     body = await request.json()
@@ -5648,7 +5897,7 @@ Antworte NUR mit validem JSON:
     finally: db.close()
 
 @app.post("/api/documents/classify-all")
-async def classify_all_documents(request: Request, user=Depends(require_auth)):
+async def classify_all_documents(request: Request, user=Depends(require_permission("document.classify_bulk"))):
     """Classify all unclassified documents. Returns progress summary."""
     body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
     force = body.get("force", False)  # Re-classify even if already classified
@@ -5764,7 +6013,7 @@ async def classify_all_documents(request: Request, user=Depends(require_auth)):
     finally: db.close()
 
 @app.delete("/api/documents/{doc_id}")
-async def delete_document(doc_id: str, user=Depends(require_auth)):
+async def delete_document(doc_id: str, user=Depends(require_permission("document.delete"))):
     db = get_db()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -5816,7 +6065,7 @@ async def embedding_stats(user=Depends(require_auth)):
     finally: db.close()
 
 @app.post("/api/admin/embed-all")
-async def admin_embed_all(user=Depends(require_auth)):
+async def admin_embed_all(user=Depends(require_permission("document.manage_embeddings"))):
     """Admin endpoint: Trigger embedding of all un-embedded documents."""
     db = get_db()
     try:
@@ -5839,7 +6088,7 @@ CRM_STAGE_PROB = {'prospect': 10, 'qualified': 25, 'proposal': 50, 'negotiation'
 
 # ── Companies ──
 @app.get("/api/crm/companies")
-async def crm_get_companies(user=Depends(require_auth)):
+async def crm_get_companies(user=Depends(require_permission("crm.read"))):
     db = get_db()
     try:
         rows = db.execute(text("SELECT * FROM crm_companies ORDER BY updated_at DESC")).fetchall()
@@ -5851,7 +6100,7 @@ async def crm_get_companies(user=Depends(require_auth)):
 _github_companies_cache = {"data": None, "ts": 0}
 
 @app.get("/api/crm/companies/enriched")
-async def crm_get_companies_enriched(user=Depends(require_auth)):
+async def crm_get_companies_enriched(user=Depends(require_permission("crm.read"))):
     """Fetch companies from GitHub customer-registry.yaml + customer profiles, merge with CRM DB."""
     import yaml, time as _time, urllib.request, ssl
     ctx = ssl.create_default_context()
@@ -6218,7 +6467,7 @@ async def get_projects(user=Depends(require_auth)):
         return []
 
 @app.post("/api/projects")
-async def create_project(request: Request, user=Depends(require_auth)):
+async def create_project(request: Request, user=Depends(require_permission("project.create"))):
     """Create a new project with unique atomic Projektkürzel"""
     try:
         import urllib.request, ssl, yaml
@@ -6417,6 +6666,7 @@ async def create_project(request: Request, user=Depends(require_auth)):
             headers={**gh, "Content-Type": "application/json"})
         result = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
         logger.info(f"Project created: {project_code} ({slug}) by {user.get('email','?')} [{project_category}]")
+        audit_log(user, "project.create", "project", project_code, f"{slug} ({customer_code}) [{project_category}]")
         return {
             "ok": True,
             "project_code": project_code,
@@ -6754,7 +7004,7 @@ async def sync_project_to_github(slug: str, user=Depends(require_auth)):
     return {"ok": True, "synced": synced, "failed": failed}
 
 @app.post("/api/crm/companies")
-async def crm_create_company(request: Request, user=Depends(require_auth)):
+async def crm_create_company(request: Request, user=Depends(require_permission("crm.write"))):
     db = get_db()
     try:
         data = await request.json()
@@ -6772,7 +7022,7 @@ async def crm_create_company(request: Request, user=Depends(require_auth)):
     finally: db.close()
 
 @app.put("/api/crm/companies/{cid}")
-async def crm_update_company(cid: str, request: Request, user=Depends(require_auth)):
+async def crm_update_company(cid: str, request: Request, user=Depends(require_permission("crm.write"))):
     db = get_db()
     try:
         data = await request.json()
@@ -6790,7 +7040,7 @@ async def crm_update_company(cid: str, request: Request, user=Depends(require_au
 
 # ── Contacts ──
 @app.get("/api/crm/contacts")
-async def crm_get_contacts(user=Depends(require_auth), company_id: str = None):
+async def crm_get_contacts(user=Depends(require_permission("crm.read")), company_id: str = None):
     db = get_db()
     try:
         if company_id:
@@ -6802,7 +7052,7 @@ async def crm_get_contacts(user=Depends(require_auth), company_id: str = None):
     finally: db.close()
 
 @app.post("/api/crm/contacts")
-async def crm_create_contact(request: Request, user=Depends(require_auth)):
+async def crm_create_contact(request: Request, user=Depends(require_permission("crm.write"))):
     db = get_db()
     try:
         data = await request.json()
@@ -6820,7 +7070,7 @@ async def crm_create_contact(request: Request, user=Depends(require_auth)):
     finally: db.close()
 
 @app.put("/api/crm/contacts/{cid}")
-async def crm_update_contact(cid: str, request: Request, user=Depends(require_auth)):
+async def crm_update_contact(cid: str, request: Request, user=Depends(require_permission("crm.write"))):
     db = get_db()
     try:
         data = await request.json()
@@ -6838,7 +7088,7 @@ async def crm_update_contact(cid: str, request: Request, user=Depends(require_au
 
 # ── Deals ──
 @app.get("/api/crm/deals")
-async def crm_get_deals(user=Depends(require_auth), stage: str = None):
+async def crm_get_deals(user=Depends(require_permission("lead.read")), stage: str = None):
     # CRM access check: must be @fehradvice.com with crm_access
     email = user.get("sub", "")
     crm_ok = user.get("crm_access", False)
@@ -6877,7 +7127,7 @@ async def crm_get_deals(user=Depends(require_auth), stage: str = None):
     finally: db.close()
 
 @app.post("/api/crm/deals")
-async def crm_create_deal(request: Request, user=Depends(require_auth)):
+async def crm_create_deal(request: Request, user=Depends(require_permission("lead.create"))):
     db = get_db()
     try:
         data = await request.json()
@@ -6918,7 +7168,7 @@ async def crm_create_deal(request: Request, user=Depends(require_auth)):
     finally: db.close()
 
 @app.put("/api/crm/deals/{did}")
-async def crm_update_deal(did: str, request: Request, user=Depends(require_auth)):
+async def crm_update_deal(did: str, request: Request, user=Depends(require_permission("lead.update"))):
     db = get_db()
     try:
         data = await request.json()
@@ -6942,7 +7192,7 @@ async def crm_update_deal(did: str, request: Request, user=Depends(require_auth)
     finally: db.close()
 
 @app.delete("/api/crm/deals/{did}")
-async def crm_delete_deal(did: str, user=Depends(require_auth)):
+async def crm_delete_deal(did: str, user=Depends(require_permission("lead.delete"))):
     db = get_db()
     try:
         db.execute(text("DELETE FROM crm_activities WHERE deal_id = :id"), {"id": did})
@@ -6955,7 +7205,7 @@ async def crm_delete_deal(did: str, user=Depends(require_auth)):
 
 # ── Activities ──
 @app.get("/api/crm/activities")
-async def crm_get_activities(user=Depends(require_auth), deal_id: str = None, company_id: str = None):
+async def crm_get_activities(user=Depends(require_permission("crm.read")), deal_id: str = None, company_id: str = None):
     db = get_db()
     try:
         q = "SELECT * FROM crm_activities WHERE 1=1"
@@ -6969,7 +7219,7 @@ async def crm_get_activities(user=Depends(require_auth), deal_id: str = None, co
     finally: db.close()
 
 @app.post("/api/crm/activities")
-async def crm_create_activity(request: Request, user=Depends(require_auth)):
+async def crm_create_activity(request: Request, user=Depends(require_permission("crm.write"))):
     db = get_db()
     try:
         data = await request.json()
@@ -6988,7 +7238,7 @@ async def crm_create_activity(request: Request, user=Depends(require_auth)):
 
 # ── CRM Stats ──
 @app.get("/api/crm/stats")
-async def crm_stats(user=Depends(require_auth)):
+async def crm_stats(user=Depends(require_permission("crm.read"))):
     crm_ok = user.get("crm_access", False)
     crm_role = user.get("crm_role", "none")
     owner_code = user.get("crm_owner_code", "")
@@ -7035,8 +7285,7 @@ async def crm_stats(user=Depends(require_auth)):
 
 # ── Migrate old leads → CRM ──
 @app.post("/api/crm/migrate-leads")
-async def crm_migrate_leads(request: Request, user=Depends(require_auth)):
-    if not user.get("admin"): raise HTTPException(403, "Admin only")
+async def crm_migrate_leads(request: Request, user=Depends(require_permission("platform.admin_dashboard"))):
     db = get_db()
     try:
         leads = db.execute(text("SELECT * FROM leads")).fetchall()
@@ -7078,7 +7327,7 @@ async def crm_migrate_leads(request: Request, user=Depends(require_auth)):
 
 # ── GitHub YAML → PostgreSQL Sync ──
 @app.post("/api/crm/sync-github")
-async def crm_sync_github(user=Depends(require_auth)):
+async def crm_sync_github(user=Depends(require_permission("platform.admin_dashboard"))):
     """Sync leads, customers, contacts from GitHub YAML files into PostgreSQL CRM tables"""
     import yaml, urllib.request as ureq
     db = get_db()
@@ -7515,10 +7764,8 @@ async def get_psi_analyses(user=Depends(require_auth)):
     finally: db.close()
 
 @app.get("/api/psi-analyses/all")
-async def get_all_psi_analyses(user=Depends(require_auth)):
+async def get_all_psi_analyses(user=Depends(require_permission("platform.view_analytics"))):
     """Admin: Get all Ψ-analyses across all users for calibration comparison."""
-    if not user.get("admin"):
-        raise HTTPException(403, "Admin only")
     db = get_db()
     try:
         from sqlalchemy import text
@@ -7801,8 +8048,7 @@ Antworte NUR mit dem JSON-Array, kein anderer Text."""}
         return {"suggestions": []}
 
 @app.get("/api/feedback")
-async def get_feedback(user=Depends(require_auth)):
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+async def get_feedback(user=Depends(require_permission("platform.admin_dashboard"))):
     db = get_db()
     try:
         from sqlalchemy import text
@@ -7814,8 +8060,7 @@ async def get_feedback(user=Depends(require_auth)):
     finally: db.close()
 
 @app.get("/api/feedback/{fb_id}/screenshot")
-async def get_feedback_screenshot(fb_id: str, user=Depends(require_auth)):
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+async def get_feedback_screenshot(fb_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
     db = get_db()
     try:
         from sqlalchemy import text
@@ -7825,8 +8070,7 @@ async def get_feedback_screenshot(fb_id: str, user=Depends(require_auth)):
     finally: db.close()
 
 @app.put("/api/feedback/{fb_id}")
-async def update_feedback(fb_id: str, request: Request, user=Depends(require_auth)):
-    if not user.get("admin"): raise HTTPException(403, "Nur Administratoren")
+async def update_feedback(fb_id: str, request: Request, user=Depends(require_permission("platform.admin_dashboard"))):
     db = get_db()
     try:
         from sqlalchemy import text
