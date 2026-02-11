@@ -2001,7 +2001,7 @@ class TextUploadRequest(BaseModel):
 class DocumentResponse(BaseModel):
     id: str; title: str; source_type: str; file_type: Optional[str] = None
     database_target: str; status: str; created_at: str; github_url: Optional[str] = None; metadata: Optional[dict] = None
-    metadata: Optional[dict] = None
+    metadata: Optional[dict] = None; uploaded_by: Optional[str] = None
 
 def extract_text(file_path, file_type):
     try:
@@ -6168,7 +6168,7 @@ async def list_documents(database: Optional[str] = None, limit: int = 50, user=D
     try:
         query = db.query(Document).order_by(Document.created_at.desc())
         if database: query = query.filter(Document.database_target == database)
-        return [DocumentResponse(id=d.id, title=d.title, source_type=d.source_type, file_type=d.file_type, database_target=d.database_target, status=d.status, created_at=d.created_at.isoformat(), github_url=d.github_url, metadata=d.doc_metadata) for d in query.limit(limit).all()]
+        return [DocumentResponse(id=d.id, title=d.title, source_type=d.source_type, file_type=d.file_type, database_target=d.database_target, status=d.status, created_at=d.created_at.isoformat(), github_url=d.github_url, metadata=d.doc_metadata, uploaded_by=d.uploaded_by) for d in query.limit(limit).all()]
     finally: db.close()
 
 @app.get("/api/documents/{doc_id}")
