@@ -727,7 +727,7 @@
     </section>
 
     <section class="section" id="documents-section">
-        <div class="container"><div class="section-header"><h2>Dokumente</h2><p>Übersicht aller indexierten Dokumente in der BEATRIX Knowledge Base.</p></div><div id="docTableWrapper"></div></div>
+        <div class="container"><div class="section-header" style="display:flex;justify-content:space-between;align-items:center"><div><h2>Dokumente</h2><p>Übersicht aller indexierten Dokumente in der BEATRIX Knowledge Base.</p></div><button onclick="bulkClassifyDocs()" style="padding:8px 16px;background:rgba(42,127,142,0.12);border:1px solid rgba(42,127,142,0.3);border-radius:10px;color:var(--accent);font-size:12px;cursor:pointer;white-space:nowrap" id="bulkClassifyBtn">🧬 Alle klassifizieren</button></div><div id="docTableWrapper"></div></div>
     </section>
 
     <!-- ═══════ MODEL BUILDING SECTION ═══════ -->
@@ -3308,11 +3308,16 @@
             try{const r=await fetch(`${API}/documents`,{headers:H()});if(r.status===401){doLogout();return;}const docs=await r.json();
                 if(!docs.length){w.innerHTML=`<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><h3>Noch keine Dokumente</h3><p>Lade dein erstes Dokument hoch.</p></div>`;return;}
                 const db={knowledge_base:'Knowledge Base',bcm_axioms:'BCM Axiome',research:'Research'};
-                w.innerHTML=`<table class="doc-table"><thead><tr><th>Dokument</th><th>Typ</th><th>Datenbank</th><th>Datum</th><th>Status</th></tr></thead><tbody>${docs.map(d=>{const date=new Date(d.created_at).toLocaleDateString('de-CH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});return`<tr onclick="viewDocument('${d.id}')" style="cursor:pointer" title="Klicken zum Anzeigen"><td class="doc-name">${d.title}</td><td><span class="format-badge">${(d.file_type||d.source_type).toUpperCase()}</span></td><td>${db[d.database_target]||d.database_target}</td><td>${date}</td><td><span class="status-badge">${d.status}</span></td></tr>`;}).join('')}</tbody></table>`;
+                const clC={L0:'#ef4444',L1:'#f59e0b',L2:'#3b82f6',L3:'#10b981'};
+                const ilC={I1:'#ef4444',I2:'#f59e0b',I3:'#3b82f6',I4:'#8b5cf6',I5:'#10b981'};
+                w.innerHTML=`<table class="doc-table"><thead><tr><th>Dokument</th><th>Typ</th><th>Level</th><th>Datenbank</th><th>Datum</th><th>Status</th></tr></thead><tbody>${docs.map(d=>{const date=new Date(d.created_at).toLocaleDateString('de-CH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});return`<tr onclick="viewDocument('${d.id}')" style="cursor:pointer" title="Klicken zum Anzeigen"><td class="doc-name">${d.title}</td><td><span class="format-badge">${(d.file_type||d.source_type).toUpperCase()}</span></td><td style="white-space:nowrap;font-size:11px">${d.metadata?.content_level?`<span style="color:${clC[d.metadata.content_level]||'#666'};font-weight:600">${d.metadata.content_level}</span>`:'—'}${d.metadata?.integration_level?` <span style="color:${ilC[d.metadata.integration_level]||'#666'}">${d.metadata.integration_level}</span>`:''}</td><td>${db[d.database_target]||d.database_target}</td><td>${date}</td><td><span class="status-badge">${d.status}</span></td></tr>`;}).join('')}</tbody></table>`;
             }catch(e){w.innerHTML='<p style="color:var(--error)">Fehler beim Laden</p>';}
         }
 
+        let currentDocId = null;
+
         async function viewDocument(docId) {
+            currentDocId = docId;
             // Show modal with loading state
             let modal = document.getElementById('docDetailModal');
             if (!modal) {
@@ -3320,13 +3325,15 @@
                 <div id="docDetailModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);padding:20px;overflow-y:auto" onclick="if(event.target===this)this.style.display='none'">
                     <div style="max-width:900px;margin:40px auto;background:var(--navy-card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
                         <div id="docDetailHeader" style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-                            <div id="docDetailTitle" style="font-size:16px;font-weight:600;color:var(--text-primary)"></div>
+                            <div id="docDetailTitle" style="font-size:16px;font-weight:600;color:var(--text-primary);flex:1;margin-right:12px"></div>
                             <div style="display:flex;gap:8px;align-items:center">
                                 <span id="docDetailBadges"></span>
+                                <button id="docClassifyBtn" onclick="classifyDocument()" style="padding:5px 12px;background:rgba(42,127,142,0.15);border:1px solid rgba(42,127,142,0.3);border-radius:8px;color:var(--accent);font-size:11px;cursor:pointer;white-space:nowrap">🧬 Klassifizieren</button>
                                 <button onclick="document.getElementById('docDetailModal').style.display='none'" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px">✕</button>
                             </div>
                         </div>
                         <div id="docDetailMeta" style="padding:12px 24px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-secondary);display:flex;flex-wrap:wrap;gap:16px"></div>
+                        <div id="docDetailClassification" style="display:none;padding:16px 24px;border-bottom:1px solid var(--border)"></div>
                         <div id="docDetailContent" style="padding:24px;max-height:70vh;overflow-y:auto">
                             <pre style="white-space:pre-wrap;word-wrap:break-word;font-family:inherit;font-size:13px;line-height:1.7;color:var(--text-secondary);margin:0"></pre>
                         </div>
@@ -3339,6 +3346,8 @@
             document.getElementById('docDetailBadges').innerHTML = '';
             document.getElementById('docDetailMeta').innerHTML = '';
             document.getElementById('docDetailContent').querySelector('pre').textContent = '';
+            document.getElementById('docDetailClassification').style.display = 'none';
+            document.getElementById('docDetailClassification').innerHTML = '';
             modal.style.display = '';
 
             try {
@@ -3352,7 +3361,13 @@
                 const typeBadge = `<span class="format-badge">${(d.file_type || d.source_type).toUpperCase()}</span>`;
                 const statusBadge = `<span class="status-badge">${d.status}</span>`;
                 const paperBadge = d.metadata?.paper_detected ? '<span style="background:rgba(52,211,153,0.1);color:#34d399;padding:2px 8px;border-radius:6px;font-size:11px">📚 Paper</span>' : '';
-                document.getElementById('docDetailBadges').innerHTML = `${paperBadge} ${typeBadge} ${statusBadge}`;
+                const clBadge = d.metadata?.content_level ? `<span style="background:rgba(59,130,246,0.1);color:#60a5fa;padding:2px 8px;border-radius:6px;font-size:11px">${d.metadata.content_level}</span>` : '';
+                const ilBadge = d.metadata?.integration_level ? `<span style="background:rgba(139,92,246,0.1);color:#a78bfa;padding:2px 8px;border-radius:6px;font-size:11px">${d.metadata.integration_level}</span>` : '';
+                document.getElementById('docDetailBadges').innerHTML = `${paperBadge} ${clBadge} ${ilBadge} ${typeBadge} ${statusBadge}`;
+
+                // Update classify button visibility
+                const classBtn = document.getElementById('docClassifyBtn');
+                if (classBtn) classBtn.style.display = d.metadata?.classified_at ? 'none' : '';
 
                 // Meta info
                 const date = new Date(d.created_at).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -3365,13 +3380,15 @@
                 if (d.language) metaHtml += `<span>🌐 ${d.language}</span>`;
                 if (d.github_url) metaHtml += `<a href="${d.github_url}" target="_blank" style="color:var(--accent);text-decoration:none">🔗 GitHub</a>`;
                 if (d.tags?.length) metaHtml += `<span>🏷️ ${d.tags.join(', ')}</span>`;
-                if (d.metadata?.paper_score) metaHtml += `<span>🧬 Paper-Score: ${d.metadata.paper_score}</span>`;
+                if (d.metadata?.paper_id) metaHtml += `<span style="font-family:monospace;font-size:11px">🆔 ${d.metadata.paper_id}</span>`;
                 document.getElementById('docDetailMeta').innerHTML = metaHtml;
+
+                // Show existing classification if present
+                renderDocClassification(d.metadata);
 
                 // Content
                 const content = d.content || '(Kein Inhalt)';
                 const pre = document.getElementById('docDetailContent').querySelector('pre');
-                // Truncate display if very long
                 if (content.length > 50000) {
                     pre.textContent = content.slice(0, 50000) + `\n\n... [${(content.length / 1000).toFixed(0)}K Zeichen, gekürzt für Anzeige]`;
                 } else {
@@ -3380,6 +3397,119 @@
             } catch(e) {
                 document.getElementById('docDetailTitle').textContent = 'Fehler';
                 document.getElementById('docDetailContent').querySelector('pre').textContent = e.message;
+            }
+        }
+
+        function renderDocClassification(meta) {
+            const el = document.getElementById('docDetailClassification');
+            if (!meta?.classified_at && !meta?.content_level) { el.style.display = 'none'; return; }
+            el.style.display = '';
+
+            const clColors = {L0:'#ef4444',L1:'#f59e0b',L2:'#3b82f6',L3:'#10b981'};
+            const ilColors = {I1:'#ef4444',I2:'#f59e0b',I3:'#3b82f6',I4:'#8b5cf6',I5:'#10b981'};
+            const clDescs = {L0:'Minimal',L1:'Basis (Abstract)',L2:'Strukturiert',L3:'Volltext'};
+            const ilDescs = {I1:'MINIMAL',I2:'STANDARD',I3:'CASE',I4:'THEORY',I5:'FULL'};
+
+            let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">';
+
+            // Content Level + Integration Level boxes
+            if (meta.content_level) {
+                html += `<div style="flex:1;min-width:140px;padding:8px 12px;background:rgba(0,0,0,0.15);border-radius:8px;border-left:3px solid ${clColors[meta.content_level]||'#666'}">
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted)">Content</div>
+                    <div style="font-size:18px;font-weight:700;color:${clColors[meta.content_level]||'#fff'}">${meta.content_level}</div>
+                    <div style="font-size:10px;color:var(--text-secondary)">${clDescs[meta.content_level]||''}</div>
+                </div>`;
+            }
+            if (meta.integration_level) {
+                html += `<div style="flex:1;min-width:140px;padding:8px 12px;background:rgba(0,0,0,0.15);border-radius:8px;border-left:3px solid ${ilColors[meta.integration_level]||'#666'}">
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted)">Integration</div>
+                    <div style="font-size:18px;font-weight:700;color:${ilColors[meta.integration_level]||'#fff'}">${meta.integration_level}</div>
+                    <div style="font-size:10px;color:var(--text-secondary)">${ilDescs[meta.integration_level]||''}</div>
+                </div>`;
+            }
+
+            // Evidence Tier
+            if (meta.ebf?.evidence_tier) {
+                const tierLabel = {1:'🥇 Gold',2:'🥈 Silber',3:'🥉 Bronze'};
+                const tierColor = {1:'#fbbf24',2:'#9ca3af',3:'#b45309'};
+                html += `<div style="flex:1;min-width:140px;padding:8px 12px;background:rgba(0,0,0,0.15);border-radius:8px;border-left:3px solid ${tierColor[meta.ebf.evidence_tier]||'#666'}">
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted)">Evidenz</div>
+                    <div style="font-size:16px;font-weight:700;color:${tierColor[meta.ebf.evidence_tier]||'#fff'}">${tierLabel[meta.ebf.evidence_tier]||'?'}</div>
+                    <div style="font-size:10px;color:var(--text-secondary)">${meta.ebf.evidence_tier_reason||''}</div>
+                </div>`;
+            }
+            html += '</div>';
+
+            // Structural S1-S6
+            if (meta.structural) {
+                const sL = {S1_research_question:'S1 Forschungsfrage',S2_methodology:'S2 Methodik',S3_sample_data:'S3 Stichprobe',S4_findings:'S4 Ergebnisse',S5_validity:'S5 Validität',S6_reproducibility:'S6 Reproduzierbarkeit'};
+                html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${Object.entries(meta.structural).map(([k,v])=>`<span style="padding:2px 6px;border-radius:4px;font-size:10px;${v?'background:rgba(52,211,153,0.1);color:#34d399':'background:rgba(255,255,255,0.03);color:var(--text-muted)'}">${v?'✓':'○'} ${sL[k]||k}</span>`).join('')}</div>`;
+            }
+
+            // EBF Dimensions
+            if (meta.ebf?.ebf_dimensions?.length) {
+                html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">${meta.ebf.ebf_dimensions.map(d=>`<span style="padding:2px 8px;background:rgba(42,127,142,0.12);border:1px solid rgba(42,127,142,0.25);border-radius:4px;font-size:10px;color:var(--accent)" title="${d.connection||''}">${d.dimension}</span>`).join('')}</div>`;
+            }
+
+            // Ψ Dimensions
+            if (meta.ebf?.psi_dimensions?.length) {
+                const psiIcons = {'Ψ_I':'📋','Ψ_S':'👥','Ψ_C':'🧠','Ψ_K':'🌍','Ψ_E':'💰','Ψ_T':'⏰','Ψ_M':'🔧','Ψ_P':'🎯'};
+                html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">${meta.ebf.psi_dimensions.map(p=>`<span style="padding:2px 8px;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:4px;font-size:10px;color:#a78bfa" title="${p.relevance||''}">${psiIcons[p.psi]||'Ψ'} ${p.psi}</span>`).join('')}</div>`;
+            }
+
+            // Key Findings
+            if (meta.ebf?.key_findings?.length) {
+                html += `<div style="margin-top:6px">${meta.ebf.key_findings.slice(0,3).map(f=>`<div style="font-size:11px;color:var(--text-secondary);padding:2px 0">• ${f.finding}${f.effect_size?' <span style="color:#34d399">(d='+f.effect_size+')</span>':''}</div>`).join('')}</div>`;
+            }
+
+            // Classification timestamp
+            if (meta.classified_at) {
+                const cDate = new Date(meta.classified_at).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+                html += `<div style="margin-top:8px;font-size:10px;color:var(--text-muted)">Klassifiziert: ${cDate}${meta.classification_method === 'bulk_heuristic' ? ' (Bulk, ohne Claude)' : ' (Claude EBF)'} <button onclick="classifyDocument()" style="margin-left:8px;padding:2px 8px;background:rgba(42,127,142,0.1);border:1px solid rgba(42,127,142,0.2);border-radius:4px;color:var(--accent);font-size:10px;cursor:pointer">🔄 Neu klassifizieren</button></div>`;
+            }
+
+            el.innerHTML = html;
+        }
+
+        async function classifyDocument() {
+            if (!currentDocId) return;
+            const btn = document.getElementById('docClassifyBtn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Analysiere...'; }
+
+            try {
+                const r = await fetch(`${API}/documents/${currentDocId}/classify`, {
+                    method: 'POST', headers: H()
+                });
+                if (!r.ok) throw new Error(await r.text());
+                const d = await r.json();
+                showToast(`Klassifiziert: ${d.content_level} / ${d.integration_level || '—'}`, 'success');
+                // Reload detail
+                viewDocument(currentDocId);
+                // Reload list
+                loadDocuments();
+            } catch(e) {
+                showToast(`Fehler: ${e.message}`, 'error');
+                if (btn) { btn.disabled = false; btn.textContent = '🧬 Klassifizieren'; }
+            }
+        }
+
+        async function bulkClassifyDocs() {
+            const btn = document.getElementById('bulkClassifyBtn');
+            if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Klassifiziere alle...'; }
+
+            try {
+                const r = await fetch(`${API}/documents/classify-all`, {
+                    method: 'POST', headers: {...H(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({force: false})
+                });
+                if (!r.ok) throw new Error(await r.text());
+                const d = await r.json();
+                showToast(`✅ ${d.classified} klassifiziert, ${d.skipped} übersprungen, ${d.errors} Fehler`, 'success');
+                loadDocuments();
+            } catch(e) {
+                showToast(`Fehler: ${e.message}`, 'error');
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = '🧬 Alle klassifizieren'; }
             }
         }
 
