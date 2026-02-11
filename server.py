@@ -491,6 +491,18 @@ def get_db():
                         context JSON DEFAULT '{}',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    # Session history columns
+                    for col_def in [
+                        "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS title VARCHAR(120)",
+                        "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS summary TEXT",
+                        "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS msg_count INTEGER DEFAULT 0",
+                        "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS duration_min FLOAT DEFAULT 0",
+                        "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP",
+                    ]:
+                        try:
+                            conn.execute(text(col_def))
+                        except Exception:
+                            pass
                     conn.commit()
                     # User insights / behavioral profiling table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS user_insights (
