@@ -4785,47 +4785,135 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
 
 @app.post("/api/text/analyze")
 async def analyze_text(request: Request, user=Depends(require_auth)):
-    """Analyze pasted text: detect paper, extract title/language/category/tags via Claude."""
+    """Analyze pasted text: detect paper, classify Content Level (L0-L3),
+    estimate Integration Level (I1-I5), extract EBF metadata via Claude."""
     body = await request.json()
     text = (body.get("text", "") or "").strip()
     if not text or len(text) < 100:
         return {"ok": False, "error": "Text zu kurz für Analyse"}
 
-    # 1. Paper detection (instant, no API call)
+    # ═══════════════════════════════════════════════════════
+    # STEP 1: Paper detection (instant, no API call)
+    # ═══════════════════════════════════════════════════════
     detection = detect_scientific_paper(text)
 
-    # 2. Claude metadata extraction (fast, small prompt)
+    # ═══════════════════════════════════════════════════════
+    # STEP 2: Content Level Classification (L0-L3)
+    # Based on: Appendix BM (METHOD-PAPERINT)
+    # L0 = BibTeX only (no abstract)
+    # L1 = Basic template (~2k chars, has abstract)
+    # L2 = Full template (~6k chars, has structured YAML-worthy content)
+    # L3 = Full text (>50k chars)
+    # ═══════════════════════════════════════════════════════
+    text_len = len(text)
+    has_abstract = any(s in text[:5000].lower() for s in ["abstract", "zusammenfassung"])
+    has_methodology = any(s in text.lower() for s in ["methodology", "method", "experimental design",
+        "research design", "empirical", "randomized", "regression", "survey"])
+    has_findings = any(s in text.lower() for s in ["findings", "results", "we find", "our results",
+        "ergebnisse", "the evidence", "effect size", "significant"])
+    has_references = any(s in text[-5000:].lower() for s in ["references\n", "bibliography",
+        "literaturverzeichnis", "works cited"])
+
+    if text_len > 50000:
+        content_level = "L3"
+        content_level_desc = "Volltext (Full Text)"
+    elif text_len > 6000 and has_abstract and has_methodology:
+        content_level = "L2"
+        content_level_desc = "Volles Template (Structured Content)"
+    elif text_len > 1500 and has_abstract:
+        content_level = "L1"
+        content_level_desc = "Basis-Template (Abstract vorhanden)"
+    else:
+        content_level = "L0"
+        content_level_desc = "Minimal (kein Abstract erkannt)"
+
+    # Structural characteristics (S1-S6)
+    structural = {
+        "S1_research_question": any(s in text[:8000].lower() for s in
+            ["research question", "forschungsfrage", "we ask", "this paper asks",
+             "we examine", "we investigate", "this study examines"]),
+        "S2_methodology": has_methodology,
+        "S3_sample_data": any(s in text.lower() for s in
+            ["sample", "n =", "n=", "participants", "subjects", "respondents",
+             "observations", "stichprobe", "dataset", "data set"]),
+        "S4_findings": has_findings,
+        "S5_validity": any(s in text.lower() for s in
+            ["robustness", "sensitivity analysis", "validity", "external validity",
+             "internal validity", "placebo test", "falsification"]),
+        "S6_reproducibility": any(s in text.lower() for s in
+            ["replication", "replicate", "reproducib", "pre-registered", "preregistered",
+             "open data", "code availab"]),
+    }
+
+    # ═══════════════════════════════════════════════════════
+    # STEP 3: Claude EBF Classification (enhanced prompt)
+    # ═══════════════════════════════════════════════════════
     title = ""
     language = "de"
     category = "general"
     tags = []
+    summary = ""
+    ebf_data = {}
 
-    if ANTHROPIC_API_KEY:
+    if ANTHROPIC_API_KEY and detection["is_paper"]:
         try:
             import urllib.request, ssl
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
 
-            # Use first 3000 chars for analysis
-            excerpt = text[:3000]
-            prompt = f"""Analysiere diesen Text und extrahiere Metadaten. Antworte NUR mit validem JSON, kein anderer Text.
+            excerpt_start = text[:4000]
+            excerpt_end = text[-2000:] if text_len > 6000 else ""
+
+            prompt = f"""Du bist BEATRIX, die wissenschaftliche Klassifikations-KI von FehrAdvice & Partners.
+Analysiere dieses wissenschaftliche Paper und extrahiere Metadaten nach dem EBF-Schema (Empirical Behavioral Framework).
 
 TEXT (Anfang):
-{excerpt}
+{excerpt_start}
 
-Gib zurück:
+{"TEXT (Ende):" + chr(10) + excerpt_end if excerpt_end else ""}
+
+Antworte NUR mit validem JSON:
 {{
-  "title": "exakter Titel des Dokuments/Papers (aus dem Text, nicht erfinden)",
-  "language": "de" oder "en" (Hauptsprache des Textes),
-  "category": "paper" oder "axiom" oder "note" oder "general",
-  "tags": ["max 5 relevante Schlagwörter"],
-  "summary": "1 Satz Zusammenfassung"
+  "title": "exakter Titel des Papers",
+  "authors": ["Nachname, Vorname", ...],
+  "year": 2024,
+  "language": "de" oder "en",
+  "tags": ["max 5 Schlagwörter"],
+  "summary": "1-2 Sätze Zusammenfassung",
+  "journal_or_source": "Journal-Name oder Working Paper Serie oder null",
+  "source_type": "journal_article" oder "working_paper" oder "book_chapter" oder "book" oder "conference_paper" oder "dissertation" oder "report",
+  "doi": "DOI falls im Text vorhanden oder null",
+  "evidence_tier": 1 oder 2 oder 3,
+  "evidence_tier_reason": "Begründung: 1=Gold (Top-5 Journal, RCT, large N), 2=Silver (gutes Journal, solide Methodik), 3=Bronze (Working Paper, descriptive)",
+  "methodology": {{
+    "design": "experimental" oder "observational" oder "theoretical" oder "meta_analysis" oder "survey" oder "qualitative",
+    "identification": "RCT" oder "IV" oder "DiD" oder "RDD" oder "matching" oder "descriptive" oder "theoretical"
+  }},
+  "ebf_dimensions": [
+    {{
+      "dimension": "CORE-WHO" oder "CORE-WHAT" oder "CORE-HOW" oder "CORE-WHEN" oder "CORE-WHERE" oder "CORE-AWARE" oder "CORE-READY" oder "CORE-STAGE" oder "CORE-HIERARCHY" oder "CORE-EIT",
+      "connection": "kurze Begründung"
+    }}
+  ],
+  "psi_dimensions": [
+    {{
+      "psi": "Ψ_I" oder "Ψ_S" oder "Ψ_C" oder "Ψ_K" oder "Ψ_E" oder "Ψ_T" oder "Ψ_M" oder "Ψ_P",
+      "relevance": "kurze Begründung"
+    }}
+  ],
+  "domains": ["finance" und/oder "health" und/oder "sustainability" und/oder "hr" und/oder "social_policy" und/oder "education" und/oder "behavior" und/oder "general"],
+  "key_findings": [
+    {{
+      "finding": "Kernaussage",
+      "effect_size": 0.5 oder null
+    }}
+  ]
 }}"""
 
             payload = json.dumps({
                 "model": "claude-sonnet-4-20250514",
-                "max_tokens": 300,
+                "max_tokens": 1200,
                 "messages": [{"role": "user", "content": prompt}]
             }).encode()
 
@@ -4838,10 +4926,80 @@ Gib zurück:
                     "Content-Type": "application/json"
                 }
             )
-            resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+            resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=25).read())
             raw = resp.get("content", [{}])[0].get("text", "")
 
-            # Parse JSON from response
+            import re
+            # Find the outermost JSON object
+            brace_count = 0
+            start_idx = None
+            end_idx = None
+            for i, c in enumerate(raw):
+                if c == '{':
+                    if start_idx is None:
+                        start_idx = i
+                    brace_count += 1
+                elif c == '}':
+                    brace_count -= 1
+                    if brace_count == 0 and start_idx is not None:
+                        end_idx = i + 1
+                        break
+            if start_idx is not None and end_idx is not None:
+                meta = json.loads(raw[start_idx:end_idx])
+            else:
+                meta = {}
+
+            title = meta.get("title", "")
+            language = meta.get("language", "de")
+            category = "paper"
+            tags = meta.get("tags", [])
+            summary = meta.get("summary", "")
+            ebf_data = {
+                "authors": meta.get("authors", []),
+                "year": meta.get("year"),
+                "journal": meta.get("journal_or_source"),
+                "source_type": meta.get("source_type", "journal_article"),
+                "doi": meta.get("doi"),
+                "evidence_tier": meta.get("evidence_tier", 3),
+                "evidence_tier_reason": meta.get("evidence_tier_reason", ""),
+                "methodology": meta.get("methodology", {}),
+                "ebf_dimensions": meta.get("ebf_dimensions", []),
+                "psi_dimensions": meta.get("psi_dimensions", []),
+                "domains": meta.get("domains", []),
+                "key_findings": meta.get("key_findings", [])
+            }
+        except Exception as e:
+            logger.warning(f"Text analysis Claude error: {e}")
+    elif ANTHROPIC_API_KEY and not detection["is_paper"]:
+        # Simple analysis for non-papers
+        try:
+            import urllib.request, ssl
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            excerpt = text[:3000]
+            prompt = f"""Analysiere diesen Text. Antworte NUR mit JSON:
+{{
+  "title": "Titel des Dokuments",
+  "language": "de" oder "en",
+  "category": "paper" oder "axiom" oder "note" oder "general",
+  "tags": ["max 5 Schlagwörter"],
+  "summary": "1 Satz"
+}}
+
+TEXT:
+{excerpt}"""
+            payload = json.dumps({
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 300,
+                "messages": [{"role": "user", "content": prompt}]
+            }).encode()
+            req = urllib.request.Request("https://api.anthropic.com/v1/messages",
+                data=payload, method="POST",
+                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                          "Content-Type": "application/json"})
+            resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+            raw = resp.get("content", [{}])[0].get("text", "")
             import re
             json_match = re.search(r'\{[^{}]*\}', raw, re.DOTALL)
             if json_match:
@@ -4851,25 +5009,58 @@ Gib zurück:
                 category = meta.get("category", "general")
                 tags = meta.get("tags", [])
                 summary = meta.get("summary", "")
-            else:
-                summary = ""
         except Exception as e:
-            logger.warning(f"Text analysis Claude error: {e}")
-            summary = ""
-    else:
-        summary = ""
+            logger.warning(f"Text analysis (simple) error: {e}")
 
-    # 3. Fallback: heuristic title extraction if Claude failed
+    # Fallback title
     if not title:
         lines = [l.strip() for l in text[:500].split('\n') if l.strip()]
         title = lines[0][:100] if lines else "Untitled"
 
-    # 4. Auto-detect database target
+    # ═══════════════════════════════════════════════════════
+    # STEP 4: Estimate Integration Level (I1-I5)
+    # I1=MINIMAL, I2=STANDARD, I3=CASE, I4=THEORY, I5=FULL
+    # For NEW papers, we estimate based on content quality
+    # ═══════════════════════════════════════════════════════
+    if detection["is_paper"]:
+        s_count = sum(1 for v in structural.values() if v)
+        tier = ebf_data.get("evidence_tier", 3)
+        has_effect = any(f.get("effect_size") for f in ebf_data.get("key_findings", []))
+        has_dims = len(ebf_data.get("ebf_dimensions", [])) > 0
+
+        if s_count >= 5 and tier <= 1 and has_effect and has_dims:
+            integration_level = "I3"
+            integration_desc = "CASE-Ready (starke Evidenz, Effect Sizes, EBF-Dimensionen)"
+        elif s_count >= 3 and has_dims:
+            integration_level = "I2"
+            integration_desc = "STANDARD (EBF-Dimensionen zugeordnet)"
+        else:
+            integration_level = "I1"
+            integration_desc = "MINIMAL (Basis-Aufnahme)"
+
+        # Generate paper_id suggestion
+        first_author = ""
+        if ebf_data.get("authors"):
+            first_author = ebf_data["authors"][0].split(",")[0].strip().lower()
+        year = ebf_data.get("year", "")
+        title_word = ""
+        for w in (title or "").split():
+            if len(w) > 4 and w.lower() not in ["about", "their", "these", "which", "under", "between"]:
+                title_word = w.lower()[:10]
+                break
+        paper_id = f"PAP-{first_author}{year}{title_word}" if first_author and year else ""
+    else:
+        integration_level = None
+        integration_desc = None
+        paper_id = ""
+
+    # ═══════════════════════════════════════════════════════
+    # STEP 5: Database target
+    # ═══════════════════════════════════════════════════════
     db_target = "knowledge_base"
     if detection["is_paper"]:
         db_target = "research"
-        if category != "paper":
-            category = "paper"
+        category = "paper"
 
     return {
         "ok": True,
@@ -4877,12 +5068,25 @@ Gib zurück:
         "language": language,
         "category": category,
         "tags": tags[:5],
-        "summary": summary if 'summary' in dir() else "",
+        "summary": summary,
         "database": db_target,
+        "chars": text_len,
+        # Paper detection
         "paper_detected": detection["is_paper"],
         "paper_score": detection["score"],
         "paper_signals": detection["signals"][:8],
-        "chars": len(text)
+        # Content Level (L0-L3)
+        "content_level": content_level if detection["is_paper"] else None,
+        "content_level_desc": content_level_desc if detection["is_paper"] else None,
+        # Integration Level (I1-I5)
+        "integration_level": integration_level if detection["is_paper"] else None,
+        "integration_level_desc": integration_desc if detection["is_paper"] else None,
+        # Structural characteristics
+        "structural": structural if detection["is_paper"] else None,
+        # EBF classification
+        "ebf": ebf_data if detection["is_paper"] and ebf_data else None,
+        # Paper ID suggestion
+        "paper_id": paper_id if detection["is_paper"] else None,
     }
 
 @app.get("/api/documents")
