@@ -2009,7 +2009,7 @@ def extract_text(file_path, file_type):
             import fitz; doc = fitz.open(file_path); text = "\n".join(page.get_text() for page in doc); doc.close(); return text.strip()
         elif file_type == "docx":
             from docx import Document as DocxDoc; doc = DocxDoc(file_path); return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-        elif file_type in ("txt", "md", "csv", "json"):
+        elif file_type in ("txt", "md", "csv", "json", "ics"):
             with open(file_path, "r", encoding="utf-8") as f: return f.read()
     except Exception as e: return f"[Extraction error: {e}]"
     return ""
@@ -3599,7 +3599,7 @@ async def chat_upload(file: UploadFile = File(...), user=Depends(require_auth)):
         raise HTTPException(400, "Datei zu gross (max 20 MB für Chat)")
 
     image_types = {"png", "jpg", "jpeg", "gif", "webp"}
-    doc_types = {"pdf", "txt", "md", "csv", "json", "docx"}
+    doc_types = {"pdf", "txt", "md", "csv", "json", "docx", "ics"}
 
     if ext in image_types:
         import base64 as b64
