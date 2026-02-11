@@ -6088,22 +6088,113 @@ async def set_chat_session_type(session_id: str, request: Request, user=Depends(
 
 @app.post("/api/chat/session/{session_id}/close")
 async def close_chat_session(session_id: str, user=Depends(require_auth)):
-    """Close/archive a chat session."""
+    """Close/archive a chat session with auto-generated summary."""
     db = get_db()
     try:
         get_or_create_session(db, session_id, user["sub"])
-        # Mark session as closed by setting type to 'closed'
+
+        # Fetch messages for summary
+        msgs = db.execute(text(
+            "SELECT role, content, created_at FROM chat_messages WHERE session_id = :sid ORDER BY created_at ASC"
+        ), {"sid": session_id}).fetchall()
+
+        msg_count = len(msgs)
+        user_msgs = [m for m in msgs if m[0] == "user"]
+        assistant_msgs = [m for m in msgs if m[0] == "assistant"]
+
+        # Auto-generate title from first user message
+        title = ""
+        if user_msgs:
+            first_q = user_msgs[0][1][:120].strip()
+            # Clean up: take first line or sentence
+            for sep in ["\n", ". ", "? ", "! "]:
+                if sep in first_q:
+                    first_q = first_q.split(sep)[0] + sep.strip()[-1] if sep.strip() else first_q.split(sep)[0]
+                    break
+            title = first_q[:80]
+
+        # Build summary: topics discussed
+        topics = []
+        for m in user_msgs[:5]:
+            snippet = m[1][:60].strip().replace("\n", " ")
+            if snippet and snippet not in topics:
+                topics.append(snippet)
+        summary = " | ".join(topics)[:300] if topics else "Keine Nachrichten"
+
+        # Duration
+        duration_min = 0
+        if msgs:
+            try:
+                duration_min = round((msgs[-1][2] - msgs[0][2]).total_seconds() / 60, 1)
+            except Exception:
+                pass
+
+        # Ensure columns exist, then update
+        try:
+            db.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS title VARCHAR(120)"))
+            db.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS summary TEXT"))
+            db.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS msg_count INTEGER DEFAULT 0"))
+            db.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS duration_min FLOAT DEFAULT 0"))
+            db.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Mark session as closed with summary
         db.execute(text("""
-            UPDATE chat_sessions SET session_type = 'closed', updated_at = CURRENT_TIMESTAMP
-            WHERE session_id = :sid
-        """), {"sid": session_id})
+            UPDATE chat_sessions
+            SET session_type = 'closed', title = :title, summary = :summary,
+                msg_count = :cnt, duration_min = :dur, closed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :sid
+        """), {"sid": session_id, "title": title, "summary": summary, "cnt": msg_count, "dur": duration_min})
         db.commit()
-        logger.info(f"Session {session_id} closed by {user['sub']}")
-        return {"session_id": session_id, "status": "closed"}
+        logger.info(f"Session {session_id} closed by {user['sub']}: {msg_count} msgs, {duration_min}min, title='{title[:40]}'")
+        return {
+            "session_id": session_id, "status": "closed",
+            "title": title, "summary": summary,
+            "messages": msg_count, "duration_minutes": duration_min
+        }
     except Exception as e:
         db.rollback()
         logger.warning(f"Session close error: {e}")
         return {"session_id": session_id, "status": "closed"}
+    finally:
+        db.close()
+
+@app.get("/api/chat/session/{session_id}/messages")
+async def chat_session_messages(session_id: str, user=Depends(require_auth)):
+    """Get full conversation history of a session (own sessions only)."""
+    db = get_db()
+    try:
+        # Verify ownership
+        owns = db.execute(text(
+            "SELECT COUNT(*) FROM chat_messages WHERE session_id = :sid AND user_email = :email"
+        ), {"sid": session_id, "email": user["sub"]}).scalar()
+        if not owns:
+            raise HTTPException(403, "Kein Zugriff auf diese Session")
+        msgs = db.execute(text(
+            "SELECT role, content, sources, created_at FROM chat_messages WHERE session_id = :sid ORDER BY created_at ASC"
+        ), {"sid": session_id}).fetchall()
+        # Session metadata
+        sess = db.execute(text(
+            "SELECT session_type, title, summary, msg_count, duration_min, created_at, closed_at FROM chat_sessions WHERE id = :sid"
+        ), {"sid": session_id}).fetchone()
+        meta = {}
+        if sess:
+            meta = {
+                "type": sess[0], "title": sess[1] or "", "summary": sess[2] or "",
+                "msg_count": sess[3] or len(msgs), "duration_min": sess[4] or 0,
+                "created_at": sess[5].isoformat() if sess[5] else "",
+                "closed_at": sess[6].isoformat() if sess[6] else ""
+            }
+        return {
+            "session_id": session_id, "meta": meta,
+            "messages": [
+                {"role": m[0], "content": m[1], "sources": m[2], "timestamp": m[3].isoformat() if m[3] else ""}
+                for m in msgs
+            ]
+        }
     finally:
         db.close()
 
@@ -6124,10 +6215,35 @@ async def chat_sessions(user=Depends(require_auth)):
         ).group_by(ChatMessage.session_id).order_by(sql_func.max(ChatMessage.created_at).desc()).limit(50).all()
         result = []
         for s in sessions:
-            st_row = db.execute(text("SELECT session_type FROM chat_sessions WHERE id = :sid"), {"sid": s.session_id}).fetchone()
+            st_row = db.execute(text(
+                "SELECT session_type, title, summary, closed_at FROM chat_sessions WHERE id = :sid"
+            ), {"sid": s.session_id}).fetchone()
             st = st_row[0] if st_row else "general"
+            title = (st_row[1] or "") if st_row else ""
+            summary = (st_row[2] or "") if st_row else ""
+            closed_at = st_row[3].isoformat() if st_row and st_row[3] else None
             st_info = SESSION_TYPES.get(st, SESSION_TYPES.get("general", {}))
-            result.append({"session_id": s.session_id, "session_type": st, "session_icon": st_info.get("icon","💬"), "session_label": st_info.get("label","Allgemein"), "messages": s.msg_count, "started_at": s.started_at.isoformat(), "last_message": s.last_msg_at.isoformat()})
+
+            # Auto-preview from first user message if no title
+            if not title:
+                preview_row = db.execute(text(
+                    "SELECT content FROM chat_messages WHERE session_id = :sid AND role = 'user' ORDER BY created_at ASC LIMIT 1"
+                ), {"sid": s.session_id}).fetchone()
+                title = (preview_row[0][:80] + "...") if preview_row and len(preview_row[0]) > 80 else (preview_row[0] if preview_row else "")
+
+            duration_sec = (s.last_msg_at - s.started_at).total_seconds() if s.last_msg_at and s.started_at else 0
+            result.append({
+                "session_id": s.session_id,
+                "session_type": st, "session_icon": st_info.get("icon", "💬"),
+                "session_label": st_info.get("label", "Allgemein"),
+                "title": title, "summary": summary,
+                "messages": s.msg_count,
+                "started_at": s.started_at.isoformat(),
+                "last_message": s.last_msg_at.isoformat(),
+                "closed_at": closed_at,
+                "duration_minutes": round(duration_sec / 60, 1),
+                "is_closed": st == "closed"
+            })
         return result
     finally: db.close()
 
