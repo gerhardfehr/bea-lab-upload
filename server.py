@@ -4811,10 +4811,18 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
         except Exception as e:
             logger.warning(f"Customer enrichment failed: {e}")
 
-    # Build messages with history
+    # Build messages from DB session history (primary source)
+    db_hist2 = get_db()
+    try:
+        _sh = get_session_history(db_hist2, _session_id, limit=10)
+    finally:
+        db_hist2.close()
     messages = []
-    for h in history[-10:]:
+    for h in _sh[-8:]:
         messages.append({"role": h["role"], "content": h["content"]})
+    if history and not _sh:
+        for h in history[-10:]:
+            messages.append({"role": h["role"], "content": h["content"]})
 
     # Add draft context
     draft_note = ""
@@ -5021,10 +5029,21 @@ Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
 
     domain_prompt += stream_instruction
 
-    # Build messages
+    # Build messages from DB session history (primary source of truth)
+    db_hist = get_db()
+    try:
+        session_history = get_session_history(db_hist, _session_id, limit=10)
+    finally:
+        db_hist.close()
+    
     messages = []
-    for h in history[-10:]:
+    # DB history = persistent across reloads
+    for h in session_history[-8:]:
         messages.append({"role": h["role"], "content": h["content"]})
+    # If frontend has newer messages not yet in DB, append them
+    if history and not session_history:
+        for h in history[-10:]:
+            messages.append({"role": h["role"], "content": h["content"]})
     draft_note = ""
     if current_draft:
         draft_note = f"\n\nAKTUELLER ENTWURF:\n{json.dumps(current_draft, ensure_ascii=False, indent=2)}\nDer User möchte diesen Entwurf anpassen."
