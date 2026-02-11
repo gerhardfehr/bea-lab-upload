@@ -5341,6 +5341,15 @@ async def classify_all_documents(request: Request, user=Depends(require_auth)):
             # Skip if already classified (unless force)
             meta = doc.doc_metadata or {}
             if meta.get("classified_at") and not force:
+                # Still fix missing titles even if skipping classification
+                if doc.title in ["Untitled", ""] or not doc.title:
+                    text_for_title = doc.content or ""
+                    lines = [l.strip() for l in text_for_title[:1000].split('\n') if l.strip() and len(l.strip()) > 3]
+                    if lines:
+                        candidate = lines[0][:120].lstrip('#').strip()
+                        if candidate:
+                            doc.title = candidate
+                            results["details"].append({"id": doc.id, "title": candidate, "action": "title_fixed"})
                 results["skipped"] += 1
                 continue
 
