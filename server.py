@@ -8152,7 +8152,8 @@ async def crm_generate_lead_codes(user=Depends(require_permission("lead.update")
 
     db = get_db()
     try:
-        rows = db.execute(text("SELECT id, company_name, title, created_at, lead_code FROM crm_deals ORDER BY created_at")).fetchall()
+        rows = db.execute(text("""SELECT d.id, COALESCE(c.name, d.title) as company_name, d.title, d.created_at, d.lead_code
+            FROM crm_deals d LEFT JOIN crm_companies c ON d.company_id = c.id ORDER BY d.created_at""")).fetchall()
         counters = {}  # PREFIX-B/N-YY → count
         updated = 0
         results = []
