@@ -635,6 +635,14 @@ def get_db():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
                     # Contexts / Ausgangslage table
                     conn.execute(text("ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS lead_code VARCHAR(30)"))
+                    # Zefix enrichment columns
+                    conn.execute(text("ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS uid VARCHAR(20)"))
+                    conn.execute(text("ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS legal_form VARCHAR(100)"))
+                    conn.execute(text("ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS zefix_id VARCHAR(20)"))
+                    conn.execute(text("ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS postal_code VARCHAR(10)"))
+                    conn.execute(text("ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS locality VARCHAR(200)"))
+                    conn.execute(text("ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS canton VARCHAR(50)"))
+                    conn.execute(text("ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS zefix_description TEXT"))
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS contexts (
                         id VARCHAR PRIMARY KEY, client VARCHAR(500),
                         project VARCHAR(500), domain VARCHAR(20),
@@ -7289,6 +7297,7 @@ async def crm_get_companies_enriched(user=Depends(require_permission("crm.read")
             rows = db.execute(text("SELECT * FROM crm_companies")).fetchall()
             for r in rows:
                 m = dict(r._mapping)
+                db_companies[m.get("id", "")] = m
                 db_companies[m.get("name", "")] = m
                 db_companies[m.get("domain", "")] = m
         except: pass
@@ -7328,7 +7337,7 @@ async def crm_get_companies_enriched(user=Depends(require_permission("crm.read")
             code = cust.get("code", "")
             name = cust.get("name", "")
             short = cust.get("short_name", code)
-            db_match = db_companies.get(name) or db_companies.get(code) or {}
+            db_match = db_companies.get(cust.get("id","")) or db_companies.get(f"CUS-{code}") or db_companies.get(name) or db_companies.get(code) or {}
             ds = deal_stats.get(name) or deal_stats.get(short) or deal_stats.get(code) or {}
             cc = cust.get("_contacts", {})
 
@@ -7374,6 +7383,15 @@ async def crm_get_companies_enriched(user=Depends(require_permission("crm.read")
                 "revenue_eur": cust.get("revenue_eur"),
                 "ebf_context_vectors": cust.get("ebf_context_vectors"),
                 "ebf_applicable_models": cust.get("ebf_applicable_models"),
+                # Zefix enrichment (from DB)
+                "uid": db_match.get("uid", ""),
+                "legal_form": db_match.get("legal_form", ""),
+                "zefix_id": db_match.get("zefix_id", ""),
+                "postal_code": db_match.get("postal_code", ""),
+                "locality": db_match.get("locality", ""),
+                "canton": db_match.get("canton", ""),
+                "address": db_match.get("address", ""),
+                "zefix_description": db_match.get("zefix_description", ""),
             })
 
         # ── Group by parent company ──
@@ -8194,7 +8212,6 @@ async def crm_create_company(request: Request, user=Depends(require_permission("
         try:
             zefix_results = _zefix_search(name, 3)
             if zefix_results:
-                # Find best match (exact or closest)
                 best = None
                 for zr in zefix_results:
                     if zr.get("legal_name", "").lower() == name.lower():
@@ -8202,18 +8219,22 @@ async def crm_create_company(request: Request, user=Depends(require_permission("
                 if not best:
                     best = zefix_results[0]
                 zefix_data = best
-                # Auto-fill address in DB if not provided
+                # Store Zefix data in dedicated columns
+                zf_updates, zf_params = [], {"id": cid}
+                for col, key in [("uid","uid"),("legal_form","legal_form"),("zefix_id","zefix_id"),
+                                 ("postal_code","postal_code"),("locality","locality"),("canton","municipality")]:
+                    if best.get(key):
+                        zf_updates.append(f"{col} = :{col}"); zf_params[col] = best[key]
+                if best.get("description"):
+                    zf_updates.append("zefix_description = :zd"); zf_params["zd"] = best["description"][:500]
                 if best.get("locality") and not data.get("address"):
                     addr_parts = [best.get("street",""), f"{best.get('postal_code','')} {best.get('locality','')}".strip()]
                     addr = ", ".join(p for p in addr_parts if p)
                     if addr:
-                        db.execute(text("UPDATE crm_companies SET address = :addr WHERE id = :id AND (address IS NULL OR address = '')"),
-                            {"addr": addr, "id": cid})
-                        db.commit()
-                # Store UID in notes if found
-                if best.get("uid") and not data.get("notes"):
-                    db.execute(text("UPDATE crm_companies SET notes = :n WHERE id = :id AND (notes IS NULL OR notes = '')"),
-                        {"n": f"UID: {best['uid']} | Rechtsform: {best.get('legal_form','')} | Zweck: {best.get('description','')[:150]}", "id": cid})
+                        zf_updates.append("address = :addr"); zf_params["addr"] = addr
+                if zf_updates:
+                    zf_updates.append("updated_at = CURRENT_TIMESTAMP")
+                    db.execute(text(f"UPDATE crm_companies SET {', '.join(zf_updates)} WHERE id = :id"), zf_params)
                     db.commit()
         except Exception as ze:
             logger.warning(f"Zefix enrichment: {ze}")
@@ -8237,6 +8258,136 @@ async def crm_update_company(cid: str, request: Request, user=Depends(require_pe
         db.execute(text(f"UPDATE crm_companies SET {', '.join(sets)} WHERE id = :id"), params)
         db.commit()
         return {"status": "updated"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+# ── Zefix Enrichment ──
+@app.post("/api/crm/companies/{cid}/zefix-enrich")
+async def crm_zefix_enrich_company(cid: str, user=Depends(require_permission("crm.write"))):
+    """Enrich a single company with Zefix data."""
+    db = get_db()
+    try:
+        row = db.execute(text("SELECT * FROM crm_companies WHERE id = :id"), {"id": cid}).fetchone()
+        if not row:
+            raise HTTPException(404, "Firma nicht gefunden")
+        company = dict(row._mapping)
+        name = company.get("name", "")
+        if not name:
+            return {"status": "skip", "reason": "no name"}
+
+        results = _zefix_search(name, 5)
+        if not results:
+            return {"status": "not_found", "name": name}
+
+        # Find best match
+        best = None
+        for zr in results:
+            if zr.get("legal_name", "").lower() == name.lower():
+                best = zr; break
+        if not best:
+            # Try partial match on short name
+            name_lower = name.lower()
+            for zr in results:
+                if name_lower in zr.get("legal_name", "").lower():
+                    best = zr; break
+        if not best:
+            best = results[0]
+
+        # Update DB
+        zf_updates, zf_params = [], {"id": cid}
+        for col, key in [("uid","uid"),("legal_form","legal_form"),("zefix_id","zefix_id"),
+                         ("postal_code","postal_code"),("locality","locality"),("canton","municipality")]:
+            if best.get(key):
+                zf_updates.append(f"{col} = :{col}"); zf_params[col] = best[key]
+        if best.get("description"):
+            zf_updates.append("zefix_description = :zd"); zf_params["zd"] = best["description"][:500]
+        if best.get("locality") and not company.get("address"):
+            addr_parts = [best.get("street",""), f"{best.get('postal_code','')} {best.get('locality','')}".strip()]
+            addr = ", ".join(p for p in addr_parts if p)
+            if addr:
+                zf_updates.append("address = :addr"); zf_params["addr"] = addr
+        if zf_updates:
+            zf_updates.append("updated_at = CURRENT_TIMESTAMP")
+            db.execute(text(f"UPDATE crm_companies SET {', '.join(zf_updates)} WHERE id = :id"), zf_params)
+            db.commit()
+        return {"status": "enriched", "company": cid, "zefix": best, "fields_updated": len(zf_updates)-1}
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback(); raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.post("/api/crm/companies/zefix-enrich-all")
+async def crm_zefix_enrich_all(user=Depends(require_permission("crm.write"))):
+    """Bulk-enrich all companies with Zefix data. Only processes CH companies without UID."""
+    if not user.get("admin"):
+        raise HTTPException(403, "Admin only")
+    db = get_db()
+    try:
+        rows = db.execute(text("SELECT id, name, uid, address FROM crm_companies ORDER BY name")).fetchall()
+        results = {"enriched": 0, "skipped": 0, "not_found": 0, "errors": 0, "details": []}
+
+        for row in rows:
+            company = dict(row._mapping)
+            cid = company["id"]
+            name = company.get("name", "")
+            if not name or len(name) < 2:
+                results["skipped"] += 1; continue
+            # Skip if already has UID
+            if company.get("uid"):
+                results["skipped"] += 1; continue
+
+            try:
+                import time; time.sleep(0.3)  # Rate limit: ~3 req/sec
+                search_results = _zefix_search(name, 5)
+                if not search_results:
+                    results["not_found"] += 1
+                    results["details"].append({"id": cid, "name": name, "status": "not_found"})
+                    continue
+
+                # Find best match
+                best = None
+                name_lower = name.lower()
+                for zr in search_results:
+                    if zr.get("legal_name", "").lower() == name_lower:
+                        best = zr; break
+                if not best:
+                    for zr in search_results:
+                        if name_lower in zr.get("legal_name", "").lower() or zr.get("legal_name", "").lower() in name_lower:
+                            best = zr; break
+                if not best:
+                    best = search_results[0]
+
+                # Update
+                zf_updates, zf_params = [], {"id": cid}
+                for col, key in [("uid","uid"),("legal_form","legal_form"),("zefix_id","zefix_id"),
+                                 ("postal_code","postal_code"),("locality","locality"),("canton","municipality")]:
+                    if best.get(key):
+                        zf_updates.append(f"{col} = :{col}"); zf_params[col] = best[key]
+                if best.get("description"):
+                    zf_updates.append("zefix_description = :zd"); zf_params["zd"] = best["description"][:500]
+                if best.get("locality") and not company.get("address"):
+                    addr_parts = [best.get("street",""), f"{best.get('postal_code','')} {best.get('locality','')}".strip()]
+                    addr = ", ".join(p for p in addr_parts if p)
+                    if addr:
+                        zf_updates.append("address = :addr"); zf_params["addr"] = addr
+                if zf_updates:
+                    zf_updates.append("updated_at = CURRENT_TIMESTAMP")
+                    db.execute(text(f"UPDATE crm_companies SET {', '.join(zf_updates)} WHERE id = :id"), zf_params)
+                    db.commit()
+                    results["enriched"] += 1
+                    results["details"].append({"id": cid, "name": name, "status": "enriched",
+                        "zefix_name": best.get("legal_name",""), "uid": best.get("uid","")})
+                else:
+                    results["not_found"] += 1
+            except Exception as e:
+                results["errors"] += 1
+                results["details"].append({"id": cid, "name": name, "status": f"error: {str(e)[:100]}"})
+
+        # Invalidate cache
+        _github_companies_cache["ts"] = 0
+        return results
+    except HTTPException: raise
     except Exception as e:
         db.rollback(); raise HTTPException(500, str(e))
     finally: db.close()
