@@ -1717,7 +1717,7 @@ class TextUploadRequest(BaseModel):
 
 class DocumentResponse(BaseModel):
     id: str; title: str; source_type: str; file_type: Optional[str] = None
-    database_target: str; status: str; created_at: str; github_url: Optional[str] = None
+    database_target: str; status: str; created_at: str; github_url: Optional[str] = None; metadata: Optional[dict] = None
     metadata: Optional[dict] = None
 
 def extract_text(file_path, file_type):
