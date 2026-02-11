@@ -672,6 +672,41 @@ def get_db():
                         synced_to_github BOOLEAN DEFAULT FALSE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE(slug, section))"""))
+                    # ── Task Management ──
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS tasks (
+                        id VARCHAR(50) PRIMARY KEY,
+                        title VARCHAR(500) NOT NULL,
+                        description TEXT,
+                        assignee_type VARCHAR(20) NOT NULL DEFAULT 'consultant',
+                        assignee VARCHAR(200),
+                        customer_code VARCHAR(50),
+                        project_slug VARCHAR(200),
+                        lead_id VARCHAR(50),
+                        deal_id VARCHAR(50),
+                        priority VARCHAR(20) DEFAULT 'normal',
+                        status VARCHAR(30) DEFAULT 'open',
+                        due_date DATE,
+                        due_time TIME,
+                        category VARCHAR(50),
+                        source VARCHAR(30) DEFAULT 'manual',
+                        trigger_event VARCHAR(100),
+                        action_type VARCHAR(100),
+                        action_config JSONB,
+                        escalation_after_days INTEGER,
+                        waiting_since TIMESTAMP,
+                        completed_at TIMESTAMP,
+                        completed_by VARCHAR(320),
+                        parent_task_id VARCHAR(50),
+                        sort_order INTEGER DEFAULT 0,
+                        created_by VARCHAR(320),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_type, assignee)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_customer ON tasks(customer_code)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_slug)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_lead ON tasks(lead_id)"))
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -4253,6 +4288,7 @@ INTENT_ROUTER_SYSTEM = """Du bist der BEATRIX Intent-Router. Analysiere die User
 VERFÜGBARE INTENTS:
 - "project": Projekt eröffnen, ergänzen, ändern, Status abfragen
 - "lead": Lead/Opportunity anlegen, Sales-Pipeline, Akquise
+- "task": Aufgabe erstellen, Todo, Reminder, "erinnere mich", "muss noch", Next Steps, Follow-up
 - "model": BCM-Modell bauen, Ψ-Dimensionen, Kontextvektor, EBF-Integration, Behavioral Analysis
 - "context": Ausgangslage erfassen, Kundensituation beschreiben, Branchenkontext, Marktumfeld
 - "knowledge": Fachfrage zu Behavioral Economics, EBF, Decision Architecture (→ nutzt KB)
@@ -4360,6 +4396,45 @@ REGELN:
 8. Bei Bestandskunden mit Projekten: Erwaehne bestehende Projekte und frage ob der Lead damit zusammenhaengt
 9. Bei Nicht-CHF-Kunden: Zeige Betrag in Kundenwaehrung UND CHF-Aequivalent
 10. Deutsch, professionell, effizient""",
+
+    "task": f"""Du bist BEATRIX, die Task-Managerin von FehrAdvice & Partners AG.
+Der User moechte eine Aufgabe erstellen, ein Todo setzen, einen Follow-up planen oder eine Erinnerung setzen.
+
+ES GIBT 4 TYPEN VON AUFGABEN (assignee_type):
+- "consultant": Berater-Aufgabe (inhaltliche Arbeit: Proposal schreiben, Workshop vorbereiten, Analyse)
+- "bdm": BDM-Team/Administration (operative Arbeit: Vertrag, Rechnung, Reise, Termin, Dokumente)
+- "beatrix": BEATRIX-Automation (System: Report generieren, Daten aufbereiten, Reminder senden)
+- "external": Externe Partei (Kunde liefert Daten, Partner schickt Vertrag, wartet auf Freigabe)
+
+FELDER:
+- title: Aufgabentitel (kurz, klar, aktionsorientiert)
+- description: Detailbeschreibung (optional)
+- assignee_type: consultant | bdm | beatrix | external
+- assignee: Kuerzel (GF, AF, ...) | "BDM" | "system" | Name der externen Person
+- customer_code: Kundencode (optional)
+- project_slug: Projektbezug (optional)
+- lead_id: Lead-Bezug (optional)
+- priority: low | normal | high | urgent
+- due_date: YYYY-MM-DD
+- category: sales | delivery | admin | vertrag | rechnung | reise | termin | dokument | zugang | data | allgemein
+- escalation_after_days: Bei external – nach wie vielen Tagen eskalieren (optional)
+
+{{ctx}}
+
+REGELN:
+1. Antworte mit JSON in ```json ... ``` Tags
+2. JSON: {{"intent":"task", "action":"create", "status":"complete"|"need_info", "data":{{...}}, "missing":[...], "message":"...", "confidence":0.0-1.0}}
+3. Pflichtfelder: title, assignee_type
+4. AUTOMATISCH ableiten:
+   - "Ruf X an" / "Proposal schreiben" / "Workshop vorbereiten" → consultant
+   - "Vertrag aufsetzen" / "Rechnung stellen" / "Reise buchen" / "Termin koordinieren" → bdm
+   - "Erstelle Report" / "Aktualisiere Daten" → beatrix
+   - "Kunde soll liefern" / "Warten auf Freigabe" → external
+5. Erkenne Kunden und Projekte automatisch aus dem Kontext
+6. Setze sinnvolle Defaults: priority=normal, assignee aus Kundendaten
+7. Bei "erinnere mich morgen" → due_date = morgen, assignee = aktueller User
+8. Bei externen Tasks: Frage nach escalation_after_days
+9. Deutsch, kurz, professionell""",
 
     "model": f"""Du bist BEATRIX, die Modell-Spezialistin von FehrAdvice & Partners AG.
 Der User moechte ein Behavioral-Modell erstellen oder bearbeiten, basierend auf dem Evidence-Based Framework (EBF).
@@ -7081,6 +7156,19 @@ async def create_project(request: Request, user=Depends(require_permission("proj
         result = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
         logger.info(f"Project created: {project_code} ({slug}) by {user.get('email','?')} [{project_category}]")
         audit_log(user, "project.create", "project", project_code, f"{slug} ({customer_code}) [{project_category}]")
+
+        # ── Auto-trigger tasks for new project ──
+        if project_category == "mandat":
+            try:
+                create_task_from_trigger("project_created", {
+                    "customer_code": customer_code,
+                    "project_slug": slug,
+                    "fa_owner": body.get("fa_owner", "GF"),
+                    "base_date": body.get("start_date", datetime.utcnow().strftime("%Y-%m-%d"))
+                }, created_by=user.get("sub", user.get("email", "")))
+            except Exception as te:
+                logger.warning(f"Project task trigger failed: {te}")
+
         return {
             "ok": True,
             "project_code": project_code,
@@ -8013,6 +8101,355 @@ async def get_customer_currency_endpoint(customer_code: str, user=Depends(requir
     }
 
 
+# ══════════════════════════════════════════════════════════════
+# TASK MANAGEMENT SYSTEM
+# 4 assignee types: consultant, beatrix, external, bdm
+# Auto-triggers from leads, projects, chat
+# ══════════════════════════════════════════════════════════════
+
+TASK_STATUSES = ["open", "in_progress", "waiting", "done", "cancelled", "blocked"]
+TASK_PRIORITIES = ["low", "normal", "high", "urgent"]
+TASK_ASSIGNEE_TYPES = ["consultant", "beatrix", "external", "bdm"]
+TASK_CATEGORIES_BDM = ["vertrag", "rechnung", "reise", "termin", "dokument", "zugang", "offerte", "archiv", "allgemein"]
+
+# ── Auto-Trigger Templates ──
+TRIGGER_TEMPLATES = {
+    "lead_created": [
+        {"title": "Erstgespräch vorbereiten", "assignee_type": "consultant", "category": "sales", "priority": "high", "due_offset_days": 3},
+        {"title": "Kundenprofil prüfen & ergänzen", "assignee_type": "beatrix", "category": "data", "action_type": "enrich_customer_profile", "priority": "normal", "due_offset_days": 1},
+    ],
+    "lead_won": [
+        {"title": "Offerte/Vertrag erstellen", "assignee_type": "bdm", "category": "vertrag", "priority": "urgent", "due_offset_days": 2},
+        {"title": "Projekt eröffnen", "assignee_type": "consultant", "category": "project", "priority": "high", "due_offset_days": 3},
+        {"title": "Zugänge einrichten", "assignee_type": "bdm", "category": "zugang", "priority": "normal", "due_offset_days": 5},
+    ],
+    "project_created": [
+        {"title": "Kickoff-Termin koordinieren", "assignee_type": "bdm", "category": "termin", "priority": "high", "due_offset_days": 5},
+        {"title": "Vertrag finalisieren & versenden", "assignee_type": "bdm", "category": "vertrag", "priority": "urgent", "due_offset_days": 3},
+        {"title": "Projektdokumentation anlegen", "assignee_type": "beatrix", "category": "dokument", "action_type": "create_project_docs", "priority": "normal", "due_offset_days": 2},
+        {"title": "Kickoff-Präsentation vorbereiten", "assignee_type": "consultant", "category": "delivery", "priority": "high", "due_offset_days": 7},
+    ],
+    "project_completed": [
+        {"title": "Schlussrechnung erstellen", "assignee_type": "bdm", "category": "rechnung", "priority": "high", "due_offset_days": 5},
+        {"title": "Projekt archivieren", "assignee_type": "bdm", "category": "archiv", "priority": "normal", "due_offset_days": 14},
+        {"title": "Kundenfeedback einholen", "assignee_type": "bdm", "category": "allgemein", "priority": "normal", "due_offset_days": 7},
+        {"title": "Lessons Learned dokumentieren", "assignee_type": "consultant", "category": "delivery", "priority": "normal", "due_offset_days": 10},
+        {"title": "Projekt-Summary für Knowledge Base generieren", "assignee_type": "beatrix", "category": "data", "action_type": "generate_project_summary", "priority": "normal", "due_offset_days": 3},
+    ],
+    "lead_next_action": [
+        {"title": "{next_action}", "assignee_type": "consultant", "category": "sales", "priority": "high", "due_offset_days": 0},
+    ],
+}
+
+
+def generate_task_id():
+    """Generate unique task ID like TSK-20260211-A3F2"""
+    from datetime import datetime
+    import secrets
+    d = datetime.utcnow().strftime("%Y%m%d")
+    r = secrets.token_hex(2).upper()
+    return f"TSK-{d}-{r}"
+
+
+def create_task_from_trigger(trigger_event: str, context: dict, created_by: str = "system"):
+    """Auto-create tasks from trigger events. Context has customer_code, project_slug, lead_id, assignee, etc."""
+    from datetime import datetime, timedelta
+    templates = TRIGGER_TEMPLATES.get(trigger_event, [])
+    if not templates:
+        return []
+
+    db = get_db()
+    created_tasks = []
+    try:
+        for tmpl in templates:
+            title = tmpl["title"].format(**context) if "{" in tmpl["title"] else tmpl["title"]
+            due_date = None
+            if tmpl.get("due_offset_days") is not None:
+                base_date = context.get("base_date")
+                if base_date:
+                    if isinstance(base_date, str):
+                        base_date = datetime.strptime(base_date[:10], "%Y-%m-%d")
+                else:
+                    base_date = datetime.utcnow()
+                due_date = (base_date + timedelta(days=tmpl["due_offset_days"])).strftime("%Y-%m-%d")
+
+            task_id = generate_task_id()
+            assignee = context.get("fa_owner", "GF") if tmpl["assignee_type"] == "consultant" else (
+                "system" if tmpl["assignee_type"] == "beatrix" else (
+                "BDM" if tmpl["assignee_type"] == "bdm" else context.get("external_contact", "")))
+
+            db.execute(text("""INSERT INTO tasks
+                (id, title, assignee_type, assignee, customer_code, project_slug, lead_id,
+                 priority, status, due_date, category, source, trigger_event, action_type, action_config, created_by)
+                VALUES (:id, :title, :at, :a, :cc, :ps, :lid,
+                 :pri, 'open', :due, :cat, 'auto', :te, :act, :acfg, :cb)"""), {
+                "id": task_id, "title": title,
+                "at": tmpl["assignee_type"], "a": assignee,
+                "cc": context.get("customer_code"), "ps": context.get("project_slug"),
+                "lid": context.get("lead_id"),
+                "pri": tmpl.get("priority", "normal"),
+                "due": due_date, "cat": tmpl.get("category"),
+                "te": trigger_event, "act": tmpl.get("action_type"),
+                "acfg": json.dumps(tmpl.get("action_config")) if tmpl.get("action_config") else None,
+                "cb": created_by
+            })
+            created_tasks.append({"id": task_id, "title": title, "assignee_type": tmpl["assignee_type"],
+                                  "assignee": assignee, "due_date": due_date})
+        db.commit()
+        logger.info(f"⚡ Trigger '{trigger_event}' → {len(created_tasks)} tasks created")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Task trigger error: {e}")
+    finally:
+        db.close()
+    return created_tasks
+
+
+# ── Task API Endpoints ──
+
+@app.get("/api/tasks")
+async def list_tasks(
+    request: Request,
+    status: str = None, assignee_type: str = None, assignee: str = None,
+    customer_code: str = None, project_slug: str = None, lead_id: str = None,
+    priority: str = None, due_before: str = None, due_after: str = None,
+    limit: int = 50, offset: int = 0,
+    user=Depends(require_auth)
+):
+    """List tasks with filters."""
+    db = get_db()
+    try:
+        where = ["1=1"]
+        params = {"lim": limit, "off": offset}
+        if status:
+            if status == "active":
+                where.append("status IN ('open','in_progress','waiting','blocked')")
+            else:
+                where.append("status = :status"); params["status"] = status
+        if assignee_type:
+            where.append("assignee_type = :at"); params["at"] = assignee_type
+        if assignee:
+            where.append("assignee = :a"); params["a"] = assignee
+        if customer_code:
+            where.append("customer_code = :cc"); params["cc"] = customer_code
+        if project_slug:
+            where.append("project_slug = :ps"); params["ps"] = project_slug
+        if lead_id:
+            where.append("lead_id = :lid"); params["lid"] = lead_id
+        if priority:
+            where.append("priority = :pri"); params["pri"] = priority
+        if due_before:
+            where.append("due_date <= :db"); params["db"] = due_before
+        if due_after:
+            where.append("due_date >= :da"); params["da"] = due_after
+
+        w = " AND ".join(where)
+        rows = db.execute(text(f"""SELECT * FROM tasks WHERE {w}
+            ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+            due_date ASC NULLS LAST, created_at DESC
+            LIMIT :lim OFFSET :off"""), params).fetchall()
+
+        count_row = db.execute(text(f"SELECT COUNT(*) FROM tasks WHERE {w}"), params).fetchone()
+        total = count_row[0] if count_row else 0
+
+        tasks = []
+        for r in rows:
+            t = dict(r._mapping)
+            for k in ["created_at","updated_at","completed_at","waiting_since","due_date","due_time"]:
+                if t.get(k): t[k] = str(t[k])
+            if t.get("action_config") and isinstance(t["action_config"], str):
+                try: t["action_config"] = json.loads(t["action_config"])
+                except: pass
+            tasks.append(t)
+
+        return {"tasks": tasks, "total": total, "limit": limit, "offset": offset}
+    finally: db.close()
+
+
+@app.post("/api/tasks")
+async def create_task(request: Request, user=Depends(require_auth)):
+    """Create a new task."""
+    body = await request.json()
+    db = get_db()
+    try:
+        task_id = generate_task_id()
+        db.execute(text("""INSERT INTO tasks
+            (id, title, description, assignee_type, assignee, customer_code, project_slug, lead_id, deal_id,
+             priority, status, due_date, due_time, category, source, action_type, action_config,
+             escalation_after_days, parent_task_id, sort_order, created_by)
+            VALUES (:id, :title, :desc, :at, :a, :cc, :ps, :lid, :did,
+             :pri, :st, :due, :duet, :cat, :src, :act, :acfg,
+             :esc, :ptid, :so, :cb)"""), {
+            "id": task_id,
+            "title": body.get("title", ""),
+            "desc": body.get("description"),
+            "at": body.get("assignee_type", "consultant"),
+            "a": body.get("assignee", ""),
+            "cc": body.get("customer_code"),
+            "ps": body.get("project_slug"),
+            "lid": body.get("lead_id"),
+            "did": body.get("deal_id"),
+            "pri": body.get("priority", "normal"),
+            "st": body.get("status", "open"),
+            "due": body.get("due_date"),
+            "duet": body.get("due_time"),
+            "cat": body.get("category"),
+            "src": body.get("source", "manual"),
+            "act": body.get("action_type"),
+            "acfg": json.dumps(body.get("action_config")) if body.get("action_config") else None,
+            "esc": body.get("escalation_after_days"),
+            "ptid": body.get("parent_task_id"),
+            "so": body.get("sort_order", 0),
+            "cb": user["email"]
+        })
+        db.commit()
+
+        # If external task, set waiting_since
+        if body.get("assignee_type") == "external":
+            db.execute(text("UPDATE tasks SET waiting_since = CURRENT_TIMESTAMP WHERE id = :id"), {"id": task_id})
+            db.commit()
+
+        return {"id": task_id, "status": "created"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+
+@app.put("/api/tasks/{task_id}")
+async def update_task(task_id: str, request: Request, user=Depends(require_auth)):
+    """Update a task."""
+    body = await request.json()
+    db = get_db()
+    try:
+        existing = db.execute(text("SELECT * FROM tasks WHERE id = :id"), {"id": task_id}).fetchone()
+        if not existing:
+            raise HTTPException(404, "Task not found")
+
+        updates = []
+        params = {"id": task_id}
+        for field in ["title","description","assignee_type","assignee","customer_code","project_slug",
+                       "lead_id","deal_id","priority","status","due_date","due_time","category",
+                       "action_type","escalation_after_days","parent_task_id","sort_order"]:
+            if field in body:
+                updates.append(f"{field} = :{field}")
+                params[field] = body[field]
+
+        # Handle status transitions
+        old_status = existing._mapping.get("status")
+        new_status = body.get("status")
+        if new_status and new_status != old_status:
+            if new_status == "done":
+                updates.append("completed_at = CURRENT_TIMESTAMP")
+                updates.append("completed_by = :completed_by")
+                params["completed_by"] = user["email"]
+            elif new_status == "waiting" and old_status != "waiting":
+                updates.append("waiting_since = CURRENT_TIMESTAMP")
+            elif old_status == "done" and new_status != "done":
+                updates.append("completed_at = NULL")
+                updates.append("completed_by = NULL")
+
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        set_clause = ", ".join(updates)
+        db.execute(text(f"UPDATE tasks SET {set_clause} WHERE id = :id"), params)
+        db.commit()
+        return {"id": task_id, "status": "updated"}
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task(task_id: str, user=Depends(require_auth)):
+    """Delete a task."""
+    db = get_db()
+    try:
+        db.execute(text("DELETE FROM tasks WHERE id = :id"), {"id": task_id})
+        db.commit()
+        return {"id": task_id, "status": "deleted"}
+    finally: db.close()
+
+
+@app.post("/api/tasks/{task_id}/complete")
+async def complete_task(task_id: str, user=Depends(require_auth)):
+    """Quick-complete a task."""
+    db = get_db()
+    try:
+        db.execute(text("""UPDATE tasks SET status='done', completed_at=CURRENT_TIMESTAMP,
+            completed_by=:cb, updated_at=CURRENT_TIMESTAMP WHERE id=:id"""),
+            {"id": task_id, "cb": user["email"]})
+        db.commit()
+        return {"id": task_id, "status": "done"}
+    finally: db.close()
+
+
+@app.post("/api/tasks/{task_id}/reopen")
+async def reopen_task(task_id: str, user=Depends(require_auth)):
+    """Reopen a completed task."""
+    db = get_db()
+    try:
+        db.execute(text("""UPDATE tasks SET status='open', completed_at=NULL,
+            completed_by=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=:id"""), {"id": task_id})
+        db.commit()
+        return {"id": task_id, "status": "open"}
+    finally: db.close()
+
+
+@app.get("/api/tasks/stats")
+async def task_stats(user=Depends(require_auth)):
+    """Task dashboard stats."""
+    db = get_db()
+    try:
+        stats = {}
+        # Counts by status
+        rows = db.execute(text("SELECT status, COUNT(*) as c FROM tasks GROUP BY status")).fetchall()
+        stats["by_status"] = {r[0]: r[1] for r in rows}
+        # Counts by assignee_type
+        rows = db.execute(text("SELECT assignee_type, COUNT(*) as c FROM tasks WHERE status NOT IN ('done','cancelled') GROUP BY assignee_type")).fetchall()
+        stats["by_type"] = {r[0]: r[1] for r in rows}
+        # Overdue
+        row = db.execute(text("SELECT COUNT(*) FROM tasks WHERE due_date < CURRENT_DATE AND status NOT IN ('done','cancelled')")).fetchone()
+        stats["overdue"] = row[0] if row else 0
+        # Due today
+        row = db.execute(text("SELECT COUNT(*) FROM tasks WHERE due_date = CURRENT_DATE AND status NOT IN ('done','cancelled')")).fetchone()
+        stats["due_today"] = row[0] if row else 0
+        # Due this week
+        row = db.execute(text("SELECT COUNT(*) FROM tasks WHERE due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7 AND status NOT IN ('done','cancelled')")).fetchone()
+        stats["due_this_week"] = row[0] if row else 0
+        # Total active
+        row = db.execute(text("SELECT COUNT(*) FROM tasks WHERE status NOT IN ('done','cancelled')")).fetchone()
+        stats["active_total"] = row[0] if row else 0
+        # By assignee (top 10)
+        rows = db.execute(text("""SELECT assignee, assignee_type, COUNT(*) as c FROM tasks
+            WHERE status NOT IN ('done','cancelled') GROUP BY assignee, assignee_type ORDER BY c DESC LIMIT 10""")).fetchall()
+        stats["by_assignee"] = [{"assignee": r[0], "type": r[1], "count": r[2]} for r in rows]
+        # Escalation warnings (external tasks waiting too long)
+        rows = db.execute(text("""SELECT id, title, assignee, customer_code, waiting_since, escalation_after_days
+            FROM tasks WHERE assignee_type = 'external' AND status IN ('open','waiting')
+            AND waiting_since IS NOT NULL AND escalation_after_days IS NOT NULL
+            AND waiting_since + (escalation_after_days || ' days')::interval < CURRENT_TIMESTAMP""")).fetchall()
+        stats["escalations"] = [dict(r._mapping) for r in rows]
+        for e in stats["escalations"]:
+            for k in ["waiting_since"]: e[k] = str(e[k]) if e.get(k) else None
+
+        return stats
+    finally: db.close()
+
+
+@app.post("/api/tasks/trigger")
+async def trigger_tasks(request: Request, user=Depends(require_auth)):
+    """Manually fire a trigger event. Body: {event, context}"""
+    body = await request.json()
+    event = body.get("event")
+    context = body.get("context", {})
+    if not event:
+        raise HTTPException(400, "event required")
+    tasks = create_task_from_trigger(event, context, created_by=user["email"])
+    return {"event": event, "tasks_created": len(tasks), "tasks": tasks}
+
+
 # ── BEATRIX Memory (GitHub-backed) ──────────────────
 @app.get("/api/memory")
 async def get_memory(user=Depends(require_auth)):
@@ -8101,6 +8538,25 @@ async def create_lead(request: Request, user=Depends(require_auth)):
              "value": data.get("value", 0), "source": data.get("source",""),
              "notes": data.get("notes",""), "created_by": user["sub"]})
         db.commit()
+
+        # ── Auto-trigger tasks for new lead ──
+        try:
+            trigger_ctx = {
+                "customer_code": data.get("customer_code", ""),
+                "lead_id": lead_id,
+                "fa_owner": data.get("fa_owner", "GF"),
+                "base_date": datetime.utcnow().strftime("%Y-%m-%d")
+            }
+            create_task_from_trigger("lead_created", trigger_ctx, created_by=user["sub"])
+            # If next_action provided, create specific task
+            if data.get("next_action"):
+                trigger_ctx["next_action"] = data.get("next_action", "Follow-up")
+                if data.get("next_action_date"):
+                    trigger_ctx["base_date"] = data["next_action_date"]
+                create_task_from_trigger("lead_next_action", trigger_ctx, created_by=user["sub"])
+        except Exception as te:
+            logger.warning(f"Lead task trigger failed: {te}")
+
         return {"id": lead_id, "status": "created"}
     except Exception as e:
         db.rollback()
@@ -8114,6 +8570,13 @@ async def update_lead(lead_id: str, request: Request, user=Depends(require_auth)
     try:
         from sqlalchemy import text
         data = await request.json()
+
+        # Check if stage changed to "won" for trigger
+        old_stage = None
+        if "stage" in data:
+            old = db.execute(text("SELECT stage, company FROM leads WHERE id = :id"), {"id": lead_id}).fetchone()
+            if old: old_stage = old[0]
+
         sets = []
         params = {"id": lead_id}
         for field in ["company", "contact", "email", "stage", "value", "source", "notes"]:
@@ -8124,6 +8587,19 @@ async def update_lead(lead_id: str, request: Request, user=Depends(require_auth)
         sets.append("updated_at = CURRENT_TIMESTAMP")
         db.execute(text(f"UPDATE leads SET {', '.join(sets)} WHERE id = :id"), params)
         db.commit()
+
+        # ── Auto-trigger tasks on stage change ──
+        if data.get("stage") == "won" and old_stage != "won":
+            try:
+                create_task_from_trigger("lead_won", {
+                    "customer_code": data.get("customer_code", ""),
+                    "lead_id": lead_id,
+                    "fa_owner": data.get("fa_owner", "GF"),
+                    "base_date": datetime.utcnow().strftime("%Y-%m-%d")
+                }, created_by=user["sub"])
+            except Exception as te:
+                logger.warning(f"Lead-won trigger failed: {te}")
+
         return {"status": "updated"}
     except Exception as e:
         db.rollback()
