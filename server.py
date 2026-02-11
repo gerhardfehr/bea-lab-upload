@@ -4741,6 +4741,20 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
 @app.post("/api/text", response_model=DocumentResponse)
 async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
     if not request.content.strip(): raise HTTPException(400, "Inhalt darf nicht leer sein")
+
+    # Auto-extract title from content if not provided
+    if not request.title or request.title in ["Untitled", ""]:
+        lines = [l.strip() for l in request.content[:1000].split('\n') if l.strip() and len(l.strip()) > 3]
+        if lines:
+            # Use first meaningful line (skip very short ones)
+            candidate = lines[0][:120]
+            # Clean up: remove markdown headers, leading punctuation
+            if candidate.startswith('#'):
+                candidate = candidate.lstrip('#').strip()
+            request.title = candidate if candidate else "Untitled"
+        else:
+            request.title = "Untitled"
+
     # Duplicate check via SHA256 hash of content
     content_hash = hashlib.sha256(request.content.encode("utf-8")).hexdigest()
     db = get_db()
@@ -5381,6 +5395,14 @@ async def classify_all_documents(request: Request, user=Depends(require_auth)):
                 doc.doc_metadata = meta
                 if detection["is_paper"] and doc.category != "paper":
                     doc.category = "paper"
+
+                # Fix missing titles
+                if doc.title in ["Untitled", ""] or not doc.title:
+                    lines = [l.strip() for l in text[:1000].split('\n') if l.strip() and len(l.strip()) > 3]
+                    if lines:
+                        candidate = lines[0][:120].lstrip('#').strip()
+                        if candidate:
+                            doc.title = candidate
 
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(doc, 'doc_metadata')
