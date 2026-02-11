@@ -5063,7 +5063,7 @@ Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
         full_text = []
         json_started = False
         try:
-            conn = http.client.HTTPSConnection("api.anthropic.com", context=ctx)
+            conn = http.client.HTTPSConnection("api.anthropic.com", timeout=90, context=ctx)
             conn.request("POST", "/v1/messages", body=payload, headers={
                 "x-api-key": ANTHROPIC_API_KEY,
                 "anthropic-version": "2023-06-01",
@@ -5326,7 +5326,7 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
         full_text = []
         try:
             # Use http.client for streaming (urllib doesn't support chunked reading well)
-            conn = http.client.HTTPSConnection("api.anthropic.com", context=ctx)
+            conn = http.client.HTTPSConnection("api.anthropic.com", timeout=90, context=ctx)
             conn.request("POST", "/v1/messages", body=payload, headers={
                 "x-api-key": ANTHROPIC_API_KEY,
                 "anthropic-version": "2023-06-01",
@@ -5795,7 +5795,7 @@ async def chat_project_stream(slug: str, request: ChatRequest, user=Depends(requ
 
         full_text = []
         try:
-            conn = http.client.HTTPSConnection("api.anthropic.com", context=ctx_ssl)
+            conn = http.client.HTTPSConnection("api.anthropic.com", timeout=90, context=ctx_ssl)
             conn.request("POST", "/v1/messages", body=payload, headers={
                 "x-api-key": ANTHROPIC_API_KEY,
                 "anthropic-version": "2023-06-01",
