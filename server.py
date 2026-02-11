@@ -3664,7 +3664,59 @@ def load_customer_context_from_github():
                     "owner": lead.get("owner") or lead.get("fa_owner", "")
                 })
 
-        # 4. Build context string
+        # 4. Projects per customer (from data/projects/)
+        project_history = {}
+        try:
+            proj_list_req = urllib.request.Request(
+                f"https://api.github.com/repos/{GH_REPO}/contents/data/projects",
+                headers=gh_headers)
+            proj_dirs = json.loads(urllib.request.urlopen(proj_list_req, context=ctx, timeout=15).read())
+            for pdir in proj_dirs:
+                if pdir.get("type") != "dir":
+                    continue
+                try:
+                    purl = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{pdir['name']}/project.yaml"
+                    preq = urllib.request.Request(purl, headers={**gh_headers, "Accept": "application/vnd.github.v3.raw"})
+                    pdata = yaml.safe_load(urllib.request.urlopen(preq, context=ctx, timeout=10).read().decode()) or {}
+                    pmeta = pdata.get("metadata", {})
+                    pclient = pdata.get("client", {})
+                    pproj = pdata.get("project", {})
+                    ptimeline = pdata.get("timeline", {})
+                    pteam = pdata.get("team", {})
+                    ccode = (pclient.get("customer_code") or "").lower()
+                    if not ccode:
+                        continue
+                    if ccode not in project_history:
+                        project_history[ccode] = []
+                    project_history[ccode].append({
+                        "code": pmeta.get("project_code", ""),
+                        "slug": pmeta.get("slug", pdir["name"]),
+                        "name": pproj.get("name", ""),
+                        "type": pproj.get("type", ""),
+                        "description": (pproj.get("description") or "")[:100],
+                        "status": pmeta.get("status", ""),
+                        "category": pmeta.get("project_category", ""),
+                        "start": ptimeline.get("start_date", ""),
+                        "end": ptimeline.get("end_date", ""),
+                        "budget": ptimeline.get("budget_chf", 0),
+                        "owner": pteam.get("fa_owner", ""),
+                        "created": pmeta.get("created", "")
+                    })
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Failed to load projects: {e}")
+
+        # 5. Project sequences (for next code prediction)
+        project_sequences = {}
+        try:
+            seq_data = fetch_yaml("data/config/project-sequences.yaml")
+            if seq_data:
+                project_sequences = seq_data.get("sequences", {})
+        except Exception:
+            pass
+
+        # 6. Build context string
         lines = ["BEKANNTE KUNDEN MIT DETAILS:"]
         all_codes = set(list(customers.keys()) + list(contacts.keys()))
         for code in sorted(all_codes):
@@ -3693,6 +3745,17 @@ def load_customer_context_from_github():
                 lead_strs = [f"{l['id']}:{l.get('stage','?')}" for l in ls[:3]]
                 parts.append(f"Leads: {', '.join(lead_strs)}")
 
+            # Existing projects
+            if code in project_history:
+                projs = sorted(project_history[code], key=lambda x: x.get("created",""), reverse=True)
+                proj_strs = []
+                for p in projs[:5]:
+                    ps = f"{p['code']}:{p['name'][:30]}"
+                    if p.get("status"): ps += f"({p['status']})"
+                    if p.get("start"): ps += f"[{p['start']}]"
+                    proj_strs.append(ps)
+                parts.append(f"Projekte: {', '.join(proj_strs)}")
+
             lines.append(" | ".join(parts))
 
         # Add codes without details
@@ -3707,9 +3770,11 @@ def load_customer_context_from_github():
             "context": context_str,
             "customers": customers,
             "contacts": contacts,
-            "leads_summary": lead_summaries
+            "leads_summary": lead_summaries,
+            "projects": project_history,
+            "sequences": project_sequences
         }
-        logger.info(f"Customer context loaded: {len(customers)} customers, {len(contacts)} with contacts, {sum(len(v) for v in lead_summaries.values())} leads")
+        logger.info(f"Customer context loaded: {len(customers)} customers, {len(contacts)} with contacts, {sum(len(v) for v in lead_summaries.values())} leads, {sum(len(v) for v in project_history.values())} projects")
         return _CUSTOMER_CONTEXT_CACHE
 
     except Exception as e:
@@ -3730,8 +3795,10 @@ def get_customer_detail(customer_code):
     c = cache["customers"].get(code, {})
     cn = cache["contacts"].get(code, {})
     leads = cache.get("leads_summary", {}).get(code, [])
+    projects = cache.get("projects", {}).get(code, [])
+    sequences = cache.get("sequences", {})
 
-    if not c and not cn:
+    if not c and not cn and not projects:
         return None
 
     detail = f"Kunde: {c.get('name', code.upper())}"
@@ -3747,7 +3814,41 @@ def get_customer_detail(customer_code):
     if leads:
         detail += f"\nBestehende Leads ({len(leads)}):"
         for l in leads[:5]:
-            detail += f"\n  - {l['id']}: {l.get('opportunity', '?')[:50]} (Stage: {l.get('stage', '?')}, Wert: {l.get('value', 0)})"
+            opp = l.get('opportunity', '?')
+            if isinstance(opp, str):
+                opp = opp[:50]
+            detail += f"\n  - {l['id']}: {opp} (Stage: {l.get('stage', '?')}, Wert: {l.get('value', 0)})"
+
+    # Project history
+    if projects:
+        sorted_projs = sorted(projects, key=lambda x: x.get("created",""), reverse=True)
+        detail += f"\n\nBESTEHENDE PROJEKTE ({len(projects)}):"
+        for p in sorted_projs:
+            detail += f"\n  - {p['code']}: {p['name']}"
+            if p.get("type"): detail += f" ({p['type']})"
+            if p.get("status"): detail += f" [{p['status']}]"
+            if p.get("start"): detail += f" Start: {p['start']}"
+            if p.get("end"): detail += f" Ende: {p['end']}"
+            if p.get("budget"): detail += f" Budget: {p['budget']} CHF"
+            if p.get("description"): detail += f"\n    Beschreibung: {p['description']}"
+        last = sorted_projs[0]
+        detail += f"\n  LETZTES PROJEKT: {last['code']} - {last['name']}"
+
+    # Next project code
+    prefix = code[:3].upper()
+    next_seq = sequences.get(prefix, 1)
+    # Also check from project codes
+    for p in projects:
+        pc = p.get("code", "")
+        if pc.upper().startswith(prefix):
+            try:
+                num = int(pc[len(prefix):])
+                if num >= next_seq:
+                    next_seq = num + 1
+            except ValueError:
+                pass
+    detail += f"\nNÄCHSTES PROJEKTKÜRZEL: {prefix}{next_seq:03d}"
+
     return detail
 
 INTENT_ROUTER_SYSTEM = """Du bist der BEATRIX Intent-Router. Analysiere die User-Nachricht und bestimme den Intent.
@@ -3797,9 +3898,12 @@ REGELN:
 2. JSON-Struktur: {{"intent":"project", "action":"create"|"update", "status":"complete"|"need_info", "data":{{...felder...}}, "missing":[...], "message":"...", "confidence":0.0-1.0}}
 3. Pflichtfelder: customer_code, name, project_category
 4. Sinnvolle Defaults: type="beratung", billing="fixed", fa_owner aus Kundendaten, start_date=heute
-5. AUTOMATISCH befuellen: fa_owner aus Kundendaten, Branche, Land
+5. AUTOMATISCH befuellen: fa_owner aus Kundendaten, Branche, Land, naechstes Projektkuerzel
 6. Deutsch, kurz, professionell
-7. Wenn der Kunde bekannt ist: zeige was du schon weisst und frage NUR nach dem Projektspezifischen""",
+7. Wenn der Kunde bekannt ist: zeige was du schon weisst und frage NUR nach dem Projektspezifischen
+8. IMMER bei bestehenden Projekten: Zeige die bisherigen Projekte des Kunden und frage EXPLIZIT ob das neue Projekt mit einem bestehenden zusammenhaengt oder ein Folgeprojekt ist
+9. PROJEKTKUERZEL: Schlage das naechste Kuerzel vor (z.B. wenn letztes ZIN006 war → ZIN007). Das Kuerzel steht in den Kundendaten unter NAECHSTES PROJEKTKUERZEL
+10. Bei Folgeprojekten: Uebernimm relevante Daten (Typ, Team, Billing) vom Vorgaengerprojekt als Default""",
 
     "lead": f"""Du bist BEATRIX, die Sales-Assistentin von FehrAdvice & Partners AG.
 Der User moechte einen Lead/eine Opportunity erfassen oder die Sales-Pipeline bearbeiten.
@@ -3836,7 +3940,8 @@ REGELN:
 5. Bei Bestandskunden: Zeige bekannte Kontakte und frage "Ist [Name] der richtige Ansprechpartner?"
 6. Bei bestehenden Leads: Erwaehne sie kurz ("Es gibt bereits X Leads fuer diesen Kunden")
 7. Frage gezielt nach: Opportunity, geschaetzter Wert, naechster Schritt
-8. Deutsch, professionell, effizient""",
+8. Bei Bestandskunden mit Projekten: Erwaehne bestehende Projekte und frage ob der Lead damit zusammenhaengt
+9. Deutsch, professionell, effizient""",
 
     "model": f"""Du bist BEATRIX, die Modell-Spezialistin von FehrAdvice & Partners AG.
 Der User moechte ein Behavioral-Modell erstellen oder bearbeiten, basierend auf dem Evidence-Based Framework (EBF).
