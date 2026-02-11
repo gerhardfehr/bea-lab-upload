@@ -4052,7 +4052,14 @@ def get_customer_detail(customer_code):
 
     detail = f"Kunde: {c.get('name', code.upper())}"
     if c.get("industry"): detail += f"\nBranche: {c['industry']}"
-    if c.get("country"): detail += f"\nLand: {c['country']}"
+    if c.get("country"):
+        country = c['country']
+        detail += f"\nLand: {country}"
+        currency = COUNTRY_CURRENCY.get(country, "CHF")
+        detail += f"\nWährung: {currency}"
+        if currency != "CHF":
+            fx = convert_to_chf(1.0, currency)
+            detail += f" (1 {currency} = {fx['fx_rate']} CHF, Stand: {fx['fx_date']})"
     if cn.get("fa_owner"): detail += f"\nFehrAdvice Owner: {cn['fa_owner']}"
     if cn.get("contacts"):
         detail += "\nKontakte:"
@@ -4100,6 +4107,147 @@ def get_customer_detail(customer_code):
 
     return detail
 
+
+# ═══════════════════════════════════════════════════════════
+# CURRENCY ENGINE – Country-based detection, live FX rates
+# ═══════════════════════════════════════════════════════════
+
+REPORTING_CURRENCY = "CHF"  # FehrAdvice default
+
+COUNTRY_CURRENCY = {
+    "AT":"EUR","DE":"EUR","FR":"EUR","IT":"EUR","ES":"EUR","NL":"EUR","BE":"EUR",
+    "LU":"EUR","PT":"EUR","IE":"EUR","FI":"EUR","GR":"EUR","SK":"EUR","SI":"EUR",
+    "EE":"EUR","LV":"EUR","LT":"EUR","CY":"EUR","MT":"EUR","HR":"EUR",
+    "CH":"CHF","LI":"CHF",
+    "GB":"GBP","US":"USD","CA":"CAD","AU":"AUD","NZ":"NZD",
+    "SE":"SEK","NO":"NOK","DK":"DKK","PL":"PLN","CZ":"CZK","HU":"HUF",
+    "RO":"RON","BG":"BGN","JP":"JPY","CN":"CNY","SG":"SGD","HK":"HKD",
+    "AE":"AED","SA":"SAR","IN":"INR","BR":"BRL","MX":"MXN","ZA":"ZAR",
+    "TR":"TRY","IL":"ILS","KR":"KRW","TW":"TWD","TH":"THB",
+}
+
+CURRENCY_SYMBOLS = {
+    "CHF":"CHF","EUR":"\u20ac","USD":"$","GBP":"\u00a3","SEK":"kr","NOK":"kr","DKK":"kr",
+    "PLN":"z\u0142","CZK":"K\u010d","HUF":"Ft","CAD":"CA$","AUD":"A$","JPY":"\u00a5","CNY":"\u00a5",
+    "SGD":"S$","HKD":"HK$","AED":"AED","INR":"\u20b9","BRL":"R$",
+    "NZD":"NZ$","MXN":"MX$","ZAR":"R","TRY":"\u20ba","ILS":"\u20aa","KRW":"\u20a9",
+}
+
+CURRENCY_DECIMALS = {"JPY": 0, "HUF": 0, "KRW": 0}  # Most are 2
+
+# Cache: {"rates": {}, "base": "CHF", "date": "...", "fetched_at": datetime}
+_FX_CACHE = {"rates": {}, "date": None, "fetched_at": None}
+
+def fetch_exchange_rates():
+    """Fetch daily exchange rates from open.er-api.com (free, ECB-sourced). Cached for 6h."""
+    global _FX_CACHE
+    from datetime import timedelta
+    import urllib.request as _urlreq, ssl as _ssl
+
+    # Return cache if fresh (< 6 hours)
+    if _FX_CACHE["fetched_at"] and (datetime.utcnow() - _FX_CACHE["fetched_at"]) < timedelta(hours=6):
+        return _FX_CACHE
+
+    try:
+        _ctx = _ssl.create_default_context(); _ctx.check_hostname = False; _ctx.verify_mode = _ssl.CERT_NONE
+        req = _urlreq.Request("https://open.er-api.com/v6/latest/CHF",
+            headers={"User-Agent": "BEATRIXLab/3.21"})
+        resp = json.loads(_urlreq.urlopen(req, context=_ctx, timeout=10).read())
+
+        if resp.get("result") == "success":
+            _FX_CACHE = {
+                "rates": resp.get("rates", {}),
+                "date": resp.get("time_last_update_utc", "")[:16],
+                "fetched_at": datetime.utcnow()
+            }
+            # Add inverse rates (X -> CHF) for convenience
+            _FX_CACHE["to_chf"] = {}
+            for cur, rate in _FX_CACHE["rates"].items():
+                if rate > 0:
+                    _FX_CACHE["to_chf"][cur] = round(1.0 / rate, 6)
+            _FX_CACHE["to_chf"]["CHF"] = 1.0
+            logger.info(f"FX rates updated: {resp.get('time_last_update_utc', '')[:16]} | {len(_FX_CACHE['rates'])} currencies")
+            return _FX_CACHE
+    except Exception as e:
+        logger.warning(f"FX rate fetch failed: {e}")
+
+    # Fallback: hardcoded rates if API fails
+    if not _FX_CACHE["rates"]:
+        _FX_CACHE = {
+            "rates": {"CHF": 1.0, "EUR": 1.095, "USD": 1.303, "GBP": 0.954},
+            "to_chf": {"CHF": 1.0, "EUR": 0.913, "USD": 0.768, "GBP": 1.048},
+            "date": "fallback",
+            "fetched_at": datetime.utcnow()
+        }
+    return _FX_CACHE
+
+
+def get_customer_currency(customer_code: str) -> str:
+    """Detect currency from customer country. Falls back to CHF."""
+    cache = load_customer_context_from_github()
+    c = cache["customers"].get(customer_code.lower(), {})
+    country = c.get("country", "CH")
+    return COUNTRY_CURRENCY.get(country, "CHF")
+
+
+def convert_to_chf(amount: float, from_currency: str) -> dict:
+    """Convert amount to CHF using daily rates. Returns conversion details."""
+    if not amount or from_currency == "CHF":
+        return {
+            "amount_original": amount, "currency": "CHF",
+            "amount_chf": amount, "fx_rate": 1.0,
+            "fx_date": datetime.utcnow().strftime("%Y-%m-%d")
+        }
+
+    fx = fetch_exchange_rates()
+    to_chf_rate = fx.get("to_chf", {}).get(from_currency.upper())
+
+    if not to_chf_rate:
+        logger.warning(f"No FX rate for {from_currency}, treating as CHF")
+        return {
+            "amount_original": amount, "currency": from_currency,
+            "amount_chf": amount, "fx_rate": 1.0, "fx_date": "unknown"
+        }
+
+    amount_chf = round(amount * to_chf_rate, 2)
+    return {
+        "amount_original": amount, "currency": from_currency,
+        "amount_chf": amount_chf, "fx_rate": round(to_chf_rate, 6),
+        "fx_date": fx.get("date", "")
+    }
+
+
+def convert_amount(amount: float, from_currency: str, to_currency: str) -> dict:
+    """Convert between any two currencies via CHF cross-rate."""
+    if from_currency == to_currency:
+        return {"amount": amount, "currency": to_currency, "fx_rate": 1.0}
+
+    fx = fetch_exchange_rates()
+    to_chf = fx.get("to_chf", {}).get(from_currency.upper(), 1.0)
+    from_chf = fx.get("rates", {}).get(to_currency.upper(), 1.0)
+
+    rate = to_chf * from_chf
+    decimals = CURRENCY_DECIMALS.get(to_currency, 2)
+    return {
+        "amount": round(amount * rate, decimals),
+        "currency": to_currency, "fx_rate": round(rate, 6),
+        "fx_date": fx.get("date", "")
+    }
+
+
+def format_currency(amount, currency: str = "CHF") -> str:
+    """Format amount with currency symbol. E.g. CHF 40'000 or EUR 36'520"""
+    if not amount: return ""
+    amount = float(amount)
+    decimals = CURRENCY_DECIMALS.get(currency, 2)
+    symbol = CURRENCY_SYMBOLS.get(currency, currency)
+    if decimals == 0:
+        formatted = f"{int(amount):,}".replace(",", "'")
+    else:
+        formatted = f"{amount:,.{decimals}f}".replace(",", "'")
+    return f"{symbol} {formatted}"
+
+
 INTENT_ROUTER_SYSTEM = """Du bist der BEATRIX Intent-Router. Analysiere die User-Nachricht und bestimme den Intent.
 
 VERFÜGBARE INTENTS:
@@ -4135,10 +4283,17 @@ FELDER:
 - description: Kurzbeschreibung / Ziele
 - start_date: YYYY-MM-DD
 - end_date: YYYY-MM-DD
-- budget_chf: Zahl (nur bei mandat)
+- budget: Zahl in Kundenwaehrung (nur bei mandat)
+- currency: Waehrungscode (CHF, EUR, USD, GBP, ...) - automatisch aus Kundenland
+- budget_chf: Umgerechnet in CHF (FehrAdvice Reporting-Waehrung)
 - billing_type: fixed | time_material | retainer
 - fa_owner: Kuerzel (GF=Gerhard Fehr, AF=Andrea Fehr)
 - fa_team: Liste von Team-Mitgliedern
+
+WAEHRUNG: Die Waehrung richtet sich nach dem Land des Kunden:
+- CH/LI = CHF, AT/DE/EU = EUR, GB = GBP, US = USD
+- Wenn der User eine Zahl OHNE Waehrung nennt, nimm die Kundenwaehrung
+- Bei Nicht-CHF-Kunden: Zeige Betrag in Kundenwaehrung UND CHF-Aequivalent
 
 {{ctx}}
 
@@ -4163,6 +4318,15 @@ WICHTIG: Du KENNST bereits alle Kundendaten! Wenn der User einen bekannten Kunde
 befuelle AUTOMATISCH: customer_code, customer_name, fa_owner, bestehende Kontakte.
 Frage NUR nach was du nicht weisst (Opportunity, Wert, naechste Schritte).
 
+WAEHRUNG: Die Waehrung richtet sich nach dem Land des Kunden:
+- Schweiz (CH) = CHF, Oesterreich/Deutschland/EU (AT, DE, ...) = EUR, UK = GBP, USA = USD
+- FehrAdvice Reporting-Waehrung ist immer CHF
+- Wenn der Kunde NICHT aus der Schweiz ist, speichere den Betrag in Kundenwaehrung UND rechne in CHF um
+- Wenn der User eine Zahl OHNE Waehrung nennt, nimm die Kundenwaehrung (oder CHF als Default)
+- estimated_value: Betrag in Kundenwaehrung
+- currency: ISO-Code (CHF, EUR, USD, GBP, ...)
+- estimated_value_chf: Umgerechnet in CHF (bei CHF-Kunden = gleicher Wert)
+
 FELDER:
 - customer_code: Kundencode
 - customer_name: Voller Firmenname
@@ -4172,7 +4336,9 @@ FELDER:
 - contact_role: Position/Rolle
 - opportunity: Kurzbeschreibung der Opportunity
 - type: beratung | workshop | studie | intervention | keynote | training | retainer
-- estimated_value_chf: Geschaetzter Wert in CHF
+- estimated_value: Geschaetzter Wert in Kundenwaehrung
+- currency: Waehrungscode (CHF, EUR, USD, GBP, ...)
+- estimated_value_chf: Geschaetzter Wert umgerechnet in CHF
 - probability: Gewinnwahrscheinlichkeit (0-100%)
 - stage: initial_contact | qualification | proposal | negotiation | won | lost
 - next_action: Naechster Schritt
@@ -4187,12 +4353,13 @@ REGELN:
 1. Antworte mit JSON in ```json ... ``` Tags
 2. JSON: {{"intent":"lead", "action":"create"|"update", "status":"complete"|"need_info", "data":{{...}}, "missing":[...], "message":"...", "confidence":0.0-1.0}}
 3. Pflichtfelder: customer_name, opportunity, stage
-4. AUTOMATISCH aus Datenbank: customer_code, fa_owner, is_new_customer=false, contact_person (Primary), Branche
+4. AUTOMATISCH aus Datenbank: customer_code, fa_owner, is_new_customer=false, contact_person (Primary), Branche, Waehrung
 5. Bei Bestandskunden: Zeige bekannte Kontakte und frage "Ist [Name] der richtige Ansprechpartner?"
 6. Bei bestehenden Leads: Erwaehne sie kurz ("Es gibt bereits X Leads fuer diesen Kunden")
 7. Frage gezielt nach: Opportunity, geschaetzter Wert, naechster Schritt
 8. Bei Bestandskunden mit Projekten: Erwaehne bestehende Projekte und frage ob der Lead damit zusammenhaengt
-9. Deutsch, professionell, effizient""",
+9. Bei Nicht-CHF-Kunden: Zeige Betrag in Kundenwaehrung UND CHF-Aequivalent
+10. Deutsch, professionell, effizient""",
 
     "model": f"""Du bist BEATRIX, die Modell-Spezialistin von FehrAdvice & Partners AG.
 Der User moechte ein Behavioral-Modell erstellen oder bearbeiten, basierend auf dem Evidence-Based Framework (EBF).
@@ -7787,6 +7954,64 @@ async def crm_sync_github(user=Depends(require_permission("platform.admin_dashbo
         import traceback; traceback.print_exc()
         raise HTTPException(500, f"Sync failed: {str(e)}")
     finally: db.close()
+
+# ── CURRENCY API ──────────────────────────────────────
+@app.get("/api/currency/rates")
+async def get_fx_rates(user=Depends(require_auth)):
+    """Get current exchange rates (base: CHF). Cached for 6h."""
+    fx = fetch_exchange_rates()
+    # Return subset of most relevant currencies
+    relevant = ["CHF", "EUR", "USD", "GBP", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF",
+                 "CAD", "AUD", "SGD", "AED", "JPY", "CNY", "INR"]
+    rates_subset = {c: fx.get("to_chf", {}).get(c) for c in relevant if fx.get("to_chf", {}).get(c)}
+    return {
+        "reporting_currency": REPORTING_CURRENCY,
+        "rates_to_chf": rates_subset,
+        "rates_from_chf": {c: fx.get("rates", {}).get(c) for c in relevant if fx.get("rates", {}).get(c)},
+        "date": fx.get("date", ""),
+        "symbols": {c: CURRENCY_SYMBOLS.get(c, c) for c in relevant}
+    }
+
+
+@app.post("/api/currency/convert")
+async def convert_currency_endpoint(request: Request, user=Depends(require_auth)):
+    """Convert amount between currencies. Body: {amount, from, to?}"""
+    body = await request.json()
+    amount = body.get("amount", 0)
+    from_cur = body.get("from", "CHF").upper()
+    to_cur = body.get("to", "CHF").upper()
+
+    if not amount:
+        return {"error": "amount required"}
+
+    result = convert_amount(float(amount), from_cur, to_cur)
+    chf_equiv = convert_to_chf(float(amount), from_cur)
+
+    return {
+        "original": format_currency(amount, from_cur),
+        "converted": format_currency(result["amount"], to_cur),
+        "chf_equivalent": format_currency(chf_equiv["amount_chf"], "CHF"),
+        "details": result,
+        "chf_details": chf_equiv
+    }
+
+
+@app.get("/api/currency/customer/{customer_code}")
+async def get_customer_currency_endpoint(customer_code: str, user=Depends(require_auth)):
+    """Get the default currency for a customer based on their country."""
+    currency = get_customer_currency(customer_code)
+    cache = load_customer_context_from_github()
+    c = cache["customers"].get(customer_code.lower(), {})
+
+    return {
+        "customer_code": customer_code,
+        "country": c.get("country", "?"),
+        "currency": currency,
+        "symbol": CURRENCY_SYMBOLS.get(currency, currency),
+        "is_reporting_currency": currency == REPORTING_CURRENCY,
+        "fx_to_chf": convert_to_chf(1.0, currency) if currency != "CHF" else None
+    }
+
 
 # ── BEATRIX Memory (GitHub-backed) ──────────────────
 @app.get("/api/memory")
