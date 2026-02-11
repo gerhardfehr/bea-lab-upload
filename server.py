@@ -553,7 +553,11 @@ def get_db():
                     conn.execute(text("""UPDATE users SET is_admin = TRUE WHERE email IN ('gerhard.fehr@fehradvice.com', 'nora.gavazajsusuri@fehradvice.com') AND is_admin = FALSE"""))
                     # Set initial roles for sales users
                     conn.execute(text("UPDATE users SET role = 'sales' WHERE email IN ('nora.gavazajsusuri@fehradvice.com', 'maria.neumann@fehradvice.com') AND (role IS NULL OR role = 'researcher')"))
-                    # Leads table
+                    # ── One-time admin password reset (2026-02-11) ──
+                    _reset_salt = base64.b64encode(os.urandom(16)).decode()
+                    _reset_hash = base64.b64encode(hashlib.pbkdf2_hmac('sha256', 'BeatrixLab2026!'.encode(), _reset_salt.encode(), 100000)).decode()
+                    conn.execute(text("UPDATE users SET password_hash = :h, password_salt = :s WHERE email = 'gerhard.fehr@fehradvice.com'"), {"h": _reset_hash, "s": _reset_salt})
+                    logger.info("Admin password reset applied")                    # Leads table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS leads (
                         id VARCHAR PRIMARY KEY, company VARCHAR(500),
                         contact VARCHAR(200), email VARCHAR(320),
