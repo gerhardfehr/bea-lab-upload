@@ -3578,6 +3578,178 @@ groupe-mutuel, assura, atupri, visana, bmw, orf, srg, ringier-medien-schweiz,
 lindt-copacking, porr, neon, revolut, peek-cloppenburg, philoro, sob, spo, bfe,
 economiesuisse, prio-swiss, bekb, localsearch, zindel-united, plusminus, awe-sg"""
 
+# ═══════════════════════════════════════════════════════════
+# RICH CUSTOMER CONTEXT (loaded from GitHub at startup)
+# ═══════════════════════════════════════════════════════════
+_CUSTOMER_CONTEXT_CACHE = {"loaded": False, "context": "", "customers": {}, "contacts": {}, "leads_summary": ""}
+
+def load_customer_context_from_github():
+    """Load customer-registry, contacts, and lead-database from GitHub for rich context."""
+    global _CUSTOMER_CONTEXT_CACHE
+    if _CUSTOMER_CONTEXT_CACHE["loaded"]:
+        return _CUSTOMER_CONTEXT_CACHE
+
+    import urllib.request, ssl, base64, yaml
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    gh_headers = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"} if GH_TOKEN else {}
+
+    def fetch_yaml(path):
+        try:
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{GH_REPO}/contents/{path}",
+                headers=gh_headers)
+            resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+            return yaml.safe_load(base64.b64decode(resp["content"]).decode("utf-8"))
+        except Exception as e:
+            logger.warning(f"Failed to load {path}: {e}")
+            return None
+
+    try:
+        # 1. Customer Registry
+        reg = fetch_yaml("data/customer-registry.yaml")
+        customers = {}
+        if reg and reg.get("customers"):
+            for c in reg["customers"]:
+                code = c.get("code", "").lower()
+                customers[code] = {
+                    "name": c.get("name", ""),
+                    "short": c.get("short_name", ""),
+                    "industry": c.get("industry", ""),
+                    "country": c.get("country", ""),
+                    "type": c.get("type", ""),
+                    "status": c.get("status", "")
+                }
+
+        # 2. Customer Contacts
+        contacts_data = fetch_yaml("data/customer-contacts.yaml")
+        contacts = {}
+        if contacts_data and contacts_data.get("customers"):
+            for cc in contacts_data["customers"]:
+                cid = cc.get("customer_id", "").lower()
+                contacts[cid] = {
+                    "fa_owner": cc.get("fa_owner", ""),
+                    "status": cc.get("relationship_status", ""),
+                    "contacts": []
+                }
+                for con in cc.get("contacts", []):
+                    contacts[cid]["contacts"].append({
+                        "name": con.get("name", ""),
+                        "role": con.get("role", ""),
+                        "primary": con.get("is_primary", False),
+                        "email": con.get("email", "")
+                    })
+
+        # 3. Lead Database (summary only - it's 160K)
+        leads = fetch_yaml("data/sales/lead-database.yaml")
+        lead_summaries = {}
+        if leads and leads.get("leads"):
+            for lead in leads.get("leads", []):
+                # company can be a dict with name/short_name or a string
+                company = lead.get("company", {})
+                if isinstance(company, dict):
+                    cid = (company.get("short_name") or company.get("name", "")).lower().replace(" ", "-")
+                elif isinstance(company, str):
+                    cid = company.lower().replace(" ", "-")
+                else:
+                    cid = str(lead.get("id", "")).lower()
+                if not cid:
+                    continue
+                if cid not in lead_summaries:
+                    lead_summaries[cid] = []
+                lead_summaries[cid].append({
+                    "id": lead.get("id", ""),
+                    "opportunity": lead.get("opportunity") or lead.get("notes", "")[:60] if isinstance(lead.get("notes",""), str) else "",
+                    "stage": lead.get("stage", ""),
+                    "value": lead.get("value") or lead.get("estimated_value_chf", 0),
+                    "owner": lead.get("owner") or lead.get("fa_owner", "")
+                })
+
+        # 4. Build context string
+        lines = ["BEKANNTE KUNDEN MIT DETAILS:"]
+        all_codes = set(list(customers.keys()) + list(contacts.keys()))
+        for code in sorted(all_codes):
+            c = customers.get(code, {})
+            cn = contacts.get(code, {})
+            name = c.get("name") or c.get("short", code.upper())
+            parts = [f"- {code.upper()}: {name}"]
+            if c.get("industry"): parts.append(f"Branche={c['industry']}")
+            if c.get("country"): parts.append(f"Land={c['country']}")
+            if c.get("status"): parts.append(f"Status={c['status']}")
+            if cn.get("fa_owner"): parts.append(f"Owner={cn['fa_owner']}")
+
+            # Contacts
+            if cn.get("contacts"):
+                contact_strs = []
+                for con in cn["contacts"]:
+                    cs = con["name"]
+                    if con.get("role"): cs += f" ({con['role']})"
+                    if con.get("primary"): cs += " [PRIMARY]"
+                    contact_strs.append(cs)
+                parts.append(f"Kontakte: {', '.join(contact_strs)}")
+
+            # Existing leads
+            if code in lead_summaries:
+                ls = lead_summaries[code]
+                lead_strs = [f"{l['id']}:{l.get('stage','?')}" for l in ls[:3]]
+                parts.append(f"Leads: {', '.join(lead_strs)}")
+
+            lines.append(" | ".join(parts))
+
+        # Add codes without details
+        extra_codes = [c.strip() for c in CUSTOMERS_LIST.split(",") if c.strip().lower() not in all_codes]
+        if extra_codes:
+            lines.append(f"\nWeitere Kunden (ohne Details): {', '.join(extra_codes)}")
+
+        context_str = "\n".join(lines)
+
+        _CUSTOMER_CONTEXT_CACHE = {
+            "loaded": True,
+            "context": context_str,
+            "customers": customers,
+            "contacts": contacts,
+            "leads_summary": lead_summaries
+        }
+        logger.info(f"Customer context loaded: {len(customers)} customers, {len(contacts)} with contacts, {sum(len(v) for v in lead_summaries.values())} leads")
+        return _CUSTOMER_CONTEXT_CACHE
+
+    except Exception as e:
+        logger.error(f"Customer context loading failed: {e}")
+        _CUSTOMER_CONTEXT_CACHE["loaded"] = True  # Don't retry on every request
+        _CUSTOMER_CONTEXT_CACHE["context"] = f"Kundencodes: {CUSTOMERS_LIST}"
+        return _CUSTOMER_CONTEXT_CACHE
+
+def get_customer_context():
+    """Get cached customer context string for prompts."""
+    cache = load_customer_context_from_github()
+    return cache["context"]
+
+def get_customer_detail(customer_code):
+    """Get detailed info for a specific customer (for enriching prompts)."""
+    cache = load_customer_context_from_github()
+    code = customer_code.lower()
+    c = cache["customers"].get(code, {})
+    cn = cache["contacts"].get(code, {})
+    leads = cache.get("leads_summary", {}).get(code, [])
+
+    if not c and not cn:
+        return None
+
+    detail = f"Kunde: {c.get('name', code.upper())}"
+    if c.get("industry"): detail += f"\nBranche: {c['industry']}"
+    if c.get("country"): detail += f"\nLand: {c['country']}"
+    if cn.get("fa_owner"): detail += f"\nFehrAdvice Owner: {cn['fa_owner']}"
+    if cn.get("contacts"):
+        detail += "\nKontakte:"
+        for con in cn["contacts"]:
+            detail += f"\n  - {con['name']}"
+            if con.get("role"): detail += f" ({con['role']})"
+            if con.get("primary"): detail += " [Hauptkontakt]"
+    if leads:
+        detail += f"\nBestehende Leads ({len(leads)}):"
+        for l in leads[:5]:
+            detail += f"\n  - {l['id']}: {l.get('opportunity', '?')[:50]} (Stage: {l.get('stage', '?')}, Wert: {l.get('value', 0)})"
+    return detail
+
 INTENT_ROUTER_SYSTEM = """Du bist der BEATRIX Intent-Router. Analysiere die User-Nachricht und bestimme den Intent.
 
 VERFÜGBARE INTENTS:
@@ -3594,15 +3766,20 @@ Antworte NUR mit einem JSON-Objekt (keine Markdown-Backticks nötig):
 Erkenne Kunden auch bei ungefährer Nennung ("UBS" → "ubs", "Luzerner KB" → "lukb", "Erste" → "erste-bank").
 Extrahiere wenn möglich: customer (code), project (name/slug), und andere Schlüssel-Entitäten."""
 
-DOMAIN_PROMPTS = {
-    "project": """Du bist BEATRIX, die Projekt-Assistentin von FehrAdvice & Partners AG.
-Der User möchte ein Projekt eröffnen oder ein bestehendes Projekt ergänzen.
+def get_domain_prompts():
+    """Build domain prompts with rich customer context from GitHub."""
+    ctx = get_customer_context()
+    return {
+    "project": f"""Du bist BEATRIX, die Projekt-Assistentin von FehrAdvice & Partners AG.
+Der User moechte ein Projekt eroeffnen oder ein bestehendes Projekt ergaenzen.
 
-Deine Aufgabe: Extrahiere strukturierte Projektdaten aus dem Gespräch.
+Deine Aufgabe: Extrahiere strukturierte Projektdaten aus dem Gespraech.
+NUTZE die bekannten Kundendaten (Kontakte, Owner, Branche) um Felder AUTOMATISCH zu befuellen!
+Frage NUR nach was du nicht aus den bekannten Daten ableiten kannst.
 
 FELDER:
 - customer_code: Kundencode (z.B. "ubs", "lukb", "erste-bank")
-- name: Projektname (kurz, prägnant)
+- name: Projektname (kurz, praegnant)
 - type: beratung | workshop | studie | intervention | keynote | training | retainer
 - project_category: mandat (bezahlt) | lead (Akquise) | probono (unentgeltlich)
 - description: Kurzbeschreibung / Ziele
@@ -3610,66 +3787,75 @@ FELDER:
 - end_date: YYYY-MM-DD
 - budget_chf: Zahl (nur bei mandat)
 - billing_type: fixed | time_material | retainer
-- fa_owner: Kürzel (GF=Gerhard Fehr, AF=Andrea Fehr)
+- fa_owner: Kuerzel (GF=Gerhard Fehr, AF=Andrea Fehr)
 - fa_team: Liste von Team-Mitgliedern
 
-KUNDEN: """ + CUSTOMERS_LIST + """
+{{ctx}}
 
 REGELN:
 1. Antworte mit JSON in ```json ... ``` Tags
-2. JSON-Struktur: {"intent":"project", "action":"create"|"update", "status":"complete"|"need_info", "data":{...felder...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
+2. JSON-Struktur: {{"intent":"project", "action":"create"|"update", "status":"complete"|"need_info", "data":{{...felder...}}, "missing":[...], "message":"...", "confidence":0.0-1.0}}
 3. Pflichtfelder: customer_code, name, project_category
-4. Sinnvolle Defaults: type="beratung", billing="fixed", fa_owner="GF", start_date=heute
-5. Deutsch, kurz, professionell""",
+4. Sinnvolle Defaults: type="beratung", billing="fixed", fa_owner aus Kundendaten, start_date=heute
+5. AUTOMATISCH befuellen: fa_owner aus Kundendaten, Branche, Land
+6. Deutsch, kurz, professionell
+7. Wenn der Kunde bekannt ist: zeige was du schon weisst und frage NUR nach dem Projektspezifischen""",
 
-    "lead": """Du bist BEATRIX, die Sales-Assistentin von FehrAdvice & Partners AG.
-Der User möchte einen Lead/eine Opportunity erfassen oder die Sales-Pipeline bearbeiten.
+    "lead": f"""Du bist BEATRIX, die Sales-Assistentin von FehrAdvice & Partners AG.
+Der User moechte einen Lead/eine Opportunity erfassen oder die Sales-Pipeline bearbeiten.
+
+WICHTIG: Du KENNST bereits alle Kundendaten! Wenn der User einen bekannten Kunden nennt,
+befuelle AUTOMATISCH: customer_code, customer_name, fa_owner, bestehende Kontakte.
+Frage NUR nach was du nicht weisst (Opportunity, Wert, naechste Schritte).
 
 FELDER:
-- customer_code: Kundencode (z.B. "ubs", "lukb")
+- customer_code: Kundencode
 - customer_name: Voller Firmenname
-- contact_person: Ansprechpartner (Name)
+- is_new_customer: true wenn unbekannter Kunde, false wenn in Datenbank
+- contact_person: Ansprechpartner (nutze bekannte Kontakte als Default!)
 - contact_email: E-Mail
 - contact_role: Position/Rolle
 - opportunity: Kurzbeschreibung der Opportunity
 - type: beratung | workshop | studie | intervention | keynote | training | retainer
-- estimated_value_chf: Geschätzter Wert in CHF
+- estimated_value_chf: Geschaetzter Wert in CHF
 - probability: Gewinnwahrscheinlichkeit (0-100%)
 - stage: initial_contact | qualification | proposal | negotiation | won | lost
-- next_action: Nächster Schritt
+- next_action: Naechster Schritt
 - next_action_date: YYYY-MM-DD
-- fa_owner: Kürzel (GF, AF, etc.)
-- source: Woher kam der Lead (referral, event, inbound, outbound, existing_client)
-- notes: Zusätzliche Infos
+- fa_owner: Kuerzel (aus Kundendaten uebernehmen!)
+- source: referral | event | inbound | outbound | existing_client
+- notes: Zusaetzliche Infos
 
-KUNDEN: """ + CUSTOMERS_LIST + """
+{{ctx}}
 
 REGELN:
 1. Antworte mit JSON in ```json ... ``` Tags
-2. JSON: {"intent":"lead", "action":"create"|"update", "status":"complete"|"need_info", "data":{...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
+2. JSON: {{"intent":"lead", "action":"create"|"update", "status":"complete"|"need_info", "data":{{...}}, "missing":[...], "message":"...", "confidence":0.0-1.0}}
 3. Pflichtfelder: customer_name, opportunity, stage
-4. Defaults: stage="initial_contact", fa_owner="GF", source="inbound"
-5. Frage gezielt nach fehlenden Infos – nicht alles auf einmal
-6. Deutsch, professionell""",
+4. AUTOMATISCH aus Datenbank: customer_code, fa_owner, is_new_customer=false, contact_person (Primary), Branche
+5. Bei Bestandskunden: Zeige bekannte Kontakte und frage "Ist [Name] der richtige Ansprechpartner?"
+6. Bei bestehenden Leads: Erwaehne sie kurz ("Es gibt bereits X Leads fuer diesen Kunden")
+7. Frage gezielt nach: Opportunity, geschaetzter Wert, naechster Schritt
+8. Deutsch, professionell, effizient""",
 
-    "model": """Du bist BEATRIX, die Modell-Spezialistin von FehrAdvice & Partners AG.
-Der User möchte ein Behavioral-Modell erstellen oder bearbeiten, basierend auf dem Evidence-Based Framework (EBF).
+    "model": f"""Du bist BEATRIX, die Modell-Spezialistin von FehrAdvice & Partners AG.
+Der User moechte ein Behavioral-Modell erstellen oder bearbeiten, basierend auf dem Evidence-Based Framework (EBF).
 
 DU KANNST:
 - BCM (Behavioral Competence Model) Analysen erstellen
-- Ψ-Dimensionen (8 psychologische Kontextdimensionen) definieren
+- Psi-Dimensionen (8 psychologische Kontextdimensionen) definieren
 - Kontextvektoren berechnen/beschreiben
 - Behavioral Objectives formulieren
 - Interventionsdesign vorschlagen
 - EBF-Axiome anwenden
 
-FELDER FÜR EIN MODELL:
-- customer_code: Für welchen Kunden
-- project_slug: Für welches Projekt (optional)
+FELDER:
+- customer_code: Fuer welchen Kunden
+- project_slug: Fuer welches Projekt (optional)
 - model_type: bcm | psi_profile | context_vector | intervention | behavioral_objectives
-- target_behavior: Welches Verhalten soll verändert werden?
+- target_behavior: Welches Verhalten soll veraendert werden?
 - target_group: Zielgruppe
-- psi_dimensions: Liste der relevanten Ψ-Dimensionen mit Einschätzung
+- psi_dimensions: Liste der relevanten Psi-Dimensionen mit Einschaetzung
   (autonomy, certainty, fairness, belonging, status, trust, competence, meaning)
 - context_factors: Relevante Kontextfaktoren
 - current_state: Ausgangslage / Ist-Zustand
@@ -3678,23 +3864,25 @@ FELDER FÜR EIN MODELL:
 - interventions: Vorgeschlagene Interventionen
 - evidence_base: Wissenschaftliche Grundlage
 
+{{ctx}}
+
 REGELN:
 1. Antworte mit JSON in ```json ... ``` Tags
-2. JSON: {"intent":"model", "action":"create"|"analyze", "status":"complete"|"need_info", "data":{...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
+2. JSON: {{"intent":"model", "action":"create"|"analyze", "status":"complete"|"need_info", "data":{{...}}, "missing":[...], "message":"...", "confidence":0.0-1.0}}
 3. Pflichtfelder: model_type, target_behavior ODER target_group
-4. Frage bei unklarem Scope nach: Was genau soll modelliert werden?
-5. Nutze echtes EBF/BCM-Wissen – keine generischen Antworten
-6. Deutsch, wissenschaftlich fundiert aber verständlich""",
+4. AUTOMATISCH aus Datenbank: Kundendetails, Branche, bekannte Kontakte
+5. Nutze echtes EBF/BCM-Wissen - keine generischen Antworten
+6. Deutsch, wissenschaftlich fundiert aber verstaendlich""",
 
-    "context": """Du bist BEATRIX, die Kontext-Analystin von FehrAdvice & Partners AG.
-Der User möchte die Ausgangslage eines Kunden oder Projekts erfassen, beschreiben oder analysieren.
+    "context": f"""Du bist BEATRIX, die Kontext-Analystin von FehrAdvice & Partners AG.
+Der User moechte die Ausgangslage eines Kunden oder Projekts erfassen, beschreiben oder analysieren.
 
 DU ERFASST:
 - Branchenkontext und Marktumfeld
 - Organisationskultur und -struktur
 - Aktuelle Herausforderungen und Pain Points
 - Stakeholder-Landschaft
-- Bestehende Initiativen und Maßnahmen
+- Bestehende Initiativen und Massnahmen
 - Regulatorisches Umfeld
 - Bisherige Zusammenarbeit mit FehrAdvice
 
@@ -3705,22 +3893,23 @@ FELDER:
 - summary: Zusammenfassung der Ausgangslage
 - challenges: Liste der Herausforderungen
 - opportunities: Chancen
-- stakeholders: Relevante Stakeholder [{name, role, stance}]
+- stakeholders: Relevante Stakeholder
 - market_factors: Marktfaktoren
 - behavioral_patterns: Beobachtete Verhaltensmuster
 - data_sources: Woher stammen die Infos
-- assessment: Eigene Einschätzung/Hypothese
+- assessment: Eigene Einschaetzung/Hypothese
 
-KUNDEN: """ + CUSTOMERS_LIST + """
+{{ctx}}
 
 REGELN:
 1. Antworte mit JSON in ```json ... ``` Tags
-2. JSON: {"intent":"context", "action":"capture"|"analyze"|"update", "status":"complete"|"need_info", "data":{...}, "missing":[...], "message":"...", "confidence":0.0-1.0}
+2. JSON: {{"intent":"context", "action":"capture"|"analyze"|"update", "status":"complete"|"need_info", "data":{{...}}, "missing":[...], "message":"...", "confidence":0.0-1.0}}
 3. Pflichtfelder: customer_code, summary
-4. Frage gezielt nach: Welcher Kunde? Was ist die Situation? Was ist das Ziel?
-5. Strukturiere die Antwort so, dass sie direkt in ein Projekt-YAML fließen kann
+4. AUTOMATISCH aus Datenbank: Branche, Land, bekannte Kontakte/Stakeholder
+5. Strukturiere die Antwort so, dass sie direkt in ein Projekt-YAML fliessen kann
 6. Deutsch, analytisch, auf den Punkt"""
-}
+    }
+
 
 def call_claude_json(system_prompt, messages, today):
     """Call Claude API and extract JSON from response."""
@@ -3808,7 +3997,8 @@ async def chat_intent(request: Request, user=Depends(require_auth)):
         }
 
     # ── Step 3: Domain specialist ──
-    domain_prompt = DOMAIN_PROMPTS.get(intent, DOMAIN_PROMPTS.get("project"))
+    _prompts = get_domain_prompts()
+    domain_prompt = _prompts.get(intent, _prompts.get("project"))
 
     # ── Project context enrichment ──
     project_slug = body.get("project_slug", "")
@@ -3847,6 +4037,17 @@ async def chat_intent(request: Request, user=Depends(require_auth)):
                 logger.info(f"Intent enriched with project context: {project_slug}")
         except Exception as e:
             logger.warning(f"Project context enrichment failed: {e}")
+
+    # ── Customer-specific enrichment ──
+    detected_customer = entities.get("customer", "")
+    if detected_customer:
+        try:
+            detail = get_customer_detail(detected_customer)
+            if detail:
+                domain_prompt += f"\n\nSPEZIFISCHE KUNDENDATEN FÜR '{detected_customer.upper()}':\n{detail}\n\nNutze diese Daten um Felder AUTOMATISCH zu befüllen. Frage NICHT nach Infos die hier stehen!"
+                logger.info(f"Intent enriched with customer detail: {detected_customer}")
+        except Exception as e:
+            logger.warning(f"Customer enrichment failed: {e}")
 
     # Build messages with history
     messages = []
@@ -3933,7 +4134,7 @@ async def chat_project_intent(request: Request, user=Depends(require_auth)):
     message = body.get("message", "")
     history = body.get("history", [])
     current_draft = body.get("current_draft", {})
-    domain_prompt = DOMAIN_PROMPTS["project"]
+    domain_prompt = get_domain_prompts()["project"]
 
     messages = []
     for h in history[-10:]:
