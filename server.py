@@ -4494,6 +4494,7 @@ WAEHRUNG: Die Waehrung richtet sich nach dem Land des Kunden:
 - estimated_value_chf: Umgerechnet in CHF (bei CHF-Kunden = gleicher Wert)
 
 FELDER:
+- lead_code: AUTOMATISCH GENERIERT nach Schema L-{KUNDE}-{B/N}-{JJ}-{NNN} (z.B. L-UBS-B-26-003)
 - customer_code: Kundencode
 - customer_name: Voller Firmenname
 - is_new_customer: true wenn unbekannter Kunde, false wenn in Datenbank
@@ -4520,12 +4521,20 @@ REGELN:
 2. JSON: {{"intent":"lead", "action":"create"|"update", "status":"complete"|"need_info", "data":{{...}}, "missing":[...], "message":"...", "confidence":0.0-1.0}}
 3. Pflichtfelder: customer_name, opportunity, stage
 4. AUTOMATISCH aus Datenbank: customer_code, fa_owner, is_new_customer=false, contact_person (Primary), Branche, Waehrung
-5. Bei Bestandskunden: Zeige bekannte Kontakte und frage "Ist [Name] der richtige Ansprechpartner?"
-6. Bei bestehenden Leads: Erwaehne sie kurz ("Es gibt bereits X Leads fuer diesen Kunden")
-7. Frage gezielt nach: Opportunity, geschaetzter Wert, naechster Schritt
-8. Bei Bestandskunden mit Projekten: Erwaehne bestehende Projekte und frage ob der Lead damit zusammenhaengt
-9. Bei Nicht-CHF-Kunden: Zeige Betrag in Kundenwaehrung UND CHF-Aequivalent
-10. Deutsch, professionell, effizient""",
+5. LEAD-CODE AUTOMATISCH GENERIEREN nach Schema: L-{{KUNDE}}-{{B/N}}-{{JJ}}-{{NNN}}
+   - L = Lead (immer)
+   - KUNDE = Kundenkuerzel aus prefix_mapping (z.B. UBS, HEL, GEB, SBB)
+   - B = Bestandskunde, N = Neukunde (aus is_new_customer ableiten)
+   - JJ = aktuelles Jahr zweistellig (z.B. 26)
+   - NNN = fortlaufende Nummer (starte mit 001)
+   Beispiele: L-UBS-B-26-003, L-HEL-B-26-001, L-GEB-N-26-001
+   GENERIERE den lead_code IMMER AUTOMATISCH! Frage NICHT danach!
+6. Bei Bestandskunden: Zeige bekannte Kontakte und frage "Ist [Name] der richtige Ansprechpartner?"
+7. Bei bestehenden Leads: Erwaehne sie kurz ("Es gibt bereits X Leads fuer diesen Kunden")
+8. Frage gezielt nach: Opportunity, geschaetzter Wert, naechster Schritt
+9. Bei Bestandskunden mit Projekten: Erwaehne bestehende Projekte und frage ob der Lead damit zusammenhaengt
+10. Bei Nicht-CHF-Kunden: Zeige Betrag in Kundenwaehrung UND CHF-Aequivalent
+11. Deutsch, professionell, effizient""",
 
     "task": f"""Du bist BEATRIX, die Task-Managerin von FehrAdvice & Partners AG.
 Der User moechte eine Aufgabe erstellen, ein Todo setzen, einen Follow-up planen oder eine Erinnerung setzen.
