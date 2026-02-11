@@ -1718,6 +1718,7 @@ class TextUploadRequest(BaseModel):
 class DocumentResponse(BaseModel):
     id: str; title: str; source_type: str; file_type: Optional[str] = None
     database_target: str; status: str; created_at: str; github_url: Optional[str] = None
+    metadata: Optional[dict] = None
 
 def extract_text(file_path, file_type):
     try:
@@ -5095,7 +5096,7 @@ async def list_documents(database: Optional[str] = None, limit: int = 50, user=D
     try:
         query = db.query(Document).order_by(Document.created_at.desc())
         if database: query = query.filter(Document.database_target == database)
-        return [DocumentResponse(id=d.id, title=d.title, source_type=d.source_type, file_type=d.file_type, database_target=d.database_target, status=d.status, created_at=d.created_at.isoformat(), github_url=d.github_url) for d in query.limit(limit).all()]
+        return [DocumentResponse(id=d.id, title=d.title, source_type=d.source_type, file_type=d.file_type, database_target=d.database_target, status=d.status, created_at=d.created_at.isoformat(), github_url=d.github_url, metadata=d.doc_metadata) for d in query.limit(limit).all()]
     finally: db.close()
 
 @app.get("/api/documents/{doc_id}")
@@ -5122,6 +5123,282 @@ async def get_document(doc_id: str, user=Depends(require_auth)):
             "tags": doc.tags,
             "metadata": doc.doc_metadata or {}
         }
+    finally: db.close()
+
+@app.post("/api/documents/{doc_id}/classify")
+async def classify_document(doc_id: str, user=Depends(require_auth)):
+    """Run EBF classification on an existing document and update its metadata."""
+    db = get_db()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc: raise HTTPException(404, "Nicht gefunden")
+
+        text = doc.content or ""
+        if len(text) < 100:
+            return {"ok": False, "error": "Zu wenig Text für Klassifikation"}
+
+        # Run paper detection
+        detection = detect_scientific_paper(text)
+
+        # Content Level
+        text_len = len(text)
+        has_abstract = any(s in text[:5000].lower() for s in ["abstract", "zusammenfassung"])
+        has_methodology = any(s in text.lower() for s in ["methodology", "method", "experimental design",
+            "research design", "empirical", "randomized", "regression", "survey"])
+        has_findings = any(s in text.lower() for s in ["findings", "results", "we find", "our results",
+            "ergebnisse", "the evidence", "effect size", "significant"])
+
+        if text_len > 50000: content_level = "L3"
+        elif text_len > 6000 and has_abstract and has_methodology: content_level = "L2"
+        elif text_len > 1500 and has_abstract: content_level = "L1"
+        else: content_level = "L0"
+
+        # Structural characteristics
+        structural = {
+            "S1_research_question": any(s in text[:8000].lower() for s in
+                ["research question", "forschungsfrage", "we ask", "this paper asks",
+                 "we examine", "we investigate", "this study examines"]),
+            "S2_methodology": has_methodology,
+            "S3_sample_data": any(s in text.lower() for s in
+                ["sample", "n =", "n=", "participants", "subjects", "respondents",
+                 "observations", "stichprobe", "dataset", "data set"]),
+            "S4_findings": has_findings,
+            "S5_validity": any(s in text.lower() for s in
+                ["robustness", "sensitivity analysis", "validity", "external validity",
+                 "internal validity", "placebo test", "falsification"]),
+            "S6_reproducibility": any(s in text.lower() for s in
+                ["replication", "replicate", "reproducib", "pre-registered", "preregistered",
+                 "open data", "code availab"]),
+        }
+
+        # Claude EBF classification
+        ebf_data = {}
+        if ANTHROPIC_API_KEY and detection["is_paper"]:
+            try:
+                import urllib.request as ureq
+                import ssl as _ssl
+                _ctx = _ssl.create_default_context(); _ctx.check_hostname = False; _ctx.verify_mode = _ssl.CERT_NONE
+
+                excerpt_start = text[:4000]
+                excerpt_end = text[-2000:] if text_len > 6000 else ""
+
+                prompt = f"""Du bist BEATRIX, die wissenschaftliche Klassifikations-KI von FehrAdvice & Partners.
+Analysiere dieses wissenschaftliche Paper und extrahiere Metadaten nach dem EBF-Schema.
+
+TEXT (Anfang):
+{excerpt_start}
+
+{"TEXT (Ende):" + chr(10) + excerpt_end if excerpt_end else ""}
+
+Antworte NUR mit validem JSON:
+{{
+  "title": "exakter Titel",
+  "authors": ["Nachname, Vorname"],
+  "year": 2024,
+  "journal_or_source": "Journal oder null",
+  "source_type": "journal_article|working_paper|book_chapter|book|conference_paper|dissertation|report",
+  "doi": "DOI oder null",
+  "evidence_tier": 1 oder 2 oder 3,
+  "evidence_tier_reason": "kurze Begründung",
+  "methodology": {{"design": "...", "identification": "..."}},
+  "ebf_dimensions": [{{"dimension": "CORE-...", "connection": "..."}}],
+  "psi_dimensions": [{{"psi": "Ψ_X", "relevance": "..."}}],
+  "domains": ["finance|health|sustainability|hr|social_policy|education|behavior|general"],
+  "key_findings": [{{"finding": "...", "effect_size": null}}],
+  "summary": "1-2 Sätze"
+}}"""
+
+                payload = json.dumps({
+                    "model": "claude-sonnet-4-20250514", "max_tokens": 1200,
+                    "messages": [{"role": "user", "content": prompt}]
+                }).encode()
+                req = ureq.Request("https://api.anthropic.com/v1/messages",
+                    data=payload, method="POST",
+                    headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                              "Content-Type": "application/json"})
+                resp = json.loads(ureq.urlopen(req, context=_ctx, timeout=25).read())
+                raw = resp.get("content", [{}])[0].get("text", "")
+
+                # Parse outermost JSON
+                brace_count = 0; start_idx = None; end_idx = None
+                for i, c in enumerate(raw):
+                    if c == '{':
+                        if start_idx is None: start_idx = i
+                        brace_count += 1
+                    elif c == '}':
+                        brace_count -= 1
+                        if brace_count == 0 and start_idx is not None:
+                            end_idx = i + 1; break
+                if start_idx is not None and end_idx is not None:
+                    ebf_data = json.loads(raw[start_idx:end_idx])
+                else:
+                    ebf_data = {}
+            except Exception as e:
+                logger.warning(f"Classify Claude error for {doc_id}: {e}")
+
+        # Integration level estimate
+        s_count = sum(1 for v in structural.values() if v)
+        tier = ebf_data.get("evidence_tier", 3)
+        has_effect = any(f.get("effect_size") for f in ebf_data.get("key_findings", []))
+        has_dims = len(ebf_data.get("ebf_dimensions", [])) > 0
+
+        if detection["is_paper"]:
+            if s_count >= 5 and tier <= 1 and has_effect and has_dims:
+                integration_level = "I3"
+            elif s_count >= 3 and has_dims:
+                integration_level = "I2"
+            else:
+                integration_level = "I1"
+        else:
+            integration_level = None
+
+        # Paper ID
+        paper_id = ""
+        if detection["is_paper"] and ebf_data.get("authors"):
+            first_author = ebf_data["authors"][0].split(",")[0].strip().lower()
+            year = ebf_data.get("year", "")
+            title_word = ""
+            for w in (ebf_data.get("title", "") or doc.title or "").split():
+                if len(w) > 4 and w.lower() not in ["about", "their", "these", "which", "under", "between"]:
+                    title_word = w.lower()[:10]; break
+            paper_id = f"PAP-{first_author}{year}{title_word}"
+
+        # Update doc metadata
+        meta = doc.doc_metadata or {}
+        meta.update({
+            "paper_detected": detection["is_paper"],
+            "paper_score": detection["score"],
+            "paper_signals": detection["signals"],
+            "content_level": content_level,
+            "integration_level": integration_level,
+            "structural": structural,
+            "ebf": ebf_data,
+            "paper_id": paper_id,
+            "classified_at": __import__('datetime').datetime.utcnow().isoformat()
+        })
+        doc.doc_metadata = meta
+
+        # Update title if Claude found a better one
+        if ebf_data.get("title") and (doc.title.startswith("Chat:") or doc.title in ["Untitled", ""]):
+            doc.title = ebf_data["title"]
+
+        # Update category
+        if detection["is_paper"] and doc.category != "paper":
+            doc.category = "paper"
+
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(doc, 'doc_metadata')
+        db.commit()
+
+        return {
+            "ok": True,
+            "doc_id": doc_id,
+            "title": doc.title,
+            "paper_detected": detection["is_paper"],
+            "content_level": content_level,
+            "integration_level": integration_level,
+            "structural": structural,
+            "ebf_summary": {
+                "evidence_tier": ebf_data.get("evidence_tier"),
+                "dimensions": len(ebf_data.get("ebf_dimensions", [])),
+                "psi": len(ebf_data.get("psi_dimensions", [])),
+                "findings": len(ebf_data.get("key_findings", []))
+            } if ebf_data else None,
+            "paper_id": paper_id
+        }
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Classify error: {e}")
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
+@app.post("/api/documents/classify-all")
+async def classify_all_documents(request: Request, user=Depends(require_auth)):
+    """Classify all unclassified documents. Returns progress summary."""
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    force = body.get("force", False)  # Re-classify even if already classified
+    db = get_db()
+    try:
+        docs = db.query(Document).order_by(Document.created_at.desc()).all()
+        results = {"total": len(docs), "classified": 0, "skipped": 0, "errors": 0, "details": []}
+
+        for doc in docs:
+            # Skip if already classified (unless force)
+            meta = doc.doc_metadata or {}
+            if meta.get("classified_at") and not force:
+                results["skipped"] += 1
+                continue
+
+            text = doc.content or ""
+            if len(text) < 100:
+                results["skipped"] += 1
+                continue
+
+            try:
+                # Lightweight classification (no Claude API to save tokens)
+                detection = detect_scientific_paper(text)
+                text_len = len(text)
+                has_abstract = any(s in text[:5000].lower() for s in ["abstract", "zusammenfassung"])
+                has_methodology = any(s in text.lower() for s in ["methodology", "method", "experimental design",
+                    "research design", "empirical", "randomized", "regression", "survey"])
+
+                if text_len > 50000: content_level = "L3"
+                elif text_len > 6000 and has_abstract and has_methodology: content_level = "L2"
+                elif text_len > 1500 and has_abstract: content_level = "L1"
+                else: content_level = "L0"
+
+                structural = {
+                    "S1_research_question": any(s in text[:8000].lower() for s in
+                        ["research question", "forschungsfrage", "we examine", "we investigate"]),
+                    "S2_methodology": has_methodology,
+                    "S3_sample_data": any(s in text.lower() for s in
+                        ["sample", "n =", "participants", "observations", "dataset"]),
+                    "S4_findings": any(s in text.lower() for s in
+                        ["findings", "results", "we find", "our results", "ergebnisse"]),
+                    "S5_validity": any(s in text.lower() for s in
+                        ["robustness", "validity", "placebo test"]),
+                    "S6_reproducibility": any(s in text.lower() for s in
+                        ["replication", "reproducib", "pre-registered"]),
+                }
+
+                s_count = sum(1 for v in structural.values() if v)
+                if detection["is_paper"]:
+                    integration_level = "I2" if s_count >= 3 else "I1"
+                else:
+                    integration_level = None
+
+                meta.update({
+                    "paper_detected": detection["is_paper"],
+                    "paper_score": detection["score"],
+                    "paper_signals": detection["signals"],
+                    "content_level": content_level,
+                    "integration_level": integration_level,
+                    "structural": structural,
+                    "classified_at": __import__('datetime').datetime.utcnow().isoformat(),
+                    "classification_method": "bulk_heuristic"
+                })
+                doc.doc_metadata = meta
+                if detection["is_paper"] and doc.category != "paper":
+                    doc.category = "paper"
+
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(doc, 'doc_metadata')
+                results["classified"] += 1
+                results["details"].append({
+                    "id": doc.id, "title": doc.title[:60],
+                    "paper": detection["is_paper"], "level": content_level,
+                    "integration": integration_level
+                })
+            except Exception as e:
+                results["errors"] += 1
+                logger.warning(f"Bulk classify error for {doc.id}: {e}")
+
+        db.commit()
+        return results
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
     finally: db.close()
 
 @app.delete("/api/documents/{doc_id}")
