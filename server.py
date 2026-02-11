@@ -6342,7 +6342,7 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
                 "title": existing.title or "Unbekannt",
                 "date": existing.created_at.strftime('%d.%m.%Y %H:%M') if existing.created_at else "",
                 "category": existing.category or "document",
-                "tags": existing.tags.split(",") if existing.tags else [],
+                "tags": existing.tags if isinstance(existing.tags, list) else (existing.tags.split(",") if existing.tags else []),
                 "message": f"Dieses Dokument wurde bereits am {existing.created_at.strftime('%d.%m.%Y')} erfolgreich in die BEATRIX-Wissensdatenbank aufgenommen."
             })
         file_id = str(uuid.uuid4()); file_path = UPLOAD_DIR / f"{file_id}.{ext}"
@@ -6428,7 +6428,7 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
                 "title": existing.title or "Unbekannt",
                 "date": existing.created_at.strftime('%d.%m.%Y %H:%M') if existing.created_at else "",
                 "category": existing.category or "document",
-                "tags": existing.tags.split(",") if existing.tags else [],
+                "tags": existing.tags if isinstance(existing.tags, list) else (existing.tags.split(",") if existing.tags else []),
                 "message": f"Dieses Dokument wurde bereits am {existing.created_at.strftime('%d.%m.%Y')} erfolgreich in die BEATRIX-Wissensdatenbank aufgenommen."
             })
 
