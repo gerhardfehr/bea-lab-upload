@@ -3139,8 +3139,79 @@
             try{const r=await fetch(`${API}/documents`,{headers:H()});if(r.status===401){doLogout();return;}const docs=await r.json();
                 if(!docs.length){w.innerHTML=`<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><h3>Noch keine Dokumente</h3><p>Lade dein erstes Dokument hoch.</p></div>`;return;}
                 const db={knowledge_base:'Knowledge Base',bcm_axioms:'BCM Axiome',research:'Research'};
-                w.innerHTML=`<table class="doc-table"><thead><tr><th>Dokument</th><th>Typ</th><th>Datenbank</th><th>Datum</th><th>Status</th></tr></thead><tbody>${docs.map(d=>{const date=new Date(d.created_at).toLocaleDateString('de-CH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});return`<tr><td class="doc-name">${d.title}</td><td><span class="format-badge">${(d.file_type||d.source_type).toUpperCase()}</span></td><td>${db[d.database_target]||d.database_target}</td><td>${date}</td><td><span class="status-badge">${d.status}</span></td></tr>`;}).join('')}</tbody></table>`;
+                w.innerHTML=`<table class="doc-table"><thead><tr><th>Dokument</th><th>Typ</th><th>Datenbank</th><th>Datum</th><th>Status</th></tr></thead><tbody>${docs.map(d=>{const date=new Date(d.created_at).toLocaleDateString('de-CH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});return`<tr onclick="viewDocument('${d.id}')" style="cursor:pointer" title="Klicken zum Anzeigen"><td class="doc-name">${d.title}</td><td><span class="format-badge">${(d.file_type||d.source_type).toUpperCase()}</span></td><td>${db[d.database_target]||d.database_target}</td><td>${date}</td><td><span class="status-badge">${d.status}</span></td></tr>`;}).join('')}</tbody></table>`;
             }catch(e){w.innerHTML='<p style="color:var(--error)">Fehler beim Laden</p>';}
+        }
+
+        async function viewDocument(docId) {
+            // Show modal with loading state
+            let modal = document.getElementById('docDetailModal');
+            if (!modal) {
+                document.body.insertAdjacentHTML('beforeend', `
+                <div id="docDetailModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);padding:20px;overflow-y:auto" onclick="if(event.target===this)this.style.display='none'">
+                    <div style="max-width:900px;margin:40px auto;background:var(--navy-card);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+                        <div id="docDetailHeader" style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+                            <div id="docDetailTitle" style="font-size:16px;font-weight:600;color:var(--text-primary)"></div>
+                            <div style="display:flex;gap:8px;align-items:center">
+                                <span id="docDetailBadges"></span>
+                                <button onclick="document.getElementById('docDetailModal').style.display='none'" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px">✕</button>
+                            </div>
+                        </div>
+                        <div id="docDetailMeta" style="padding:12px 24px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-secondary);display:flex;flex-wrap:wrap;gap:16px"></div>
+                        <div id="docDetailContent" style="padding:24px;max-height:70vh;overflow-y:auto">
+                            <pre style="white-space:pre-wrap;word-wrap:break-word;font-family:inherit;font-size:13px;line-height:1.7;color:var(--text-secondary);margin:0"></pre>
+                        </div>
+                    </div>
+                </div>`);
+                modal = document.getElementById('docDetailModal');
+            }
+
+            document.getElementById('docDetailTitle').textContent = 'Laden...';
+            document.getElementById('docDetailBadges').innerHTML = '';
+            document.getElementById('docDetailMeta').innerHTML = '';
+            document.getElementById('docDetailContent').querySelector('pre').textContent = '';
+            modal.style.display = '';
+
+            try {
+                const r = await fetch(`${API}/documents/${docId}`, {headers: H()});
+                if (!r.ok) throw new Error('Fehler beim Laden');
+                const d = await r.json();
+
+                document.getElementById('docDetailTitle').textContent = d.title;
+
+                // Badges
+                const typeBadge = `<span class="format-badge">${(d.file_type || d.source_type).toUpperCase()}</span>`;
+                const statusBadge = `<span class="status-badge">${d.status}</span>`;
+                const paperBadge = d.metadata?.paper_detected ? '<span style="background:rgba(52,211,153,0.1);color:#34d399;padding:2px 8px;border-radius:6px;font-size:11px">📚 Paper</span>' : '';
+                document.getElementById('docDetailBadges').innerHTML = `${paperBadge} ${typeBadge} ${statusBadge}`;
+
+                // Meta info
+                const date = new Date(d.created_at).toLocaleDateString('de-CH', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+                const dbNames = {knowledge_base:'Knowledge Base', bcm_axioms:'BCM Axiome', research:'Research'};
+                let metaHtml = `<span>📅 ${date}</span>`;
+                metaHtml += `<span>📂 ${dbNames[d.database_target] || d.database_target}</span>`;
+                if (d.uploaded_by) metaHtml += `<span>👤 ${d.uploaded_by}</span>`;
+                if (d.file_size) metaHtml += `<span>📦 ${(d.file_size / 1024).toFixed(0)} KB</span>`;
+                if (d.content) metaHtml += `<span>📝 ${d.content.length.toLocaleString()} Zeichen</span>`;
+                if (d.language) metaHtml += `<span>🌐 ${d.language}</span>`;
+                if (d.github_url) metaHtml += `<a href="${d.github_url}" target="_blank" style="color:var(--accent);text-decoration:none">🔗 GitHub</a>`;
+                if (d.tags?.length) metaHtml += `<span>🏷️ ${d.tags.join(', ')}</span>`;
+                if (d.metadata?.paper_score) metaHtml += `<span>🧬 Paper-Score: ${d.metadata.paper_score}</span>`;
+                document.getElementById('docDetailMeta').innerHTML = metaHtml;
+
+                // Content
+                const content = d.content || '(Kein Inhalt)';
+                const pre = document.getElementById('docDetailContent').querySelector('pre');
+                // Truncate display if very long
+                if (content.length > 50000) {
+                    pre.textContent = content.slice(0, 50000) + `\n\n... [${(content.length / 1000).toFixed(0)}K Zeichen, gekürzt für Anzeige]`;
+                } else {
+                    pre.textContent = content;
+                }
+            } catch(e) {
+                document.getElementById('docDetailTitle').textContent = 'Fehler';
+                document.getElementById('docDetailContent').querySelector('pre').textContent = e.message;
+            }
         }
 
         // ── Role-Based Tab Visibility ──────────────────
