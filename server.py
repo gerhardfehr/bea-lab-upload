@@ -478,6 +478,11 @@ def get_db():
                         id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
                         role VARCHAR(20) NOT NULL, content TEXT NOT NULL,
                         sources JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS session_id VARCHAR(50)"))
+                    try:
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages (session_id)"))
+                    except Exception:
+                        pass
                     # User insights / behavioral profiling table
                     conn.execute(text("""CREATE TABLE IF NOT EXISTS user_insights (
                         id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
@@ -3347,12 +3352,14 @@ class ChatMessage(Base):
     role = Column(String(20), nullable=False)  # "user" or "assistant"
     content = Column(Text, nullable=False)
     sources = Column(JSON, nullable=True)
+    session_id = Column(String(50), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class ChatRequest(BaseModel):
     question: str
     database: Optional[str] = None
     project_slug: Optional[str] = None
+    session_id: Optional[str] = None
     attachments: Optional[list] = None  # [{type, name, content_text, image_base64, media_type}]
 
 
@@ -5044,6 +5051,7 @@ async def chat_stream(request: ChatRequest, user=Depends(require_auth)):
     import urllib.request, ssl, http.client
 
     question = request.question.strip()
+    _session_id = request.session_id
     if not question:
         raise HTTPException(400, "Bitte stelle eine Frage")
 
@@ -5173,7 +5181,7 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
             if complete_text:
                 db2 = get_db()
                 try:
-                    assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=complete_text, sources=[])
+                    assistant_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="assistant", content=complete_text, sources=[])
                     db2.add(assistant_msg)
                     db2.commit()
                 except Exception:
@@ -5212,6 +5220,7 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
 @app.post("/api/chat")
 async def chat(request: ChatRequest, user=Depends(require_auth)):
     question = request.question.strip()
+    _session_id = request.session_id
     if not question:
         raise HTTPException(400, "Bitte stelle eine Frage")
     if len(question) > 5000:
@@ -5220,7 +5229,7 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
     db = get_db()
     try:
         # Store user message
-        user_msg = ChatMessage(user_email=user["sub"], role="user", content=question)
+        user_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="user", content=question)
         db.add(user_msg); db.commit()
 
         # === PATH DECISION: Search KB for existing EBF answers ===
@@ -5247,7 +5256,7 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
             sources = [{"title": doc.title, "id": doc.id, "type": doc.source_type, "category": doc.category} for _, doc in results[:5]]
             try:
                 answer = fast_path_answer(question, context, sources)
-                assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=answer, sources=sources)
+                assistant_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="assistant", content=answer, sources=sources)
                 db.add(assistant_msg); db.commit()
                 logger.info(f"FAST PATH answer for: {question[:50]}")
                 # 🚀 Background: save + fact-check + bias analysis
@@ -5405,6 +5414,7 @@ async def chat_project(slug: str, request: ChatRequest, user=Depends(require_aut
     """Project-scoped chat: enriched with project context, saves insights to GitHub."""
     import urllib.request, ssl, yaml as _yaml
     question = request.question.strip()
+    _session_id = request.session_id
     if not question:
         raise HTTPException(400, "Bitte stelle eine Frage")
 
@@ -5461,9 +5471,9 @@ async def chat_project(slug: str, request: ChatRequest, user=Depends(require_aut
         resp = json.loads(urllib.request.urlopen(req, context=ctx_ssl, timeout=60).read())
         answer = resp["content"][0]["text"]
 
-        user_msg = ChatMessage(user_email=user["sub"], role="user", content=f"[{slug}] {question}")
+        user_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="user", content=f"[{slug}] {question}")
         db.add(user_msg); db.commit()
-        assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=answer, sources=sources)
+        assistant_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="assistant", content=answer, sources=sources)
         db.add(assistant_msg); db.commit()
 
         # Save insight to GitHub
@@ -5521,6 +5531,7 @@ async def chat_project_stream(slug: str, request: ChatRequest, user=Depends(requ
     import urllib.request, ssl, http.client, yaml as _yaml
 
     question = request.question.strip()
+    _session_id = request.session_id
     if not question:
         raise HTTPException(400, "Bitte stelle eine Frage")
     if not ANTHROPIC_API_KEY:
@@ -5642,9 +5653,9 @@ async def chat_project_stream(slug: str, request: ChatRequest, user=Depends(requ
             if complete_text:
                 db2 = get_db()
                 try:
-                    user_msg = ChatMessage(user_email=user["sub"], role="user", content=f"[{slug}] {question}")
+                    user_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="user", content=f"[{slug}] {question}")
                     db2.add(user_msg)
-                    assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=complete_text, sources=sources)
+                    assistant_msg = ChatMessage(user_email=user["sub"], session_id=_session_id, role="assistant", content=complete_text, sources=sources)
                     db2.add(assistant_msg)
                     db2.commit()
                 except Exception:
@@ -5707,7 +5718,7 @@ async def chat_poll(issue_number: int, user=Depends(require_auth)):
                 # 1. Store in chat history
                 assistant_msg = ChatMessage(
                     user_email=user["sub"], role="assistant",
-                    content=result["answer"],
+                    content=result["answer"], session_id=None,
                     sources=[{"type": "github", "url": result.get("comment_url", "")}]
                 )
                 db.add(assistant_msg); db.commit()
@@ -5734,11 +5745,14 @@ async def chat_poll(issue_number: int, user=Depends(require_auth)):
         return {"status": "error", "message": str(e)}
 
 @app.get("/api/chat/history")
-async def chat_history(limit: int = 50, user=Depends(require_auth)):
+async def chat_history(limit: int = 50, session_id: str = None, user=Depends(require_auth)):
     db = get_db()
     try:
-        msgs = db.query(ChatMessage).filter(ChatMessage.user_email == user["sub"]).order_by(ChatMessage.created_at.desc()).limit(limit).all()
-        return [{"id": m.id, "role": m.role, "content": m.content, "sources": m.sources, "created_at": m.created_at.isoformat()} for m in reversed(msgs)]
+        q = db.query(ChatMessage).filter(ChatMessage.user_email == user["sub"])
+        if session_id:
+            q = q.filter(ChatMessage.session_id == session_id)
+        msgs = q.order_by(ChatMessage.created_at.desc()).limit(limit).all()
+        return [{"id": m.id, "role": m.role, "content": m.content, "sources": m.sources, "session_id": m.session_id, "created_at": m.created_at.isoformat()} for m in reversed(msgs)]
     finally: db.close()
 
 @app.delete("/api/chat/history")
@@ -5748,6 +5762,79 @@ async def clear_chat_history(user=Depends(require_auth)):
         db.query(ChatMessage).filter(ChatMessage.user_email == user["sub"]).delete()
         db.commit()
         return {"message": "Chat-Verlauf gelöscht"}
+    finally: db.close()
+
+@app.get("/api/chat/sessions")
+async def chat_sessions(user=Depends(require_auth)):
+    """List all chat sessions for the current user."""
+    db = get_db()
+    try:
+        from sqlalchemy import func as sql_func
+        sessions = db.query(
+            ChatMessage.session_id,
+            sql_func.count(ChatMessage.id).label("msg_count"),
+            sql_func.min(ChatMessage.created_at).label("started_at"),
+            sql_func.max(ChatMessage.created_at).label("last_msg_at")
+        ).filter(
+            ChatMessage.user_email == user["sub"],
+            ChatMessage.session_id.isnot(None)
+        ).group_by(ChatMessage.session_id).order_by(sql_func.max(ChatMessage.created_at).desc()).limit(50).all()
+        return [{"session_id": s.session_id, "messages": s.msg_count, "started_at": s.started_at.isoformat(), "last_message": s.last_msg_at.isoformat()} for s in sessions]
+    finally: db.close()
+
+@app.get("/api/admin/chat/sessions")
+async def admin_chat_sessions(limit: int = 100, email: str = None, user=Depends(require_permission("platform.view_analytics"))):
+    """Admin: List all chat sessions across users with analytics."""
+    db = get_db()
+    try:
+        from sqlalchemy import func as sql_func
+        q = db.query(
+            ChatMessage.session_id,
+            ChatMessage.user_email,
+            sql_func.count(ChatMessage.id).label("msg_count"),
+            sql_func.min(ChatMessage.created_at).label("started_at"),
+            sql_func.max(ChatMessage.created_at).label("last_msg_at")
+        ).filter(ChatMessage.session_id.isnot(None))
+        if email:
+            q = q.filter(ChatMessage.user_email == email)
+        sessions = q.group_by(ChatMessage.session_id, ChatMessage.user_email).order_by(sql_func.max(ChatMessage.created_at).desc()).limit(limit).all()
+
+        # Get first user message per session for preview
+        result = []
+        for s in sessions:
+            preview = db.query(ChatMessage.content).filter(
+                ChatMessage.session_id == s.session_id,
+                ChatMessage.role == "user"
+            ).order_by(ChatMessage.created_at.asc()).first()
+            duration_sec = (s.last_msg_at - s.started_at).total_seconds() if s.last_msg_at and s.started_at else 0
+            result.append({
+                "session_id": s.session_id,
+                "user": s.user_email,
+                "messages": s.msg_count,
+                "started_at": s.started_at.isoformat(),
+                "last_message": s.last_msg_at.isoformat(),
+                "duration_minutes": round(duration_sec / 60, 1),
+                "preview": (preview.content[:100] + "...") if preview and len(preview.content) > 100 else (preview.content if preview else "")
+            })
+        return {"sessions": result, "total": len(result)}
+    finally: db.close()
+
+@app.get("/api/admin/chat/session/{session_id}")
+async def admin_chat_session_detail(session_id: str, user=Depends(require_permission("platform.view_analytics"))):
+    """Admin: Get full conversation of a specific session."""
+    db = get_db()
+    try:
+        msgs = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at.asc()).all()
+        if not msgs:
+            raise HTTPException(404, "Session nicht gefunden")
+        return {
+            "session_id": session_id,
+            "user": msgs[0].user_email,
+            "messages": [{"id": m.id, "role": m.role, "content": m.content, "sources": m.sources, "created_at": m.created_at.isoformat()} for m in msgs],
+            "total_messages": len(msgs),
+            "started_at": msgs[0].created_at.isoformat(),
+            "ended_at": msgs[-1].created_at.isoformat()
+        }
     finally: db.close()
 
 @app.post("/api/upload", response_model=DocumentResponse)
