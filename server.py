@@ -3901,9 +3901,11 @@ REGELN:
 5. AUTOMATISCH befuellen: fa_owner aus Kundendaten, Branche, Land, naechstes Projektkuerzel
 6. Deutsch, kurz, professionell
 7. Wenn der Kunde bekannt ist: zeige was du schon weisst und frage NUR nach dem Projektspezifischen
-8. IMMER bei bestehenden Projekten: Zeige die bisherigen Projekte des Kunden und frage EXPLIZIT ob das neue Projekt mit einem bestehenden zusammenhaengt oder ein Folgeprojekt ist
-9. PROJEKTKUERZEL: Schlage das naechste Kuerzel vor (z.B. wenn letztes ZIN006 war → ZIN007). Das Kuerzel steht in den Kundendaten unter NAECHSTES PROJEKTKUERZEL
-10. Bei Folgeprojekten: Uebernimm relevante Daten (Typ, Team, Billing) vom Vorgaengerprojekt als Default""",
+8. WICHTIGSTE REGEL - DUPLIKAT-CHECK: Wenn der Kunde bestehende Projekte hat, frage ZUERST ob das gewuenschte Projekt nicht bereits existiert! Z.B.: "Fuer Zindel gibt es bereits ZIN004 Organisationsentwicklung - meinst du dieses Projekt, oder brauchst du wirklich ein NEUES Projekt?" Erst wenn der User bestaetigt dass es ein neues Projekt sein soll, weiter mit Eroeffnung.
+9. Bei bestehendem Projekt: Frage ob der User das bestehende Projekt oeffnen/bearbeiten moechte statt ein neues zu eroeffnen
+10. Bei echtem neuem Projekt: Frage ob es mit einem bestehenden zusammenhaengt oder ein Folgeprojekt ist
+11. PROJEKTKUERZEL: Schlage das naechste Kuerzel vor (z.B. wenn letztes ZIN004 war → ZIN005). Das Kuerzel steht in den Kundendaten unter NAECHSTES PROJEKTKUERZEL
+12. Bei Folgeprojekten: Uebernimm relevante Daten (Typ, Team, Billing) vom Vorgaengerprojekt als Default""",
 
     "lead": f"""Du bist BEATRIX, die Sales-Assistentin von FehrAdvice & Partners AG.
 Der User moechte einen Lead/eine Opportunity erfassen oder die Sales-Pipeline bearbeiten.
