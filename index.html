@@ -3183,30 +3183,102 @@
                 const paperLabel = d.paper_detected
                     ? `<span style="color:#34d399;font-weight:600">Wissenschaftliches Paper erkannt</span> (Score: ${d.paper_score})`
                     : `<span style="color:var(--text-muted)">Kein Paper — normales Dokument</span>`;
+
+                // Level badges for papers
+                let levelHtml = '';
+                if (d.paper_detected && d.content_level) {
+                    const clColors = {L0:'#ef4444',L1:'#f59e0b',L2:'#3b82f6',L3:'#10b981'};
+                    const ilColors = {I1:'#ef4444',I2:'#f59e0b',I3:'#3b82f6',I4:'#8b5cf6',I5:'#10b981'};
+                    levelHtml = `<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+                        <div style="flex:1;min-width:200px;padding:10px 14px;background:rgba(0,0,0,0.15);border-radius:10px;border-left:3px solid ${clColors[d.content_level]||'#666'}">
+                            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:4px">Content Level</div>
+                            <div style="font-size:16px;font-weight:700;color:${clColors[d.content_level]||'#fff'}">${d.content_level}</div>
+                            <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${d.content_level_desc||''}</div>
+                        </div>
+                        <div style="flex:1;min-width:200px;padding:10px 14px;background:rgba(0,0,0,0.15);border-radius:10px;border-left:3px solid ${ilColors[d.integration_level]||'#666'}">
+                            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:4px">Integration Level</div>
+                            <div style="font-size:16px;font-weight:700;color:${ilColors[d.integration_level]||'#fff'}">${d.integration_level||'—'}</div>
+                            <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${d.integration_level_desc||''}</div>
+                        </div>
+                    </div>`;
+                }
+
+                // Structural characteristics (S1-S6)
+                let structHtml = '';
+                if (d.structural) {
+                    const sLabels = {S1_research_question:'S1 Forschungsfrage',S2_methodology:'S2 Methodik',S3_sample_data:'S3 Stichprobe',S4_findings:'S4 Ergebnisse',S5_validity:'S5 Validität',S6_reproducibility:'S6 Reproduzierbarkeit'};
+                    structHtml = `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">${Object.entries(d.structural).map(([k,v])=>`<span style="padding:2px 8px;border-radius:4px;font-size:10px;${v?'background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.2)':'background:rgba(255,255,255,0.03);color:var(--text-muted);border:1px solid var(--border)'}">${v?'✓':'○'} ${sLabels[k]||k}</span>`).join('')}</div>`;
+                }
+
+                // EBF classification
+                let ebfHtml = '';
+                if (d.ebf) {
+                    const parts = [];
+                    if (d.ebf.evidence_tier) {
+                        const tierLabel = {1:'🥇 Gold',2:'🥈 Silber',3:'🥉 Bronze'};
+                        const tierColor = {1:'#fbbf24',2:'#9ca3af',3:'#b45309'};
+                        parts.push(`<span style="color:${tierColor[d.ebf.evidence_tier]||'#fff'}">Evidenz: ${tierLabel[d.ebf.evidence_tier]||d.ebf.evidence_tier}</span>`);
+                    }
+                    if (d.ebf.methodology?.design) parts.push(`Design: ${d.ebf.methodology.design}`);
+                    if (d.ebf.methodology?.identification) parts.push(`ID: ${d.ebf.methodology.identification}`);
+                    if (d.ebf.journal) parts.push(`📰 ${d.ebf.journal}`);
+                    if (d.ebf.doi) parts.push(`DOI: ${d.ebf.doi}`);
+
+                    // EBF Dimensions
+                    let dimHtml = '';
+                    if (d.ebf.ebf_dimensions?.length) {
+                        dimHtml = `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${d.ebf.ebf_dimensions.map(dim=>`<span style="padding:2px 8px;background:rgba(42,127,142,0.15);border:1px solid rgba(42,127,142,0.3);border-radius:4px;font-size:10px;color:var(--accent)" title="${dim.connection||''}">${dim.dimension}</span>`).join('')}</div>`;
+                    }
+
+                    // Ψ Dimensions
+                    let psiHtml = '';
+                    if (d.ebf.psi_dimensions?.length) {
+                        const psiIcons = {'Ψ_I':'📋','Ψ_S':'👥','Ψ_C':'🧠','Ψ_K':'🌍','Ψ_E':'💰','Ψ_T':'⏰','Ψ_M':'🔧','Ψ_P':'🎯'};
+                        psiHtml = `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${d.ebf.psi_dimensions.map(p=>`<span style="padding:2px 8px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);border-radius:4px;font-size:10px;color:#a78bfa" title="${p.relevance||''}">${psiIcons[p.psi]||'Ψ'} ${p.psi}</span>`).join('')}</div>`;
+                    }
+
+                    // Key findings
+                    let findHtml = '';
+                    if (d.ebf.key_findings?.length) {
+                        findHtml = `<div style="margin-top:6px">${d.ebf.key_findings.slice(0,3).map(f=>`<div style="font-size:11px;color:var(--text-secondary);padding:3px 0">• ${f.finding}${f.effect_size?' <span style="color:#34d399">(d='+f.effect_size+')</span>':''}</div>`).join('')}</div>`;
+                    }
+
+                    ebfHtml = `<div style="margin-top:10px;padding:10px 14px;background:rgba(0,0,0,0.15);border-radius:10px">
+                        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:6px">EBF-Klassifikation</div>
+                        <div style="font-size:12px;color:var(--text-secondary);display:flex;flex-wrap:wrap;gap:12px">${parts.join(' · ')}</div>
+                        ${dimHtml}${psiHtml}${findHtml}
+                    </div>`;
+                }
+
+                // Paper ID suggestion
+                let pidHtml = '';
+                if (d.paper_id) {
+                    pidHtml = `<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Paper-ID: <code style="background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:3px;font-family:monospace">${d.paper_id}</code></div>`;
+                }
+
                 const signalTags = d.paper_signals?.length
                     ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${d.paper_signals.map(s => `<span style="padding:1px 6px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:4px;font-size:10px">${s}</span>`).join('')}</div>`
                     : '';
                 const summaryHtml = d.summary
-                    ? `<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.02);border-radius:8px;font-style:italic;color:var(--text-secondary)">${d.summary}</div>`
+                    ? `<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.02);border-radius:8px;font-style:italic;color:var(--text-secondary);font-size:12px">${d.summary}</div>`
                     : '';
-                const autoFilled = [];
-                if (d.title) autoFilled.push(`Titel: "${d.title}"`);
-                if (d.language) autoFilled.push(`Sprache: ${d.language === 'en' ? 'English' : 'Deutsch'}`);
-                if (d.category) autoFilled.push(`Kategorie: ${d.category}`);
-                if (d.tags?.length) autoFilled.push(`Tags: ${d.tags.join(', ')}`);
 
                 content.innerHTML = `
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
                         <span style="font-size:18px">${paperIcon}</span>
                         <div>
                             <div>${paperLabel}</div>
                             <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
-                                ${d.chars?.toLocaleString() || '?'} Zeichen · ${autoFilled.length ? 'Felder auto-befüllt ✓' : ''}
+                                ${d.chars?.toLocaleString() || '?'} Zeichen · Felder auto-befüllt ✓
                             </div>
                         </div>
                     </div>
                     ${signalTags}
+                    ${levelHtml}
+                    ${structHtml}
+                    ${ebfHtml}
                     ${summaryHtml}
+                    ${pidHtml}
                     ${d.paper_detected ? '<div style="margin-top:8px;font-size:11px;color:#34d399">→ Wird automatisch in die Paper-Datenbank auf GitHub übernommen</div>' : ''}
                 `;
             } catch(e) {
