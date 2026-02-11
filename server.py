@@ -8320,6 +8320,72 @@ async def crm_generate_lead_codes(user=Depends(require_permission("lead.update")
         raise HTTPException(500, str(e))
     finally: db.close()
 
+@app.post("/api/crm/migrate-company-ids")
+async def crm_migrate_company_ids(request: Request, user=Depends(require_permission("crm.write"))):
+    """Remap LEAD-* company IDs to CUS-* superkeys. One-time migration."""
+    if not user.get("admin"):
+        raise HTTPException(403, "Admin only")
+    db = get_db()
+    try:
+        data = await request.json()
+        id_remap = data.get("remap", {})  # {"LEAD-030": "CUS-A1", ...}
+        results = {"companies_updated": 0, "deals_updated": 0, "contacts_updated": 0, "duplicates_merged": 0}
+
+        for old_id, new_id in id_remap.items():
+            # Check if target CUS-* already exists in DB
+            existing = db.execute(text("SELECT id FROM crm_companies WHERE id = :id"), {"id": new_id}).fetchone()
+
+            if existing:
+                # Merge: update deals/contacts to point to existing, delete old company
+                deals_upd = db.execute(text("UPDATE crm_deals SET company_id = :new, updated_at = CURRENT_TIMESTAMP WHERE company_id = :old"),
+                    {"new": new_id, "old": old_id}).rowcount
+                contacts_upd = db.execute(text("UPDATE crm_contacts SET company_id = :new WHERE company_id = :old"),
+                    {"new": new_id, "old": old_id}).rowcount
+                acts_upd = db.execute(text("UPDATE crm_activities SET company_id = :new WHERE company_id = :old"),
+                    {"new": new_id, "old": old_id}).rowcount
+                db.execute(text("DELETE FROM crm_companies WHERE id = :old"), {"old": old_id})
+                results["duplicates_merged"] += 1
+                results["deals_updated"] += deals_upd
+                results["contacts_updated"] += contacts_upd
+            else:
+                # Rename: update company ID + all references
+                # Create new company entry with new ID
+                old_data = db.execute(text("SELECT * FROM crm_companies WHERE id = :id"), {"id": old_id}).fetchone()
+                if old_data:
+                    row = dict(old_data._mapping)
+                    db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, size, website, address, notes, created_by, created_at, updated_at)
+                        VALUES (:id, :name, :domain, :industry, :size, :website, :address, :notes, :cb, :ca, CURRENT_TIMESTAMP)
+                        ON CONFLICT (id) DO NOTHING"""),
+                        {"id": new_id, "name": row.get("name",""), "domain": row.get("domain",""),
+                         "industry": row.get("industry",""), "size": row.get("size",""),
+                         "website": row.get("website",""), "address": row.get("address",""),
+                         "notes": row.get("notes",""), "cb": row.get("created_by",""),
+                         "ca": row.get("created_at")})
+                    results["companies_updated"] += 1
+
+                # Update all references
+                deals_upd = db.execute(text("UPDATE crm_deals SET company_id = :new, updated_at = CURRENT_TIMESTAMP WHERE company_id = :old"),
+                    {"new": new_id, "old": old_id}).rowcount
+                contacts_upd = db.execute(text("UPDATE crm_contacts SET company_id = :new WHERE company_id = :old"),
+                    {"new": new_id, "old": old_id}).rowcount
+                acts_upd = db.execute(text("UPDATE crm_activities SET company_id = :new WHERE company_id = :old"),
+                    {"new": new_id, "old": old_id}).rowcount
+                results["deals_updated"] += deals_upd
+                results["contacts_updated"] += contacts_upd
+
+                # Delete old company
+                db.execute(text("DELETE FROM crm_companies WHERE id = :old"), {"old": old_id})
+
+        db.commit()
+        # Invalidate cache
+        _github_companies_cache["ts"] = 0
+        return {"status": "migrated", **results, "remaps": len(id_remap)}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Company ID migration: {e}")
+        raise HTTPException(500, str(e))
+    finally: db.close()
+
 # ── Activities ──
 @app.get("/api/crm/activities")
 async def crm_get_activities(user=Depends(require_permission("crm.read")), deal_id: str = None, company_id: str = None):
