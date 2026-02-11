@@ -4494,7 +4494,7 @@ WAEHRUNG: Die Waehrung richtet sich nach dem Land des Kunden:
 - estimated_value_chf: Umgerechnet in CHF (bei CHF-Kunden = gleicher Wert)
 
 FELDER:
-- lead_code: AUTOMATISCH GENERIERT nach Schema L-{KUNDE}-{B/N}-{JJ}-{NNN} (z.B. L-UBS-B-26-003)
+- lead_code: AUTOMATISCH GENERIERT nach Schema L-{{KUNDE}}-{{B/N}}-{{JJ}}-{{NNN}} (z.B. L-UBS-B-26-003)
 - customer_code: Kundencode
 - customer_name: Voller Firmenname
 - is_new_customer: true wenn unbekannter Kunde, false wenn in Datenbank
