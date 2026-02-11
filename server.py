@@ -4340,10 +4340,10 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
 
     # ── Step 2: Handle knowledge/general via existing KB path ──
     if intent in ("knowledge", "general"):
-        # 🔍 Fact-check user claims even for knowledge/general messages
-        try:
-            fact_check_user_claims(message, user["sub"], customer_code=entities.get("customer", ""))
-        except Exception: pass
+        # 🔍 Background fact-check
+        import threading
+        _fc_msg, _fc_user, _fc_cust = message, user["sub"], entities.get("customer", "")
+        threading.Thread(target=lambda: fact_check_user_claims(_fc_msg, _fc_user, customer_code=_fc_cust), daemon=True).start()
         return {
             "ok": True,
             "intent": intent,
@@ -4423,26 +4423,33 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
         if parsed:
             resp_message = parsed.get("message", "")
             resp_data = parsed.get("data", parsed.get("project", {}))
-            # 💬→📚 Auto-save to Knowledge Base
-            try:
-                meta = {"intent": intent}
-                if resp_data.get("customer_code"): meta["customer_code"] = resp_data["customer_code"]
-                if resp_data.get("project_slug"): meta["project_slug"] = resp_data["project_slug"]
-                save_content = resp_message
-                if resp_data:
-                    save_content = f"{resp_message}\n\nStrukturierte Daten ({intent}): {json.dumps(resp_data, ensure_ascii=False)}"
-                doc_id = auto_save_chat_to_kb(message, save_content, user["sub"], intent=intent, metadata=meta)
-                # 🔍 Fact-check user claims (background)
+
+            # 🚀 Move ALL post-response tasks to background thread
+            # These were blocking the response by ~8-12 seconds!
+            def _background_enrichment():
                 try:
-                    fact_check_user_claims(message, user["sub"], chat_doc_id=doc_id,
-                                           customer_code=resp_data.get("customer_code", ""))
-                except Exception: pass
-                # 🧠 Bias & Belief analysis (background)
-                try:
-                    analyze_beliefs_and_biases(message, resp_message, user["sub"],
-                        chat_doc_id=doc_id, customer_code=resp_data.get("customer_code", ""))
-                except Exception: pass
-            except Exception: pass
+                    meta = {"intent": intent}
+                    if resp_data.get("customer_code"): meta["customer_code"] = resp_data["customer_code"]
+                    if resp_data.get("project_slug"): meta["project_slug"] = resp_data["project_slug"]
+                    save_content = resp_message
+                    if resp_data:
+                        save_content = f"{resp_message}\n\nStrukturierte Daten ({intent}): {json.dumps(resp_data, ensure_ascii=False)}"
+                    doc_id = auto_save_chat_to_kb(message, save_content, user["sub"], intent=intent, metadata=meta)
+                    # Fact-check
+                    try:
+                        fact_check_user_claims(message, user["sub"], chat_doc_id=doc_id,
+                                               customer_code=resp_data.get("customer_code", ""))
+                    except Exception: pass
+                    # Bias analysis
+                    try:
+                        analyze_beliefs_and_biases(message, resp_message, user["sub"],
+                            chat_doc_id=doc_id, customer_code=resp_data.get("customer_code", ""))
+                    except Exception: pass
+                except Exception as e:
+                    logger.warning(f"Background enrichment failed: {e}")
+
+            import threading
+            threading.Thread(target=_background_enrichment, daemon=True).start()
 
             return {
                 "ok": True,
@@ -4662,19 +4669,17 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
                     pass
                 finally:
                     db2.close()
-                # 💬→📚 Auto-save to Knowledge Base
-                try:
-                    doc_id = auto_save_chat_to_kb(question, complete_text, user["sub"], intent="knowledge")
-                    # 🔍 Fact-check user claims (background)
+                # 🚀 Background: save + analysis (don't delay 'done' event)
+                def _bg_stream():
                     try:
-                        fact_check_user_claims(question, user["sub"], chat_doc_id=doc_id)
-                    except Exception: pass
-                    # 🧠 Bias & Belief analysis (background)
-                    try:
-                        analyze_beliefs_and_biases(question, complete_text, user["sub"], chat_doc_id=doc_id)
-                    except Exception: pass
-                except Exception as e:
-                    logger.warning(f"Chat KB auto-save failed (stream): {e}")
+                        doc_id = auto_save_chat_to_kb(question, complete_text, user["sub"], intent="knowledge")
+                        try: fact_check_user_claims(question, user["sub"], chat_doc_id=doc_id)
+                        except: pass
+                        try: analyze_beliefs_and_biases(question, complete_text, user["sub"], chat_doc_id=doc_id)
+                        except: pass
+                    except Exception as e:
+                        logger.warning(f"Chat KB auto-save failed (stream): {e}")
+                import threading; threading.Thread(target=_bg_stream, daemon=True).start()
 
             # Final done event
             yield f"data: {json.dumps({'type': 'done', 'text': ''})}\n\n"
@@ -4734,19 +4739,17 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
                 assistant_msg = ChatMessage(user_email=user["sub"], role="assistant", content=answer, sources=sources)
                 db.add(assistant_msg); db.commit()
                 logger.info(f"FAST PATH answer for: {question[:50]}")
-                # 💬→📚 Auto-save to Knowledge Base
-                try:
-                    doc_id = auto_save_chat_to_kb(question, answer, user["sub"], intent="knowledge",
-                                                     metadata={"project_slug": request.project_slug} if request.project_slug else None)
-                    # 🔍 Fact-check user claims (background)
+                # 🚀 Background: save + fact-check + bias analysis
+                def _bg_fast():
                     try:
-                        fact_check_user_claims(question, user["sub"], chat_doc_id=doc_id)
-                    except Exception: pass
-                    # 🧠 Bias & Belief analysis (background)
-                    try:
-                        analyze_beliefs_and_biases(question, answer, user["sub"], chat_doc_id=doc_id)
-                    except Exception: pass
-                except Exception: pass
+                        doc_id = auto_save_chat_to_kb(question, answer, user["sub"], intent="knowledge",
+                                                         metadata={"project_slug": request.project_slug} if request.project_slug else None)
+                        try: fact_check_user_claims(question, user["sub"], chat_doc_id=doc_id)
+                        except: pass
+                        try: analyze_beliefs_and_biases(question, answer, user["sub"], chat_doc_id=doc_id)
+                        except: pass
+                    except: pass
+                import threading; threading.Thread(target=_bg_fast, daemon=True).start()
                 return {
                     "status": "done",
                     "answer": answer,
@@ -4979,12 +4982,10 @@ async def chat_project(slug: str, request: ChatRequest, user=Depends(require_aut
             github_saved = False
             logger.warning(f"Project insight GitHub push failed: {e}")
 
-        try:
-            auto_save_chat_to_kb(question, answer, user.get("sub", ""),
-                                 intent="project_chat",
-                                 metadata={"project_slug": slug, "customer_code":
-                                           project_ctx["project"].get("client", {}).get("customer_code", "")})
-        except: pass
+        # 🚀 Background save
+        import threading
+        _slug, _q, _a, _u, _cc = slug, question, answer, user.get("sub",""), project_ctx["project"].get("client",{}).get("customer_code","")
+        threading.Thread(target=lambda: auto_save_chat_to_kb(_q, _a, _u, intent="project_chat", metadata={"project_slug":_slug,"customer_code":_cc}), daemon=True).start()
 
         return {
             "status": "done",
@@ -5163,13 +5164,10 @@ async def chat_project_stream(slug: str, request: ChatRequest, user=Depends(requ
                 except Exception as e:
                     logger.warning(f"Project stream GitHub push failed: {e}")
 
-                # KB auto-save
-                try:
-                    auto_save_chat_to_kb(question, complete_text, user.get("sub", ""),
-                                         intent="project_chat",
-                                         metadata={"project_slug": slug})
-                except Exception:
-                    pass
+                # 🚀 Background KB save
+                import threading
+                _q, _ct, _u, _sl = question, complete_text, user.get("sub",""), slug
+                threading.Thread(target=lambda: auto_save_chat_to_kb(_q, _ct, _u, intent="project_chat", metadata={"project_slug":_sl}), daemon=True).start()
 
                 # Send final meta
                 yield f"data: {json.dumps({'type': 'meta', 'github_saved': github_saved, 'project_slug': slug})}\n\n"
