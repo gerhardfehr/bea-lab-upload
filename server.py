@@ -4419,11 +4419,18 @@ INTENT_ROUTER_SYSTEM = """Du bist der BEATRIX Intent-Router. Analysiere die User
 VERFÜGBARE INTENTS:
 - "project": Projekt eröffnen, ergänzen, ändern, Status abfragen
 - "lead": Lead/Opportunity anlegen, Sales-Pipeline, Akquise
+- "company": Neue Firma/Unternehmen anlegen, Firmen-Stammdaten erfassen, "Neue Firma", "Neuer Kunde"
 - "task": Aufgabe erstellen, Todo, Reminder, "erinnere mich", "muss noch", Next Steps, Follow-up
 - "model": BCM-Modell bauen, Ψ-Dimensionen, Kontextvektor, EBF-Integration, Behavioral Analysis
 - "context": Ausgangslage erfassen, Kundensituation beschreiben, Branchenkontext, Marktumfeld
 - "knowledge": Fachfrage zu Behavioral Economics, EBF, Decision Architecture (→ nutzt KB)
 - "general": Alles andere, Smalltalk, unklar
+
+UNTERSCHEIDUNG LEAD vs COMPANY:
+- "Neue Firma Hofer Reisen" → company (Stammdaten anlegen)
+- "Neuer Lead Hofer Reisen, Budget 50k" → lead (Opportunity mit Wert/Pipeline)
+- "Lead für UBS" → lead (UBS existiert schon)
+- "Lege Kaufland als Firma an" → company
 
 Antworte NUR mit einem JSON-Objekt (keine Markdown-Backticks nötig):
 {"intent": "...", "confidence": 0.0-1.0, "entities": {"customer": "...", "project": "..."}}
@@ -4536,6 +4543,32 @@ REGELN:
 9. Bei Bestandskunden mit Projekten: Erwaehne bestehende Projekte und frage ob der Lead damit zusammenhaengt
 10. Bei Nicht-CHF-Kunden: Zeige Betrag in Kundenwaehrung UND CHF-Aequivalent
 11. Deutsch, professionell, effizient""",
+
+    "company": f"""Du bist BEATRIX, die CRM-Assistentin von FehrAdvice & Partners AG.
+Der User moechte eine neue Firma/ein neues Unternehmen als Kunden anlegen.
+
+FELDER:
+- name: Voller Firmenname (z.B. "Swisscom AG") - PFLICHT
+- code: Kuerzel 3-5 Buchstaben (z.B. "SWC") - wird auto-generiert wenn nicht angegeben
+- short_name: Kurzname (z.B. "Swisscom")
+- industry: Branche (finance, insurance, retail, fmcg, construction, packaging, public_sector, telecom, media, automotive, pharma_health, manufacturing, technology, energy, transport, creative, ngo, consulting)
+- country: Laendercode (CH, AT, DE, SE, UK, US) - Default CH
+- website: URL
+- fa_owner: Kuerzel (GF=Gerhard Fehr, AF=Andrea Fehr)
+- notes: Zusaetzliche Infos
+
+{ctx}
+
+REGELN:
+1. Antworte mit JSON in ```json ... ``` Tags
+2. JSON: {{"intent":"company", "action":"create", "status":"complete"|"need_info", "data":{{...}}, "missing":[...], "message":"...", "confidence":0.0-1.0}}
+3. Pflichtfeld: name
+4. PRUEFE ob die Firma schon existiert! Wenn ja, sage dem User: "{{Name}} existiert bereits als {{code}}. Moechtest du die Firma oeffnen oder Daten ergaenzen?"
+5. Code auto-generieren: Erste 3-5 Buchstaben des Firmennamens, nur Grossbuchstaben
+6. AUTOMATISCH ableiten: Branche aus Firmenname wenn moeglich (z.B. "Kantonalbank" → finance, "Versicherung" → insurance)
+7. Land: CH als Default, AT fuer oesterreichische Firmen, DE fuer deutsche
+8. Deutsch, professionell, effizient
+9. Nach Anlage: Frage ob gleich ein Lead fuer die neue Firma erstellt werden soll""",
 
     "task": f"""Du bist BEATRIX, die Task-Managerin von FehrAdvice & Partners AG.
 Der User moechte eine Aufgabe erstellen, ein Todo setzen, einen Follow-up planen oder eine Erinnerung setzen.
@@ -7928,18 +7961,107 @@ async def sync_project_to_github(slug: str, user=Depends(require_auth)):
 
 @app.post("/api/crm/companies")
 async def crm_create_company(request: Request, user=Depends(require_permission("crm.write"))):
+    import yaml as _yaml
     db = get_db()
     try:
         data = await request.json()
-        cid = str(uuid.uuid4())[:8]
+        name = data.get("name","").strip()
+        if not name:
+            raise HTTPException(400, "Firmenname erforderlich")
+        code = data.get("code","").upper().strip()
+        if not code:
+            # Auto-generate code from name: first 3-5 chars
+            code = ''.join(c for c in name.upper() if c.isalpha())[:4]
+        cid = f"CUS-{code}"
+        industry = data.get("industry","")
+        country = data.get("country","CH")
+        is_new = data.get("is_new_customer", True)
+
+        # 1. Save to DB
         db.execute(text("""INSERT INTO crm_companies (id, name, domain, industry, size, website, address, notes, created_by)
-            VALUES (:id, :name, :domain, :industry, :size, :website, :address, :notes, :cb)"""),
-            {"id": cid, "name": data.get("name",""), "domain": data.get("domain",""),
-             "industry": data.get("industry",""), "size": data.get("size",""),
+            VALUES (:id, :name, :domain, :industry, :size, :website, :address, :notes, :cb)
+            ON CONFLICT (id) DO NOTHING"""),
+            {"id": cid, "name": name, "domain": data.get("domain",""),
+             "industry": industry, "size": data.get("size",""),
              "website": data.get("website",""), "address": data.get("address",""),
              "notes": data.get("notes",""), "cb": user["sub"]})
         db.commit()
-        return {"id": cid, "status": "created"}
+
+        # 2. Add to GitHub customer-registry.yaml
+        gh_status = "skipped"
+        try:
+            import urllib.request, ssl, base64
+            _ctx = ssl.create_default_context(); _ctx.check_hostname = False; _ctx.verify_mode = ssl.CERT_NONE
+            gh_h = {"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIX"}
+            # Get current registry
+            req = urllib.request.Request(f"https://api.github.com/repos/{GH_REPO}/contents/data/customer-registry.yaml", headers=gh_h)
+            resp = json.loads(urllib.request.urlopen(req, context=_ctx, timeout=15).read())
+            sha = resp["sha"]
+            registry = _yaml.safe_load(base64.b64decode(resp["content"]).decode())
+            customers = registry.get("customers", [])
+            # Check if already exists
+            if not any(c.get("id") == cid for c in customers):
+                new_entry = {
+                    "id": cid, "code": code, "name": name, "short_name": data.get("short_name", code),
+                    "type": "lead", "industry": industry, "country": country,
+                    "status": "prospect",
+                    "profile_path": None, "context_path": None,
+                    "projects": [],
+                    "created": datetime.utcnow().strftime("%Y-%m-%d"),
+                    "notes": data.get("notes", "")
+                }
+                # Add optional fields
+                if data.get("website"): new_entry["website"] = data["website"]
+                if data.get("fa_owner"): new_entry["fa_owner"] = data["fa_owner"]
+                customers.append(new_entry)
+                registry["customers"] = customers
+                registry["metadata"]["last_updated"] = datetime.utcnow().strftime("%Y-%m-%d")
+                new_yaml = _yaml.dump(registry, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                put_data = json.dumps({
+                    "message": f"feat: neue Firma {code} ({name}) via BEATRIX",
+                    "content": base64.b64encode(new_yaml.encode()).decode(),
+                    "sha": sha, "branch": "main"
+                }).encode()
+                req2 = urllib.request.Request(
+                    f"https://api.github.com/repos/{GH_REPO}/contents/data/customer-registry.yaml",
+                    data=put_data, method="PUT", headers={**gh_h, "Content-Type": "application/json"})
+                urllib.request.urlopen(req2, context=_ctx, timeout=15)
+                gh_status = "added"
+                # Also add to project-sequences.yaml prefix_mapping
+                try:
+                    req3 = urllib.request.Request(f"https://api.github.com/repos/{GH_REPO}/contents/data/config/project-sequences.yaml", headers=gh_h)
+                    resp3 = json.loads(urllib.request.urlopen(req3, context=_ctx, timeout=10).read())
+                    seq_data = _yaml.safe_load(base64.b64decode(resp3["content"]).decode())
+                    pm = seq_data.get("prefix_mapping", {})
+                    name_key = name.lower().split()[0] if name else code.lower()
+                    if name_key not in pm and code.lower() not in pm:
+                        pm[name_key] = code
+                        pm[code.lower()] = code
+                        seq_data["prefix_mapping"] = pm
+                        if code not in seq_data.get("sequences", {}):
+                            seq_data["sequences"][code] = {"next": 1, "label": name}
+                        new_seq_yaml = _yaml.dump(seq_data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                        put4 = json.dumps({
+                            "message": f"feat: prefix mapping {code} für {name}",
+                            "content": base64.b64encode(new_seq_yaml.encode()).decode(),
+                            "sha": resp3["sha"], "branch": "main"
+                        }).encode()
+                        req4 = urllib.request.Request(
+                            f"https://api.github.com/repos/{GH_REPO}/contents/data/config/project-sequences.yaml",
+                            data=put4, method="PUT", headers={**gh_h, "Content-Type": "application/json"})
+                        urllib.request.urlopen(req4, context=_ctx, timeout=10)
+                except Exception as se:
+                    logger.warning(f"Sequence mapping: {se}")
+            else:
+                gh_status = "exists"
+            # Invalidate cache
+            _github_companies_cache["ts"] = 0
+        except Exception as ge:
+            logger.warning(f"GitHub registry: {ge}")
+            gh_status = f"error: {ge}"
+
+        return {"id": cid, "code": code, "status": "created", "github": gh_status}
+    except HTTPException: raise
     except Exception as e:
         db.rollback(); raise HTTPException(500, str(e))
     finally: db.close()
