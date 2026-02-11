@@ -4792,6 +4792,32 @@ async def list_documents(database: Optional[str] = None, limit: int = 50, user=D
         return [DocumentResponse(id=d.id, title=d.title, source_type=d.source_type, file_type=d.file_type, database_target=d.database_target, status=d.status, created_at=d.created_at.isoformat(), github_url=d.github_url) for d in query.limit(limit).all()]
     finally: db.close()
 
+@app.get("/api/documents/{doc_id}")
+async def get_document(doc_id: str, user=Depends(require_auth)):
+    """Get full document details including content."""
+    db = get_db()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc: raise HTTPException(404, "Nicht gefunden")
+        return {
+            "id": doc.id,
+            "title": doc.title,
+            "content": doc.content or "",
+            "source_type": doc.source_type,
+            "file_type": doc.file_type,
+            "database_target": doc.database_target,
+            "status": doc.status,
+            "github_url": doc.github_url,
+            "uploaded_by": doc.uploaded_by,
+            "created_at": doc.created_at.isoformat(),
+            "file_size": doc.file_size,
+            "category": doc.category,
+            "language": doc.language,
+            "tags": doc.tags,
+            "metadata": doc.doc_metadata or {}
+        }
+    finally: db.close()
+
 @app.delete("/api/documents/{doc_id}")
 async def delete_document(doc_id: str, user=Depends(require_auth)):
     db = get_db()
