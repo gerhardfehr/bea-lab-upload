@@ -7030,7 +7030,7 @@ ZEFIX_SPARQL_URL = "https://lindas.admin.ch/query"
 
 def _zefix_sparql(query: str, timeout: int = 15) -> list:
     """Execute SPARQL query against LINDAS Zefix endpoint."""
-    import urllib.parse
+    import urllib.parse, urllib.request, ssl, json as _json
     params = urllib.parse.urlencode({"query": query})
     url = f"{ZEFIX_SPARQL_URL}?{params}"
     headers = {"Accept": "application/sparql-results+json", "User-Agent": "BEATRIX/3.7"}
@@ -7039,7 +7039,7 @@ def _zefix_sparql(query: str, timeout: int = 15) -> list:
     ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(url, headers=headers)
     resp = urllib.request.urlopen(req, context=ctx, timeout=timeout)
-    data = json.loads(resp.read().decode())
+    data = _json.loads(resp.read().decode())
     return data.get("results", {}).get("bindings", [])
 
 def _zefix_search(name: str, limit: int = 10) -> list:
