@@ -3443,14 +3443,27 @@ def update_session(db, session_id: str, session_type: str = None, entities: dict
         logger.warning(f"Session update failed: {e}")
 
 def get_session_history(db, session_id: str, limit: int = 10) -> list:
-    """Load recent messages from this session for conversation context."""
+    """Load recent messages from this session for conversation context.
+    Truncates long messages to avoid token overflow (e.g. base64 images in content)."""
     if not session_id:
         return []
     try:
         rows = db.execute(text(
             "SELECT role, content FROM chat_messages WHERE session_id = :sid ORDER BY created_at DESC LIMIT :lim"
         ), {"sid": session_id, "lim": limit}).fetchall()
-        return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+        history = []
+        total_chars = 0
+        max_total = 24000  # ~6k tokens budget for history
+        for r in reversed(rows):
+            content = r[1] or ""
+            # Truncate individual messages
+            if len(content) > 3000:
+                content = content[:3000] + "\n[... gekürzt ...]"
+            total_chars += len(content)
+            if total_chars > max_total:
+                break
+            history.append({"role": r[0], "content": content})
+        return history
     except Exception:
         return []
 
