@@ -4744,16 +4744,28 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
 
     # Auto-extract title from content if not provided
     if not request.title or request.title in ["Untitled", ""]:
-        lines = [l.strip() for l in request.content[:1000].split('\n') if l.strip() and len(l.strip()) > 3]
-        if lines:
-            # Use first meaningful line (skip very short ones)
-            candidate = lines[0][:120]
-            # Clean up: remove markdown headers, leading punctuation
-            if candidate.startswith('#'):
-                candidate = candidate.lstrip('#').strip()
-            request.title = candidate if candidate else "Untitled"
-        else:
-            request.title = "Untitled"
+        lines = [l.strip() for l in request.content[:2000].split('\n') if l.strip() and len(l.strip()) > 3]
+        # Skip common non-title headers
+        skip_patterns = ["nber working paper", "working paper series", "discussion paper",
+            "technical report", "research paper", "policy brief", "staff report",
+            "occasional paper", "conference paper", "working paper no", "wp no",
+            "issn", "isbn", "http", "www.", "doi:", "jel class", "keywords:",
+            "abstract", "table of contents", "acknowledgment"]
+        title_found = False
+        for line in lines:
+            lower = line.lower().strip()
+            if any(skip in lower for skip in skip_patterns):
+                continue
+            if len(line) < 5:
+                continue
+            # Skip lines that are just numbers or dates
+            if line.replace('.', '').replace('-', '').replace('/', '').strip().isdigit():
+                continue
+            request.title = line[:150]
+            title_found = True
+            break
+        if not title_found:
+            request.title = lines[0][:120] if lines else "Untitled"
 
     # Duplicate check via SHA256 hash of content
     content_hash = hashlib.sha256(request.content.encode("utf-8")).hexdigest()
@@ -5342,14 +5354,20 @@ async def classify_all_documents(request: Request, user=Depends(require_auth)):
             meta = doc.doc_metadata or {}
             if meta.get("classified_at") and not force:
                 # Still fix missing titles even if skipping classification
-                if doc.title in ["Untitled", ""] or not doc.title:
+                if doc.title in ["Untitled", "", "NBER WORKING PAPER SERIES"] or not doc.title or doc.title.lower().startswith("nber working") or doc.title.lower().startswith("working paper"):
                     text_for_title = doc.content or ""
-                    lines = [l.strip() for l in text_for_title[:1000].split('\n') if l.strip() and len(l.strip()) > 3]
-                    if lines:
-                        candidate = lines[0][:120].lstrip('#').strip()
-                        if candidate:
-                            doc.title = candidate
-                            results["details"].append({"id": doc.id, "title": candidate, "action": "title_fixed"})
+                    lines = [l.strip() for l in text_for_title[:2000].split('\n') if l.strip() and len(l.strip()) > 3]
+                    skip_patterns = ["nber working paper", "working paper series", "discussion paper",
+                        "technical report", "research paper", "policy brief", "staff report",
+                        "issn", "isbn", "http", "www.", "doi:", "jel class", "keywords:", "abstract"]
+                    for line in lines:
+                        lower = line.lower().strip()
+                        if any(skip in lower for skip in skip_patterns): continue
+                        if len(line) < 5: continue
+                        if line.replace('.','').replace('-','').replace('/','').strip().isdigit(): continue
+                        doc.title = line[:150]
+                        results["details"].append({"id": doc.id, "title": line[:150], "action": "title_fixed"})
+                        break
                 results["skipped"] += 1
                 continue
 
@@ -5407,11 +5425,16 @@ async def classify_all_documents(request: Request, user=Depends(require_auth)):
 
                 # Fix missing titles
                 if doc.title in ["Untitled", ""] or not doc.title:
-                    lines = [l.strip() for l in text[:1000].split('\n') if l.strip() and len(l.strip()) > 3]
-                    if lines:
-                        candidate = lines[0][:120].lstrip('#').strip()
-                        if candidate:
-                            doc.title = candidate
+                    lines = [l.strip() for l in text[:2000].split('\n') if l.strip() and len(l.strip()) > 3]
+                    skip_patterns = ["nber working paper", "working paper series", "discussion paper",
+                        "technical report", "research paper", "policy brief", "staff report",
+                        "issn", "isbn", "http", "www.", "doi:", "jel class", "keywords:", "abstract"]
+                    for line in lines:
+                        lower = line.lower().strip()
+                        if any(skip in lower for skip in skip_patterns): continue
+                        if len(line) < 5: continue
+                        if line.replace('.','').replace('-','').replace('/','').strip().isdigit(): continue
+                        doc.title = line[:150]; break
 
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(doc, 'doc_metadata')
