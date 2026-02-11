@@ -4267,14 +4267,14 @@ REGELN:
     }
 
 
-def call_claude_json(system_prompt, messages, today):
+def call_claude_json(system_prompt, messages, today, model="claude-sonnet-4-20250514", max_tokens=2500):
     """Call Claude API and extract JSON from response."""
     import urllib.request, ssl, re
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
 
     payload = json.dumps({
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 2500,
+        "model": model,
+        "max_tokens": max_tokens,
         "system": system_prompt + f"\n\nHeute ist: {today}",
         "messages": messages
     }).encode()
@@ -4324,10 +4324,11 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
     entities = {}
 
     if not intent:
-        # Quick classification call
+        # Quick classification call (Haiku = fast, 1-2s vs 3-5s Sonnet)
         try:
             router_messages = [{"role": "user", "content": message}]
-            parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today)
+            parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
+                                           model="claude-haiku-4-5-20251001", max_tokens=500)
             if parsed:
                 intent = parsed.get("intent", "general")
                 entities = parsed.get("entities", {})
