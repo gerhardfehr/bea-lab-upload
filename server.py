@@ -3783,23 +3783,23 @@ def detect_study_report(text: str, filename: str = "") -> dict:
 
     # ── STRONG: Known organizations (3 points) ──
     consulting = ["mckinsey", "boston consulting", "bcg", "bain & company", "bain &", "deloitte",
-                  "pwc", "pricewaterhousecoopers", "kpmg", "ernst & young", "ey ",
+                  "pwc", "pricewaterhousecoopers", "kpmg", "ernst & young", "ernst and young",
                   "accenture", "roland berger", "oliver wyman", "a.t. kearney",
                   "capgemini", "booz allen", "strategy&", "fehradvice", "fehr advice"]
-    think_tanks = ["brookings", "rand corporation", "world economic forum", "wef ",
+    think_tanks = ["brookings", "rand corporation", "world economic forum",
                    "peterson institute", "chatham house", "carnegie endowment",
                    "heritage foundation", "cato institute", "bertelsmann stiftung",
-                   "ifo institut", "diw berlin", "zew ", "iwf", "imf"]
+                   "ifo institut", "diw berlin", "zew mannheim", "zew zentrum"]
     intl_orgs = ["world bank", "weltbank", "oecd", "european commission", "eu commission",
-                 "europäische kommission", "united nations", "un ", "imf ", "iwf ",
-                 "who ", "world health organization", "international monetary fund",
-                 "european central bank", "ezb", "ecb", "fed ", "federal reserve",
-                 "bis ", "bank for international settlements"]
+                 "europäische kommission", "united nations",
+                 "world health organization", "international monetary fund",
+                 "european central bank", "ezb ", "ecb ",
+                 "bank for international settlements"]
     gov_agencies = ["bundesamt", "bundesministerium", "seco", "staatssekretariat",
                     "european parliament", "europäisches parlament", "congressional",
-                    "gao ", "government accountability", "bundesanstalt",
+                    "government accountability", "bundesanstalt",
                     "bundesnetzagentur", "statistisches bundesamt", "destatis",
-                    "bfs ", "bundesamt für statistik"]
+                    "bundesamt für statistik"]
 
     for org_list, org_type in [(consulting, "consulting"), (think_tanks, "think_tank"),
                                 (intl_orgs, "international_org"), (gov_agencies, "government")]:
