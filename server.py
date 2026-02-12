@@ -3604,6 +3604,156 @@ class ChatRequest(BaseModel):
 # ── Chat File Upload: Extract text / prepare image for Claude Vision ──
 # If PDF is a scientific paper → runs full paper pipeline (KB + GitHub + Embedding)
 
+def detect_book(text: str, filename: str = "") -> dict:
+    """Detect if text is from a book (not a paper).
+    Books have: ISBN, chapters, table of contents, publisher, preface/foreword, very long text.
+    Returns {is_book: bool, confidence: float, signals: [str], score: int, isbn: str|None, publisher: str|None}"""
+    if not text or len(text) < 1000:
+        return {"is_book": False, "confidence": 0, "signals": [], "score": 0, "isbn": None, "publisher": None}
+
+    import re
+    text_lower = text[:20000].lower()
+    text_end = text[-5000:].lower() if len(text) > 5000 else ""
+    full_lower = text_lower + " " + text_end
+    signals = []
+    book_score = 0
+
+    # ── ISBN extraction (STRONG: 4 points) ──
+    isbn_13 = re.findall(r'(?:isbn[-\s:]?\s*(?:13)?[-\s:]?\s*)(97[89][-\s]?\d[-\s]?\d{2}[-\s]?\d{4,6}[-\s]?\d{1,3}[-\s]?\d)', text[:15000], re.IGNORECASE)
+    isbn_10 = re.findall(r'(?:isbn[-\s:]?\s*(?:10)?[-\s:]?\s*)(\d[-\s]?\d{2}[-\s]?\d{4,6}[-\s]?\d{1,3}[-\s]?[\dxX])', text[:15000], re.IGNORECASE)
+    # Also catch bare ISBN patterns
+    isbn_bare_13 = re.findall(r'\b(97[89]\d{10})\b', text[:15000])
+    isbn_bare_dash = re.findall(r'\b(97[89]-\d-\d{2,5}-\d{4,5}-\d)\b', text[:15000])
+    isbn = None
+    if isbn_13:
+        isbn = re.sub(r'[-\s]', '', isbn_13[0])
+        signals.append("isbn_13")
+        book_score += 4
+    elif isbn_10:
+        isbn = re.sub(r'[-\s]', '', isbn_10[0])
+        signals.append("isbn_10")
+        book_score += 4
+    elif isbn_bare_13:
+        isbn = isbn_bare_13[0]
+        signals.append("isbn_bare")
+        book_score += 4
+    elif isbn_bare_dash:
+        isbn = re.sub(r'[-\s]', '', isbn_bare_dash[0])
+        signals.append("isbn_dash")
+        book_score += 4
+
+    # ── Chapter structure (STRONG: 3 points) ──
+    chapter_patterns = [r'\bchapter\s+\d', r'\bkapitel\s+\d', r'\bchapter\s+[ivxl]+\b',
+                        r'\bteil\s+[ivxl]+\b', r'\bpart\s+[ivxl]+\b', r'\bpart\s+\d']
+    chapter_count = sum(1 for p in chapter_patterns if re.search(p, full_lower))
+    # Also count numbered chapters in text
+    numbered_chapters = len(re.findall(r'\bchapter\s+\d+', full_lower))
+    if numbered_chapters >= 3 or chapter_count >= 2:
+        signals.append(f"chapter_structure({numbered_chapters}ch)")
+        book_score += 3
+    elif chapter_count >= 1:
+        signals.append("chapter_ref")
+        book_score += 1
+
+    # ── Table of Contents (STRONG: 3 points) ──
+    toc_patterns = ["table of contents", "contents\n", "inhaltsverzeichnis", "inhalt\n"]
+    if any(p in text_lower for p in toc_patterns):
+        signals.append("table_of_contents")
+        book_score += 3
+
+    # ── Publisher (MEDIUM: 2 points) ──
+    publishers = ["oxford university press", "cambridge university press", "princeton university press",
+                  "harvard university press", "mit press", "yale university press", "stanford university press",
+                  "university of chicago press", "columbia university press", "springer", "wiley",
+                  "elsevier", "routledge", "sage publications", "palgrave macmillan", "academic press",
+                  "mcgraw-hill", "pearson", "cengage", "norton", "penguin", "random house",
+                  "verlag", "de gruyter", "nomos", "c.h. beck", "mohr siebeck", "campus verlag",
+                  "schäffer-poeschel", "gabler verlag", "haupt verlag"]
+    publisher_found = None
+    for pub in publishers:
+        if pub in full_lower:
+            publisher_found = pub.title()
+            signals.append(f"publisher:{pub}")
+            book_score += 2
+            break
+
+    # ── Book-specific sections (MEDIUM: 1 point each) ──
+    book_sections = {
+        "preface": ["preface", "vorwort", "geleitwort"],
+        "foreword": ["foreword", "foreword by"],
+        "index": ["\nindex\n", "sachregister", "stichwortverzeichnis", "personenregister", "name index", "subject index"],
+        "about_author": ["about the author", "über den autor", "about the authors", "biographical note"],
+        "acknowledgments_book": ["acknowledgments\n", "acknowledgements\n", "danksagung\n"],
+        "copyright_page": ["all rights reserved", "printed in", "library of congress", "cataloging-in-publication",
+                           "© 20", "© 19", "first published", "first edition", "second edition", "reprinted"],
+        "dedication": ["dedicated to", "für meine", "to my wife", "to my family", "this book is dedicated"],
+    }
+    for name, patterns in book_sections.items():
+        if any(p in full_lower for p in patterns):
+            signals.append(name)
+            book_score += 1
+
+    # ── Very long text (books are typically >100k chars) ──
+    if len(text) > 300000:
+        signals.append(f"very_long({len(text)//1000}k)")
+        book_score += 2
+    elif len(text) > 150000:
+        signals.append(f"long({len(text)//1000}k)")
+        book_score += 1
+
+    # ── Anti-paper signals that suggest book ──
+    # Papers rarely have >10 chapters or >200k chars
+    if len(text) > 200000 and not any(s.startswith("isbn") for s in signals):
+        # Very long doc without ISBN – check for chapter structure
+        all_chapters = len(re.findall(r'\bchapter\b', full_lower))
+        if all_chapters >= 5:
+            signals.append(f"long_with_chapters({all_chapters})")
+            book_score += 2
+
+    # Decision: score >= 5 = book
+    is_book = book_score >= 5
+    confidence = min(book_score / 12.0, 1.0)
+
+    return {
+        "is_book": is_book, "confidence": round(confidence, 2),
+        "signals": signals, "score": book_score,
+        "isbn": isbn, "publisher": publisher_found
+    }
+
+
+def lookup_isbn(isbn: str) -> dict:
+    """Lookup book metadata via Open Library API using ISBN."""
+    if not isbn:
+        return {}
+    try:
+        import urllib.request, ssl, json
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        clean = isbn.replace("-", "").replace(" ", "")
+        url = f"https://openlibrary.org/api/books?bibkeys=ISBN:{clean}&jscmd=data&format=json"
+        req = urllib.request.Request(url, headers={"User-Agent": "BEATRIX/3.7"})
+        resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=10).read())
+        key = f"ISBN:{clean}"
+        if key not in resp:
+            return {}
+        data = resp[key]
+        return {
+            "title": data.get("title", ""),
+            "authors": [a.get("name", "") for a in data.get("authors", [])],
+            "publishers": [p.get("name", "") for p in data.get("publishers", [])],
+            "publish_date": data.get("publish_date", ""),
+            "number_of_pages": data.get("number_of_pages"),
+            "subjects": [s.get("name", "") for s in data.get("subjects", [])][:8],
+            "cover": data.get("cover", {}).get("medium", ""),
+            "url": data.get("url", ""),
+            "isbn": clean
+        }
+    except Exception as e:
+        logger.warning(f"ISBN lookup failed for {isbn}: {e}")
+        return {}
+
+
 def detect_scientific_paper(text: str, filename: str = "") -> dict:
     """Content-based detection: Is this an academic/scientific document?
     
@@ -6451,6 +6601,32 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
         with open(file_path, "wb") as f: f.write(content_bytes)
         text_content = extract_text(str(file_path), ext)
 
+        # Book detection: books are NOT papers, don't push to GitHub
+        book_det = detect_book(text_content)
+        if book_det["is_book"]:
+            logger.info(f"Book detected for '{file.filename}': score={book_det['score']}, isbn={book_det.get('isbn')}, signals={book_det['signals']}")
+            doc_title = title or file.filename or "Unnamed"
+            doc = Document(
+                id=file_id, title=doc_title, content=text_content,
+                source_type="file", file_type=ext, file_path=str(file_path),
+                file_size=len(content_bytes), database_target=database, status="indexed",
+                uploaded_by=user.get("sub"), content_hash=content_hash,
+                category=category or "book", language=language or None, tags=parsed_tags or None,
+                doc_metadata={
+                    "original_filename": file.filename,
+                    "content_length": len(text_content),
+                    "book_detected": True,
+                    "book_score": book_det["score"],
+                    "book_signals": book_det["signals"],
+                    "isbn": book_det.get("isbn"),
+                    "publisher": book_det.get("publisher"),
+                }
+            )
+            db.add(doc); db.commit(); db.refresh(doc)
+            try: embed_document(db, doc.id)
+            except Exception as e: logger.warning(f"Embedding failed for {file.filename}: {e}")
+            return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=None)
+
         # Paper detection: only push papers to GitHub papers/evaluated/integrated/
         detection = detect_scientific_paper(text_content)
         logger.info(f"File upload paper detection for '{file.filename}': score={detection['score']}, is_paper={detection['is_paper']}, signals={detection['signals']}")
@@ -6619,6 +6795,110 @@ async def analyze_file(file: UploadFile = File(...), user=Depends(require_auth))
 
 async def _run_text_analysis(text: str, total_length: int) -> dict:
     """Shared analysis logic for both text and file analyze endpoints."""
+
+    # ═══════════════════════════════════════════════════════
+    # STEP 0: Book detection (runs BEFORE paper detection)
+    # ═══════════════════════════════════════════════════════
+    book_detection = detect_book(text)
+    if book_detection["is_book"]:
+        # ISBN lookup for enrichment
+        isbn_data = lookup_isbn(book_detection["isbn"]) if book_detection.get("isbn") else {}
+
+        # Use Claude for book metadata if available
+        title = isbn_data.get("title", "")
+        language = "en"
+        tags = isbn_data.get("subjects", [])[:5]
+        summary = ""
+        authors = isbn_data.get("authors", [])
+        publisher = isbn_data.get("publishers", [None])[0] or book_detection.get("publisher", "")
+        publish_date = isbn_data.get("publish_date", "")
+        pages = isbn_data.get("number_of_pages")
+
+        if ANTHROPIC_API_KEY:
+            try:
+                import urllib.request, ssl
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                excerpt = text[:4000]
+                prompt = f"""Analysiere dieses Buch. Antworte NUR mit validem JSON:
+{{
+  "title": "exakter Buchtitel",
+  "authors": ["Nachname, Vorname", ...],
+  "language": "de" oder "en",
+  "tags": ["max 5 Schlagwörter"],
+  "summary": "1-2 Sätze",
+  "year": 2024,
+  "publisher": "Verlag",
+  "domains": ["Domänen wie finance, health, behavior, management, economics, general"]
+}}
+
+TEXT:
+{excerpt}"""
+                payload = json.dumps({
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 400,
+                    "messages": [{"role": "user", "content": prompt}]
+                }).encode()
+                req = urllib.request.Request("https://api.anthropic.com/v1/messages",
+                    data=payload, method="POST",
+                    headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                              "Content-Type": "application/json"})
+                resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+                raw = resp.get("content", [{}])[0].get("text", "")
+                import re
+                json_match = re.search(r'\{[^{}]*\}', raw, re.DOTALL)
+                if json_match:
+                    meta = json.loads(json_match.group())
+                    if not title: title = meta.get("title", "")
+                    if not authors: authors = meta.get("authors", [])
+                    language = meta.get("language", "en")
+                    if not tags: tags = meta.get("tags", [])
+                    summary = meta.get("summary", "")
+                    if not publisher: publisher = meta.get("publisher", "")
+                    if not publish_date and meta.get("year"):
+                        publish_date = str(meta["year"])
+            except Exception as e:
+                logger.warning(f"Book analysis Claude error: {e}")
+
+        if not title:
+            lines = [l.strip() for l in text[:500].split('\n') if l.strip()]
+            title = lines[0][:100] if lines else "Untitled"
+
+        return {
+            "ok": True,
+            "title": title,
+            "language": language,
+            "category": "book",
+            "tags": tags[:5],
+            "summary": summary,
+            "database": "knowledge_base",
+            "chars": total_length,
+            # Book detection
+            "book_detected": True,
+            "book_score": book_detection["score"],
+            "book_signals": book_detection["signals"][:8],
+            "isbn": book_detection.get("isbn"),
+            "isbn_data": isbn_data if isbn_data else None,
+            # Book metadata
+            "book_meta": {
+                "authors": authors,
+                "publisher": publisher,
+                "publish_date": publish_date,
+                "pages": pages,
+                "cover_url": isbn_data.get("cover", ""),
+                "openlibrary_url": isbn_data.get("url", ""),
+            },
+            # Not a paper
+            "paper_detected": False,
+            "paper_score": 0,
+            "paper_signals": [],
+            "content_level": None,
+            "integration_level": None,
+            "structural": None,
+            "ebf": None,
+            "paper_id": None,
+        }
 
     # ═══════════════════════════════════════════════════════
     # STEP 1: Paper detection (instant, no API call)
