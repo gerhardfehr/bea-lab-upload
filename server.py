@@ -3754,6 +3754,161 @@ def lookup_isbn(isbn: str) -> dict:
         return {}
 
 
+def detect_study_report(text: str, filename: str = "") -> dict:
+    """Detect if text is a study/report (not a paper, not a book).
+    Studies/Reports: Consulting reports, government studies, think tank publications,
+    industry analyses, white papers, policy briefs. No peer review, no ISBN,
+    but empirical data, executive summaries, institutional branding.
+    Returns {is_study: bool, confidence: float, signals: [str], score: int, org: str|None, study_type: str|None}"""
+    if not text or len(text) < 500:
+        return {"is_study": False, "confidence": 0, "signals": [], "score": 0, "org": None, "study_type": None}
+
+    import re
+    text_lower = text[:15000].lower()
+    text_end = text[-5000:].lower() if len(text) > 5000 else ""
+    full_lower = text_lower + " " + text_end
+    fn_lower = (filename or "").lower()
+    signals = []
+    study_score = 0
+    org_found = None
+    study_type = None
+
+    # ── STRONG: Executive Summary (3 points) ──
+    exec_patterns = ["executive summary", "management summary", "zusammenfassung für entscheidungsträger",
+                     "key findings", "key takeaways", "kernaussagen", "zentrale ergebnisse",
+                     "highlights auf einen blick", "die wichtigsten ergebnisse"]
+    if any(p in full_lower for p in exec_patterns):
+        signals.append("executive_summary")
+        study_score += 3
+
+    # ── STRONG: Known organizations (3 points) ──
+    consulting = ["mckinsey", "boston consulting", "bcg", "bain & company", "bain &", "deloitte",
+                  "pwc", "pricewaterhousecoopers", "kpmg", "ernst & young", "ey ",
+                  "accenture", "roland berger", "oliver wyman", "a.t. kearney",
+                  "capgemini", "booz allen", "strategy&", "fehradvice", "fehr advice"]
+    think_tanks = ["brookings", "rand corporation", "world economic forum", "wef ",
+                   "peterson institute", "chatham house", "carnegie endowment",
+                   "heritage foundation", "cato institute", "bertelsmann stiftung",
+                   "ifo institut", "diw berlin", "zew ", "iwf", "imf"]
+    intl_orgs = ["world bank", "weltbank", "oecd", "european commission", "eu commission",
+                 "europäische kommission", "united nations", "un ", "imf ", "iwf ",
+                 "who ", "world health organization", "international monetary fund",
+                 "european central bank", "ezb", "ecb", "fed ", "federal reserve",
+                 "bis ", "bank for international settlements"]
+    gov_agencies = ["bundesamt", "bundesministerium", "seco", "staatssekretariat",
+                    "european parliament", "europäisches parlament", "congressional",
+                    "gao ", "government accountability", "bundesanstalt",
+                    "bundesnetzagentur", "statistisches bundesamt", "destatis",
+                    "bfs ", "bundesamt für statistik"]
+
+    for org_list, org_type in [(consulting, "consulting"), (think_tanks, "think_tank"),
+                                (intl_orgs, "international_org"), (gov_agencies, "government")]:
+        for org in org_list:
+            if org in full_lower:
+                org_found = org.strip().title()
+                study_type = org_type
+                signals.append(f"org:{org.strip()}")
+                study_score += 3
+                break
+        if org_found:
+            break
+
+    # ── STRONG: Study/Report title patterns in filename (2 points) ──
+    report_fn_patterns = ["studie", "study", "report", "analyse", "analysis", "survey",
+                          "whitepaper", "white_paper", "briefing", "outlook", "barometer",
+                          "monitor", "index_report", "benchmark"]
+    if any(p in fn_lower for p in report_fn_patterns):
+        signals.append("filename_report")
+        study_score += 2
+
+    # ── MEDIUM: Report structure signals (1-2 points each) ──
+    report_sections = {
+        "methodology_section": (["methodology", "methodik", "our approach", "unser ansatz",
+                                  "research methodology", "forschungsmethodik", "how we conducted",
+                                  "survey methodology", "befragungsmethodik"], 2),
+        "sample_description": (["sample size", "stichprobe", "n = ", "n=", "respondents",
+                                 "befragte", "teilnehmer", "survey of ", "befragung von",
+                                 "we surveyed", "wir haben befragt"], 2),
+        "recommendations": (["recommendations", "empfehlungen", "handlungsempfehlungen",
+                              "implications for", "implikationen für", "we recommend",
+                              "wir empfehlen", "action points", "massnahmen"], 2),
+        "disclaimer": (["disclaimer", "haftungsausschluss", "this report does not",
+                         "the views expressed", "die in diesem bericht",
+                         "for informational purposes only", "nicht als anlageberatung"], 1),
+        "about_org": (["about us", "über uns", "who we are", "wer wir sind",
+                        "our firm", "unser unternehmen", "about the authors",
+                        "about the institute", "über das institut"], 1),
+        "commissioned": (["commissioned by", "im auftrag von", "beauftragt von",
+                           "prepared for", "erstellt für", "in cooperation with",
+                           "in zusammenarbeit mit", "funded by", "gefördert von"], 2),
+        "figures_charts": (["figure 1", "abbildung 1", "exhibit 1", "chart 1",
+                            "figure 2", "abbildung 2", "see figure", "siehe abbildung",
+                            "source:", "quelle:"], 1),
+        "copyright_report": (["© 20", "all rights reserved", "proprietary and confidential",
+                               "vertraulich", "nicht zur weitergabe", "for internal use"], 1),
+    }
+
+    for name, (patterns, points) in report_sections.items():
+        if any(p in full_lower for p in patterns):
+            signals.append(name)
+            study_score += points
+
+    # ── MEDIUM: Typical report phrases (1 point) ──
+    report_phrases = {
+        "survey_language": ["survey results", "umfrageergebnisse", "befragungsergebnisse",
+                            "our survey", "unsere umfrage", "our research shows",
+                            "unsere forschung zeigt", "the data shows", "die daten zeigen"],
+        "industry_focus": ["industry report", "branchenreport", "market analysis", "marktanalyse",
+                           "industry trends", "branchentrends", "sector analysis", "sektoranalyse",
+                           "market outlook", "marktausblick"],
+        "policy_language": ["policy brief", "policy implications", "politische implikationen",
+                            "regulatory", "regulatorisch", "legislation", "gesetzgebung",
+                            "compliance", "governance framework"],
+        "benchmarking": ["benchmark", "best practice", "best practices", "peer comparison",
+                         "vergleichsanalyse", "benchmarking", "ranking", "scorecard"],
+        "year_in_title": ["2024", "2025", "2026", "q1 ", "q2 ", "q3 ", "q4 ",
+                          "annual report", "jahresbericht", "annual review"],
+    }
+
+    for name, patterns in report_phrases.items():
+        if any(p in full_lower for p in patterns):
+            signals.append(name)
+            study_score += 1
+
+    # ── Length heuristic: reports are typically 10k-200k chars ──
+    text_len = len(text)
+    if 10000 < text_len < 200000:
+        signals.append(f"report_length({text_len//1000}k)")
+        study_score += 1
+
+    # ── Anti-signals: if it has ISBN → book, if it has DOI/peer review → paper ──
+    if any(p in full_lower for p in ["isbn", "isbn-13", "isbn-10"]):
+        study_score -= 3
+    if any(p in full_lower for p in ["peer-review", "submitted to", "accepted for publication"]):
+        study_score -= 2
+
+    # Decision: score >= 5 = study/report
+    is_study = study_score >= 5
+    confidence = min(max(study_score, 0) / 12.0, 1.0)
+
+    # Classify study type if not already set
+    if is_study and not study_type:
+        if any(s in signals for s in ["policy_language"]):
+            study_type = "policy_brief"
+        elif any(s in signals for s in ["industry_focus", "benchmarking"]):
+            study_type = "industry_report"
+        elif any(s in signals for s in ["survey_language", "sample_description"]):
+            study_type = "survey_study"
+        else:
+            study_type = "report"
+
+    return {
+        "is_study": is_study, "confidence": round(confidence, 2),
+        "signals": signals, "score": study_score,
+        "org": org_found, "study_type": study_type
+    }
+
+
 def detect_scientific_paper(text: str, filename: str = "") -> dict:
     """Content-based detection: Is this an academic/scientific document?
     
@@ -6627,6 +6782,32 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
             except Exception as e: logger.warning(f"Embedding failed for {file.filename}: {e}")
             return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=None)
 
+        # Study/Report detection: studies are NOT papers, don't push to GitHub
+        study_det = detect_study_report(text_content, file.filename)
+        if study_det["is_study"]:
+            logger.info(f"Study/Report detected for '{file.filename}': score={study_det['score']}, type={study_det.get('study_type')}, org={study_det.get('org')}, signals={study_det['signals']}")
+            doc_title = title or file.filename or "Unnamed"
+            doc = Document(
+                id=file_id, title=doc_title, content=text_content,
+                source_type="file", file_type=ext, file_path=str(file_path),
+                file_size=len(content_bytes), database_target=database, status="indexed",
+                uploaded_by=user.get("sub"), content_hash=content_hash,
+                category=category or "study", language=language or None, tags=parsed_tags or None,
+                doc_metadata={
+                    "original_filename": file.filename,
+                    "content_length": len(text_content),
+                    "study_detected": True,
+                    "study_score": study_det["score"],
+                    "study_signals": study_det["signals"],
+                    "study_type": study_det.get("study_type"),
+                    "organization": study_det.get("org"),
+                }
+            )
+            db.add(doc); db.commit(); db.refresh(doc)
+            try: embed_document(db, doc.id)
+            except Exception as e: logger.warning(f"Embedding failed for {file.filename}: {e}")
+            return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=None)
+
         # Paper detection: only push papers to GitHub papers/evaluated/integrated/
         detection = detect_scientific_paper(text_content)
         logger.info(f"File upload paper detection for '{file.filename}': score={detection['score']}, is_paper={detection['is_paper']}, signals={detection['signals']}")
@@ -6780,7 +6961,7 @@ async def analyze_file(file: UploadFile = File(...), user=Depends(require_auth))
         total_length = len(text)
         # Send first 10k for analysis (same as text preview), full length for Content Level
         preview_text = text[:10000]
-        result = await _run_text_analysis(preview_text, total_length)
+        result = await _run_text_analysis(preview_text, total_length, filename=file.filename)
         result["filename"] = file.filename
         result["file_ext"] = ext
         result["file_size"] = len(content_bytes)
@@ -6793,11 +6974,11 @@ async def analyze_file(file: UploadFile = File(...), user=Depends(require_auth))
         try: os.unlink(tmp_path)
         except: pass
 
-async def _run_text_analysis(text: str, total_length: int) -> dict:
+async def _run_text_analysis(text: str, total_length: int, filename: str = "") -> dict:
     """Shared analysis logic for both text and file analyze endpoints."""
 
     # ═══════════════════════════════════════════════════════
-    # STEP 0: Book detection (runs BEFORE paper detection)
+    # STEP 0a: Book detection (runs BEFORE paper detection)
     # ═══════════════════════════════════════════════════════
     book_detection = detect_book(text)
     if book_detection["is_book"]:
@@ -6890,6 +7071,114 @@ TEXT:
                 "openlibrary_url": isbn_data.get("url", ""),
             },
             # Not a paper
+            "paper_detected": False,
+            "paper_score": 0,
+            "paper_signals": [],
+            "content_level": None,
+            "integration_level": None,
+            "structural": None,
+            "ebf": None,
+            "paper_id": None,
+        }
+
+    # ═══════════════════════════════════════════════════════
+    # STEP 0b: Study/Report detection
+    # ═══════════════════════════════════════════════════════
+    study_detection = detect_study_report(text, filename)
+    if study_detection["is_study"]:
+        # Use Claude for study metadata
+        title = ""
+        language = "en"
+        tags = []
+        summary = ""
+        authors = []
+        org = study_detection.get("org", "")
+        study_type = study_detection.get("study_type", "report")
+
+        study_type_labels = {
+            "consulting": "Consulting-Studie",
+            "think_tank": "Think-Tank-Report",
+            "international_org": "Internationale Studie",
+            "government": "Regierungsstudie",
+            "policy_brief": "Policy Brief",
+            "industry_report": "Branchenreport",
+            "survey_study": "Umfrage-Studie",
+            "report": "Report/Studie",
+        }
+        study_type_label = study_type_labels.get(study_type, "Report/Studie")
+
+        if ANTHROPIC_API_KEY:
+            try:
+                import urllib.request, ssl
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                excerpt = text[:4000]
+                prompt = f"""Analysiere diese Studie/diesen Report. Antworte NUR mit validem JSON:
+{{
+  "title": "exakter Titel der Studie/des Reports",
+  "authors": ["Nachname, Vorname" oder "Organisation"],
+  "language": "de" oder "en",
+  "tags": ["max 5 Schlagwörter"],
+  "summary": "1-2 Sätze Zusammenfassung",
+  "year": 2024,
+  "organization": "herausgebende Organisation",
+  "study_type": "consulting|government|think_tank|industry|survey|policy|whitepaper"
+}}
+
+TEXT:
+{excerpt}"""
+                payload = json.dumps({
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 400,
+                    "messages": [{"role": "user", "content": prompt}]
+                }).encode()
+                req = urllib.request.Request("https://api.anthropic.com/v1/messages",
+                    data=payload, method="POST",
+                    headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                              "Content-Type": "application/json"})
+                resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
+                raw = resp.get("content", [{}])[0].get("text", "")
+                import re
+                json_match = re.search(r'\{[^{}]*\}', raw, re.DOTALL)
+                if json_match:
+                    meta = json.loads(json_match.group())
+                    title = meta.get("title", "")
+                    authors = meta.get("authors", [])
+                    language = meta.get("language", "en")
+                    tags = meta.get("tags", [])
+                    summary = meta.get("summary", "")
+                    if not org: org = meta.get("organization", "")
+            except Exception as e:
+                logger.warning(f"Study analysis Claude error: {e}")
+
+        if not title:
+            lines = [l.strip() for l in text[:500].split('\n') if l.strip()]
+            title = lines[0][:100] if lines else "Untitled"
+
+        return {
+            "ok": True,
+            "title": title,
+            "language": language,
+            "category": "study",
+            "tags": tags[:5],
+            "summary": summary,
+            "database": "knowledge_base",
+            "chars": total_length,
+            # Study detection
+            "study_detected": True,
+            "study_score": study_detection["score"],
+            "study_signals": study_detection["signals"][:8],
+            "study_type": study_type,
+            "study_type_label": study_type_label,
+            "study_meta": {
+                "authors": authors,
+                "organization": org,
+                "study_type": study_type,
+                "study_type_label": study_type_label,
+            },
+            # Not a paper or book
+            "book_detected": False,
             "paper_detected": False,
             "paper_score": 0,
             "paper_signals": [],
