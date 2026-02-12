@@ -6491,6 +6491,23 @@ async def analyze_text(request: Request, user=Depends(require_auth)):
     # ═══════════════════════════════════════════════════════
     text_len = len(text)
     has_abstract = any(s in text[:5000].lower() for s in ["abstract", "zusammenfassung"])
+    # Implicit abstract detection: substantial text block before "Introduction" without explicit label
+    if not has_abstract:
+        import re
+        intro_match = re.search(r'\n\s*introduction\s*\n', text[:8000], re.IGNORECASE)
+        if intro_match:
+            pre_intro = text[:intro_match.start()]
+            # Find text after email/affiliation block (look for last @ or last country/institution mention)
+            email_end = max(pre_intro.rfind('@'), pre_intro.rfind('.edu'), pre_intro.rfind('.ac.'),
+                          pre_intro.rfind('.com'), pre_intro.rfind('.uk'))
+            if email_end > 0:
+                # Find end of that line
+                line_end = pre_intro.find('\n', email_end)
+                if line_end > 0:
+                    candidate = pre_intro[line_end:].strip()
+                    # A real abstract is typically 400-3000 chars of continuous prose
+                    if 400 <= len(candidate) <= 3000:
+                        has_abstract = True
     has_methodology = any(s in text.lower() for s in ["methodology", "method", "experimental design",
         "research design", "empirical", "randomized", "regression", "survey"])
     has_findings = any(s in text.lower() for s in ["findings", "results", "we find", "our results",
@@ -6826,6 +6843,20 @@ async def classify_document(doc_id: str, user=Depends(require_auth)):
         # Content Level
         text_len = len(text)
         has_abstract = any(s in text[:5000].lower() for s in ["abstract", "zusammenfassung"])
+        # Implicit abstract detection: text block before "Introduction" without explicit label
+        if not has_abstract:
+            import re
+            intro_match = re.search(r'\n\s*introduction\s*\n', text[:8000], re.IGNORECASE)
+            if intro_match:
+                pre_intro = text[:intro_match.start()]
+                email_end = max(pre_intro.rfind('@'), pre_intro.rfind('.edu'), pre_intro.rfind('.ac.'),
+                              pre_intro.rfind('.com'), pre_intro.rfind('.uk'))
+                if email_end > 0:
+                    line_end = pre_intro.find('\n', email_end)
+                    if line_end > 0:
+                        candidate = pre_intro[line_end:].strip()
+                        if 400 <= len(candidate) <= 3000:
+                            has_abstract = True
         has_methodology = any(s in text.lower() for s in ["methodology", "method", "experimental design",
             "research design", "empirical", "randomized", "regression", "survey"])
         has_findings = any(s in text.lower() for s in ["findings", "results", "we find", "our results",
