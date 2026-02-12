@@ -7233,6 +7233,36 @@ async def api_canonical_key(request: Request, user=Depends(require_auth)):
     }
 
 
+# ========== PAPER UPLOAD PRIORITY TOP 100 ==========
+
+_paper_priority_cache = {"data": None, "ts": 0}
+
+@app.get("/api/papers/upload-priority")
+async def get_paper_upload_priority(user=Depends(require_auth)):
+    """Serve the Top 100 paper upload priority list from GitHub (cached 5 min)."""
+    import time
+    now = time.time()
+    if _paper_priority_cache["data"] and (now - _paper_priority_cache["ts"]) < 300:
+        return _paper_priority_cache["data"]
+
+    if not GH_TOKEN:
+        raise HTTPException(500, "GitHub not configured")
+    import urllib.request as ur
+    ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
+    try:
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/data/paper-upload-priority-top100.json"
+        req = ur.Request(url, headers=gh)
+        resp = json.loads(ur.urlopen(req, context=ctx2, timeout=15).read())
+        data = json.loads(base64.b64decode(resp["content"]).decode())
+        _paper_priority_cache["data"] = data
+        _paper_priority_cache["ts"] = now
+        return data
+    except Exception as e:
+        logger.error(f"Paper priority fetch failed: {e}")
+        raise HTTPException(500, f"Konnte Priority-Liste nicht laden: {e}")
+
+
 @app.post("/api/text/analyze")
 async def analyze_text(request: Request, user=Depends(require_auth)):
     """Analyze pasted text: detect paper, classify Content Level (L0-L3),
