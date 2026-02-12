@@ -4065,9 +4065,148 @@ def detect_scientific_paper(text: str, filename: str = "") -> dict:
             "signals": signals, "score": paper_score}
 
 
+def extract_paper_metadata(text: str, filename: str = "") -> dict:
+    """Extract author, year, title from paper text content.
+    Returns {author: str, year: str, title: str, doc_type: str}"""
+    import re
+    lines = [l.strip() for l in text[:5000].split("\n") if l.strip()]
+    author = ""
+    year = ""
+    title = ""
+    doc_type = "PAP"  # default
+
+    # ── Title: usually first substantial line (>10 chars, not all-caps header like "NBER") ──
+    for line in lines[:15]:
+        if len(line) < 8: continue
+        if re.match(r'^(NBER|SSRN|WORKING PAPER|DISCUSSION PAPER|WP\s)', line, re.I): continue
+        if re.match(r'^(Electronic copy|Available at|Downloaded from)', line, re.I): continue
+        if re.match(r'^https?://', line): continue
+        if re.match(r'^\d+$', line): continue  # page numbers
+        if '@' in line: continue  # email lines
+        # Skip lines that are clearly author affiliations
+        if re.search(r'(university|universität|institute|institut|department|school of|faculty)', line, re.I) and len(line) < 80:
+            continue
+        title = line
+        break
+
+    # ── Author: look for name patterns near the top ──
+    author_patterns = [
+        # "FirstName LastName" or "F. LastName" patterns
+        r'(?:^|\n)\s*((?:[A-Z][a-zäöü]+\.?\s+){1,3}[A-Z][a-zäöüA-ZÄÖÜß]+)(?:\s*[\*†,\d]|\s*\n)',
+        # "LastName, FirstName" pattern
+        r'(?:^|\n)\s*([A-Z][a-zäöü]+,\s+[A-Z][a-zäöü]+)',
+        # Multiple authors: "Author1 and Author2"
+        r'(?:^|\n)\s*([A-Z][a-zäöü]+(?:\s+[A-Z][a-zäöü]+)*)\s+(?:and|und|&)\s+',
+    ]
+    text_top = text[:3000]
+    for pat in author_patterns:
+        m = re.search(pat, text_top)
+        if m:
+            candidate = m.group(1).strip().rstrip('*†,0123456789')
+            # Validate: not too long, not a title word
+            if 3 < len(candidate) < 40 and candidate != title[:len(candidate)]:
+                author = candidate
+                break
+
+    # Fallback: extract from filename if pattern like "Author_Year_Title" or "Author (Year)"
+    if not author and filename:
+        fn_clean = re.sub(r'\.\w+$', '', filename)  # remove extension
+        # Pattern: Author_Year or Author-Year or Author (Year)
+        m = re.match(r'^([A-Za-zäöüÄÖÜß]+)[\s_-]+(\d{4})', fn_clean)
+        if m:
+            author = m.group(1)
+
+    # ── Year: find 4-digit year (1900-2029) ──
+    year_candidates = re.findall(r'\b(19\d{2}|20[0-2]\d)\b', text[:5000])
+    if year_candidates:
+        # Prefer years in range 1990-2029, take the first one
+        for yc in year_candidates:
+            if 1990 <= int(yc) <= 2029:
+                year = yc
+                break
+        if not year:
+            year = year_candidates[0]
+
+    # Fallback: year from filename
+    if not year and filename:
+        m = re.search(r'(19\d{2}|20[0-2]\d)', filename)
+        if m: year = m.group(1)
+
+    # ── Doc type detection ──
+    text_lower = text[:5000].lower()
+    if any(s in text_lower for s in ['ssrn', 'social science research network']):
+        doc_type = "SSRN"
+    elif any(s in text_lower for s in ['working paper', 'discussion paper', 'arbeitspapier']):
+        doc_type = "WP"
+    elif any(s in text_lower for s in ['nber', 'national bureau']):
+        doc_type = "NBER"
+    elif any(s in filename.lower() for s in ['[ape]', 'ape_', 'ape-']):
+        doc_type = "APE"
+    elif any(s in text_lower for s in ['book review', 'isbn', 'publisher', 'verlag', 'chapter ']):
+        doc_type = "BOOK"
+
+    # ── Clean up author: take last name only ──
+    if author:
+        parts = author.replace(',', ' ').split()
+        # If "FirstName LastName" → take LastName
+        if len(parts) >= 2:
+            author = parts[-1]  # last word = surname
+        else:
+            author = parts[0]
+
+    return {"author": author, "year": year, "title": title, "doc_type": doc_type}
+
+
+def generate_canonical_key(author: str, year: str, title: str, doc_type: str = "PAP", ext: str = "pdf") -> str:
+    """Generate a canonical filename for papers/books/studies.
+    Format: [TYPE]_Author_Year_Short-Title.ext
+    Example: PAP_Fehr_2002_Reciprocity-Social-Norms.pdf
+    
+    This is the SINGLE SOURCE OF TRUTH for paper naming.
+    Frontend replicates this exact algorithm."""
+    import re
+
+    # Clean author: capitalize, ascii-safe
+    a = (author or "Unknown").strip()
+    a = a.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
+    a = a.replace("Ä", "Ae").replace("Ö", "Oe").replace("Ü", "Ue")
+    a = a.replace("ß", "ss")
+    a = re.sub(r'[^A-Za-z]', '', a)
+    if a: a = a[0].upper() + a[1:]
+    if not a: a = "Unknown"
+
+    # Clean year
+    y = (year or "0000").strip()[:4]
+    if not re.match(r'^\d{4}$', y): y = "0000"
+
+    # Clean title: take first 5 meaningful words, hyphenate
+    t = (title or "Untitled").strip()
+    # Remove non-alphanumeric except spaces
+    t = re.sub(r'[^\w\s-]', '', t)
+    words = t.split()
+    # Filter out short stop words
+    stop = {'a','an','the','of','in','on','at','to','for','and','or','is','are','was','by','with','from','der','die','das','und','oder','ein','eine','von','zu','im','am','des','den','dem','für','als','auf','nach','über','bei','mit'}
+    meaningful = [w for w in words if w.lower() not in stop]
+    if not meaningful: meaningful = words[:5]
+    short_title = "-".join(meaningful[:5])
+    # Capitalize each word
+    short_title = "-".join(w.capitalize() for w in short_title.split("-"))
+    # Limit length
+    if len(short_title) > 60: short_title = short_title[:60].rsplit("-", 1)[0]
+    if not short_title: short_title = "Untitled"
+
+    # Clean doc_type
+    dtype = (doc_type or "PAP").upper()[:4]
+
+    # Clean extension
+    e = (ext or "pdf").lower().lstrip(".")
+
+    return f"{dtype}_{a}_{y}_{short_title}.{e}"
+
+
 def run_paper_pipeline(filename: str, content_bytes: bytes, text_content: str, user_email: str) -> dict:
     """Full paper pipeline: Hash check → DB → GitHub papers/ → Embedding.
-    Returns {ok, doc_id, github_url, duplicate, title}"""
+    Returns {ok, doc_id, github_url, duplicate, title, canonical_key}"""
     content_hash = hashlib.sha256(content_bytes).hexdigest()
     db = get_db()
     try:
@@ -4081,22 +4220,27 @@ def run_paper_pipeline(filename: str, content_bytes: bytes, text_content: str, u
                 "message": f"Paper bereits in KB: \"{existing.title}\" ({existing.created_at.strftime('%d.%m.%Y')})"
             }
 
-        # 2. Save file locally
+        # 2. Extract metadata and generate canonical filename
         ext = filename.split(".")[-1].lower() if filename else "pdf"
+        meta = extract_paper_metadata(text_content, filename)
+        canonical = generate_canonical_key(meta["author"], meta["year"], meta["title"], meta["doc_type"], ext)
+        logger.info(f"Paper canonical key: '{filename}' → '{canonical}' (author={meta['author']}, year={meta['year']}, type={meta['doc_type']})")
+
+        # 3. Save file locally
         file_id = str(uuid.uuid4())
         file_path = UPLOAD_DIR / f"{file_id}.{ext}"
         with open(file_path, "wb") as f:
             f.write(content_bytes)
 
-        # 3. Push to GitHub papers/evaluated/integrated/
-        gh_result = push_to_github(filename, content_bytes)
+        # 4. Push to GitHub papers/evaluated/integrated/ with canonical name
+        gh_result = push_to_github(canonical, content_bytes)
         github_url = gh_result.get("url", None)
         gh_status = "indexed+github" if github_url else "indexed"
 
-        # 4. Store in Knowledge Base (PostgreSQL)
+        # 5. Store in Knowledge Base (PostgreSQL) – title = canonical key
         doc = Document(
             id=file_id,
-            title=filename or "Unnamed Paper",
+            title=canonical,
             content=text_content,
             source_type="file",
             file_type=ext,
@@ -4109,6 +4253,11 @@ def run_paper_pipeline(filename: str, content_bytes: bytes, text_content: str, u
             content_hash=content_hash,
             doc_metadata={
                 "original_filename": filename,
+                "canonical_key": canonical,
+                "extracted_author": meta["author"],
+                "extracted_year": meta["year"],
+                "extracted_title": meta["title"],
+                "doc_type": meta["doc_type"],
                 "content_length": len(text_content),
                 "github": gh_result,
                 "upload_source": "chat",
@@ -4125,12 +4274,14 @@ def run_paper_pipeline(filename: str, content_bytes: bytes, text_content: str, u
         except Exception as e:
             logger.warning(f"Paper embedding failed: {e}")
 
-        logger.info(f"Paper pipeline complete: {filename} → KB:{doc.id} GH:{github_url}")
+        logger.info(f"Paper pipeline complete: {filename} → {canonical} → KB:{doc.id} GH:{github_url}")
         return {
             "ok": True, "duplicate": False,
-            "doc_id": doc.id, "title": filename,
+            "doc_id": doc.id, "title": canonical,
+            "canonical_key": canonical,
             "github_url": github_url, "gh_status": gh_status,
-            "message": f"Paper \"{filename}\" in KB + GitHub gespeichert"
+            "extracted_metadata": meta,
+            "message": f"Paper \"{canonical}\" in KB + GitHub gespeichert"
         }
 
     except Exception as e:
@@ -6832,10 +6983,13 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
         book_det = detect_book(text_content)
         if book_det["is_book"]:
             logger.info(f"Book detected for '{file.filename}': score={book_det['score']}, isbn={book_det.get('isbn')}, signals={book_det['signals']}")
-            gh_result = push_to_github(file.filename, content_bytes, folder="books") or {}
+            book_meta = extract_paper_metadata(text_content, file.filename)
+            book_canonical = generate_canonical_key(book_meta["author"], book_meta["year"], book_meta["title"], "BOOK", ext)
+            logger.info(f"Book canonical: '{file.filename}' → '{book_canonical}'")
+            gh_result = push_to_github(book_canonical, content_bytes, folder="books") or {}
             github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
             gh_status = "indexed+github" if github_url else "indexed"
-            doc_title = title or file.filename or "Unnamed"
+            doc_title = book_canonical
             doc = Document(
                 id=file_id, title=doc_title, content=text_content,
                 source_type="file", file_type=ext, file_path=str(file_path),
@@ -6862,10 +7016,14 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
         study_det = detect_study_report(text_content, file.filename)
         if study_det["is_study"]:
             logger.info(f"Study/Report detected for '{file.filename}': score={study_det['score']}, type={study_det.get('study_type')}, org={study_det.get('org')}, signals={study_det['signals']}")
-            gh_result = push_to_github(file.filename, content_bytes, folder="studies") or {}
+            study_meta = extract_paper_metadata(text_content, file.filename)
+            study_type = study_det.get("study_type", "STU").upper()[:4] or "STU"
+            study_canonical = generate_canonical_key(study_meta["author"], study_meta["year"], study_meta["title"], study_type, ext)
+            logger.info(f"Study canonical: '{file.filename}' → '{study_canonical}'")
+            gh_result = push_to_github(study_canonical, content_bytes, folder="studies") or {}
             github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
             gh_status = "indexed+github" if github_url else "indexed"
-            doc_title = title or file.filename or "Unnamed"
+            doc_title = study_canonical
             doc = Document(
                 id=file_id, title=doc_title, content=text_content,
                 source_type="file", file_type=ext, file_path=str(file_path),
@@ -6874,6 +7032,7 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
                 category=category or "study", language=language or None, tags=parsed_tags or None,
                 doc_metadata={
                     "original_filename": file.filename,
+                    "canonical_key": study_canonical,
                     "content_length": len(text_content),
                     "github": gh_result or {},
                     "study_detected": True,
@@ -6894,13 +7053,18 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
 
         gh_result = {}
         github_url = None
+        canonical_key = None
+        paper_meta = None
         if detection["is_paper"]:
-            gh_result = push_to_github(file.filename, content_bytes) or {}
+            paper_meta = extract_paper_metadata(text_content, file.filename)
+            canonical_key = generate_canonical_key(paper_meta["author"], paper_meta["year"], paper_meta["title"], paper_meta["doc_type"], ext)
+            logger.info(f"Paper canonical: '{file.filename}' → '{canonical_key}'")
+            gh_result = push_to_github(canonical_key, content_bytes) or {}
             github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
             logger.info(f"Paper → GitHub push: {github_url}")
 
         gh_status = "indexed+github" if github_url else "indexed"
-        doc_title = title or file.filename or "Unnamed"
+        doc_title = canonical_key or title or file.filename or "Unnamed"
         doc = Document(
             id=file_id, title=doc_title, content=text_content,
             source_type="file", file_type=ext, file_path=str(file_path),
@@ -6909,11 +7073,13 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
             category=category or None, language=language or None, tags=parsed_tags or None,
             doc_metadata={
                 "original_filename": file.filename,
+                "canonical_key": canonical_key,
                 "content_length": len(text_content),
                 "github": gh_result or {},
                 "paper_detected": detection["is_paper"],
                 "paper_score": detection["score"],
-                "paper_signals": detection["signals"]
+                "paper_signals": detection["signals"],
+                **({"extracted_author": paper_meta["author"], "extracted_year": paper_meta["year"], "extracted_title": paper_meta["title"], "doc_type": paper_meta["doc_type"]} if paper_meta else {})
             }
         )
         db.add(doc); db.commit(); db.refresh(doc)
@@ -6979,25 +7145,33 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
 
         gh_result = {}
         github_url = None
+        canonical_key = None
+        paper_meta = None
         if detection["is_paper"]:
-            filename = f"{request.title.replace(' ', '_').replace('/', '-')}.txt"
-            gh_result = push_to_github(filename, request.content.encode("utf-8")) or {}
+            paper_meta = extract_paper_metadata(request.content, request.title or "")
+            canonical_key = generate_canonical_key(paper_meta["author"], paper_meta["year"], paper_meta["title"], paper_meta["doc_type"], "txt")
+            logger.info(f"Text paper canonical: '{request.title}' → '{canonical_key}'")
+            gh_result = push_to_github(canonical_key, request.content.encode("utf-8")) or {}
             github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
             logger.info(f"Paper → GitHub push: {github_url}")
 
         status = "indexed+github" if github_url else "indexed"
+        doc_title = canonical_key or request.title
         doc = Document(
-            title=request.title, content=request.content, source_type="text",
+            title=doc_title, content=request.content, source_type="text",
             database_target=request.database or "knowledge_base",
             category=request.category, language=request.language, tags=request.tags,
             status=status, github_url=github_url, uploaded_by=user.get("sub"),
             content_hash=content_hash,
             doc_metadata={
+                "original_title": request.title,
+                "canonical_key": canonical_key,
                 "content_length": len(request.content),
                 "github": gh_result or {},
                 "paper_detected": detection["is_paper"],
                 "paper_score": detection["score"],
-                "paper_signals": detection["signals"]
+                "paper_signals": detection["signals"],
+                **({"extracted_author": paper_meta["author"], "extracted_year": paper_meta["year"], "extracted_title": paper_meta["title"], "doc_type": paper_meta["doc_type"]} if paper_meta else {})
             }
         )
         db.add(doc); db.commit(); db.refresh(doc)
@@ -7007,6 +7181,35 @@ async def upload_text(request: TextUploadRequest, user=Depends(require_auth)):
     except HTTPException: raise
     except Exception as e: db.rollback(); raise HTTPException(500, f"Datenbankfehler: {e}")
     finally: db.close()
+
+@app.post("/api/canonical-key")
+async def api_canonical_key(request: Request, user=Depends(require_auth)):
+    """Generate canonical filename for a paper/book/study.
+    Body: {author, year, title, doc_type?, ext?} or {text, filename?} for auto-extraction."""
+    body = await request.json()
+
+    # If text provided, auto-extract metadata
+    if body.get("text"):
+        meta = extract_paper_metadata(body["text"], body.get("filename", ""))
+        author = body.get("author") or meta["author"]
+        year = body.get("year") or meta["year"]
+        title = body.get("title") or meta["title"]
+        doc_type = body.get("doc_type") or meta["doc_type"]
+    else:
+        author = body.get("author", "")
+        year = body.get("year", "")
+        title = body.get("title", "")
+        doc_type = body.get("doc_type", "PAP")
+
+    ext = body.get("ext", "pdf")
+    canonical = generate_canonical_key(author, year, title, doc_type, ext)
+
+    return {
+        "canonical_key": canonical,
+        "author": author, "year": year, "title": title,
+        "doc_type": doc_type, "ext": ext
+    }
+
 
 @app.post("/api/text/analyze")
 async def analyze_text(request: Request, user=Depends(require_auth)):
