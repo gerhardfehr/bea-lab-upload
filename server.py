@@ -7382,86 +7382,152 @@ async def find_paper_pdf(request: Request, user=Depends(require_auth)):
 
 @app.post("/api/papers/fetch-and-upload")
 async def fetch_and_upload_pdf(request: Request, user=Depends(require_auth)):
-    """Fetch a PDF from URL and upload it to GitHub as a paper."""
+    """Fetch a PDF from URL → full pipeline: extract text, detect paper, canonical name, GitHub, DB, embed."""
     import urllib.request as ur, ssl
     body = await request.json()
     pdf_url = body.get("url", "")
     paper_id = body.get("paper_id", "")
-    title = body.get("title", "")
-    author = body.get("author", "")
-    year = body.get("year", "")
+    hint_title = body.get("title", "")
+    hint_author = body.get("author", "")
+    hint_year = body.get("year", "")
     doi = body.get("doi", "")
 
     if not pdf_url:
         raise HTTPException(400, "URL required")
-    if not GH_TOKEN:
-        raise HTTPException(500, "GitHub not configured")
 
     ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
 
-    # Fetch PDF
+    # 1. Fetch file from URL
     try:
-        req = ur.Request(pdf_url, headers={"User-Agent": "Mozilla/5.0 (BEATRIX Academic Paper Fetcher)"})
+        req = ur.Request(pdf_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) BEATRIX/1.0"})
         resp = ur.urlopen(req, context=ctx2, timeout=30)
-        pdf_bytes = resp.read()
+        content_bytes = resp.read()
         content_type = resp.headers.get("Content-Type", "")
-        if len(pdf_bytes) < 1000:
-            raise HTTPException(400, f"File too small ({len(pdf_bytes)} bytes) – likely not a PDF")
-        if len(pdf_bytes) > 50_000_000:
+        if len(content_bytes) < 500:
+            raise HTTPException(400, f"File too small ({len(content_bytes)} bytes)")
+        if len(content_bytes) > MAX_FILE_SIZE:
             raise HTTPException(400, "File too large (>50MB)")
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(400, f"Could not fetch PDF: {e}")
+        raise HTTPException(400, f"Could not fetch: {e}")
 
-    # Generate filename
-    is_pdf = pdf_bytes[:5] == b'%PDF-' or 'pdf' in content_type.lower()
+    is_pdf = content_bytes[:5] == b'%PDF-' or 'pdf' in content_type.lower()
     ext = "pdf" if is_pdf else "txt"
-    
-    # Use canonical naming
-    safe_author = (author or "Unknown").split(",")[0].split(" ")[-1].strip()
-    safe_year = str(year) if year else "0000"
-    safe_title = (title or "paper")[:50].strip()
-    for ch in ['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\n', '\r']:
-        safe_title = safe_title.replace(ch, '')
-    safe_title = safe_title.replace(' ', '-')
-    filename = f"PAP_{safe_author}_{safe_year}_{safe_title}.{ext}"
+    original_filename = pdf_url.split("/")[-1].split("?")[0] or f"fetched.{ext}"
 
-    # Upload to GitHub
-    gh_headers = {"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json",
-                  "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
-    path = f"papers/evaluated/integrated/{filename}"
-    url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
-
-    # Check if exists
-    sha = None
+    # 2. Duplicate check
+    content_hash = hashlib.sha256(content_bytes).hexdigest()
+    db = get_db()
     try:
-        req = ur.Request(url, headers={k:v for k,v in gh_headers.items() if k != "Content-Type"})
-        sha = json.loads(ur.urlopen(req, context=ctx2, timeout=10).read()).get("sha")
-    except: pass
+        existing = db.query(Document).filter(Document.content_hash == content_hash).first()
+        if existing:
+            return JSONResponse(status_code=409, content={
+                "duplicate": True, "doc_id": str(existing.id),
+                "title": existing.title or "Unbekannt",
+                "date": existing.created_at.strftime('%d.%m.%Y %H:%M') if existing.created_at else "",
+                "message": f"Bereits in der Datenbank: {existing.title}"
+            })
 
-    payload = {
-        "message": f"Auto-fetch: {filename} (DOI: {doi})" if doi else f"Auto-fetch: {filename}",
-        "content": base64.b64encode(pdf_bytes).decode(),
-        "branch": "main"
-    }
-    if sha:
-        payload["sha"] = sha
+        # 3. Save file locally
+        file_id = str(uuid.uuid4())
+        file_path = UPLOAD_DIR / f"{file_id}.{ext}"
+        with open(file_path, "wb") as f:
+            f.write(content_bytes)
 
-    try:
-        req = ur.Request(url, data=json.dumps(payload).encode(), method="PUT", headers=gh_headers)
-        resp = json.loads(ur.urlopen(req, context=ctx2, timeout=60).read())
+        # 4. Extract text
+        text_content = extract_text(str(file_path), ext)
+
+        # 5. Detect paper
+        detection = detect_scientific_paper(text_content, original_filename)
+        logger.info(f"Auto-fetch paper detection for '{original_filename}': score={detection['score']}, is_paper={detection['is_paper']}")
+
+        # 6. Extract metadata + canonical key
+        paper_meta = extract_paper_metadata(text_content, original_filename)
+        # Override with hints from priority list if extraction failed
+        if paper_meta["author"] in ("Unknown", "") and hint_author:
+            paper_meta["author"] = hint_author
+        if paper_meta["year"] in ("0000", "", "0") and hint_year:
+            paper_meta["year"] = str(hint_year)
+        if not paper_meta["title"] and hint_title:
+            paper_meta["title"] = hint_title
+
+        canonical_key = generate_canonical_key(
+            paper_meta["author"], paper_meta["year"], paper_meta["title"],
+            paper_meta.get("doc_type", "PAP"), ext
+        )
+        logger.info(f"Auto-fetch canonical: '{original_filename}' → '{canonical_key}'")
+
+        # 7. Push to GitHub
+        gh_result = push_to_github(canonical_key, content_bytes) or {}
+        github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
+        gh_status = "indexed+github" if github_url else "indexed"
+
+        # 8. Create DB entry
+        doc = Document(
+            id=file_id, title=canonical_key, content=text_content,
+            source_type="file", file_type=ext, file_path=str(file_path),
+            file_size=len(content_bytes), database_target="research",
+            status=gh_status, github_url=github_url,
+            uploaded_by=user.get("sub"), content_hash=content_hash,
+            category="paper" if detection["is_paper"] else "document",
+            language="en", tags=["auto-fetch", "priority-upload"],
+            doc_metadata={
+                "original_filename": original_filename,
+                "fetch_url": pdf_url,
+                "canonical_key": canonical_key,
+                "content_length": len(text_content),
+                "github": gh_result or {},
+                "paper_detected": detection["is_paper"],
+                "paper_score": detection["score"],
+                "paper_signals": detection["signals"],
+                "extracted_author": paper_meta["author"],
+                "extracted_year": paper_meta["year"],
+                "extracted_title": paper_meta["title"],
+                "doc_type": paper_meta.get("doc_type", "PAP"),
+                "doi": doi,
+                "paper_id": paper_id,
+                "hint_author": hint_author,
+                "hint_year": hint_year,
+                "hint_title": hint_title,
+            }
+        )
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+
+        # 9. Embed for vector search
+        try:
+            embed_document(db, doc.id)
+        except Exception as e:
+            logger.warning(f"Embedding failed for {canonical_key}: {e}")
+
         return {
             "ok": True,
-            "filename": filename,
-            "size": len(pdf_bytes),
+            "doc_id": doc.id,
+            "filename": canonical_key,
+            "size": len(content_bytes),
+            "text_length": len(text_content),
             "is_pdf": is_pdf,
-            "path": path,
-            "html_url": resp.get("content", {}).get("html_url", ""),
-            "sha": resp.get("content", {}).get("sha", "")
+            "is_paper": detection["is_paper"],
+            "paper_score": detection["score"],
+            "status": gh_status,
+            "github_url": github_url,
+            "html_url": gh_result.get("url", ""),
+            "extracted": {
+                "author": paper_meta["author"],
+                "year": paper_meta["year"],
+                "title": paper_meta["title"][:100]
+            }
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(500, f"GitHub upload failed: {e}")
+        db.rollback()
+        logger.error(f"Auto-fetch pipeline error: {e}")
+        raise HTTPException(500, f"Pipeline-Fehler: {e}")
+    finally:
+        db.close()
 
 
 @app.post("/api/text/analyze")
