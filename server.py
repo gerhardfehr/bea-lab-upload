@@ -12748,3 +12748,113 @@ async def set_reviewer_keys(request: Request, user=Depends(require_auth)):
         _save_key_to_db("xai", body["xai"])
         updated.append("xai")
     return {"updated": updated, "message": f"Keys set and persisted for: {', '.join(updated)}. Will survive restarts."}
+
+
+# ============================================================================
+# REAL MULTI-MODEL CHALLENGE – Echte 5 APIs, kein Fake
+# POST /api/challenge
+# ============================================================================
+
+CHALLENGE_PROMPTS = {
+    "beatrix": """Du bist BEATRIX, Behavioral Economics Reviewer. Challenge diese Aussage/Antwort:
+- Welche Verhaltensökonomischen Mechanismen fehlen?
+- Welche Biases werden ignoriert?
+- Welche Ψ-Dimensionen sind relevant aber nicht erwähnt?
+Max 150 Wörter. Sei direkt und spezifisch.""",
+
+    "methodologist": """Du bist ein strenger Methodologe. Challenge diese Aussage/Antwort:
+- Welche Evidenz fehlt?
+- Welche Annahmen sind fragwürdig?
+- Was müsste man empirisch prüfen bevor man das behaupten kann?
+Max 150 Wörter. Sei technisch präzise.""",
+
+    "skeptic": """Du bist ein radikaler Skeptiker. Challenge diese Aussage/Antwort:
+- Was ist die einfachste alternative Erklärung?
+- Was wenn das Gegenteil stimmt?
+- Wer profitiert davon wenn man das glaubt?
+Max 150 Wörter. Sei unbequem und direkt.""",
+
+    "practitioner": """Du bist Management-Berater in der Praxis. Challenge diese Aussage/Antwort:
+- Ist das umsetzbar? Was kostet es?
+- Was würde ein CEO dazu sagen?
+- Welche Stakeholder-Perspektive fehlt?
+Max 150 Wörter. Sei konkret.""",
+
+    "contrarian": """Du bist ein schneller Contrarian. Challenge diese Aussage/Antwort:
+- Das EINE was alle anderen übersehen
+- Dreh die Aussage um – was passiert dann?
+- Wäre Nichtstun die bessere Option?
+Max 100 Wörter. Kurz, scharf, provokant."""
+}
+
+
+@app.post("/api/challenge")
+async def challenge_text(request: Request, user=Depends(require_auth)):
+    """Real multi-model challenge: sends text to all 5 APIs independently."""
+    body = await request.json()
+    text = body.get("text", "")
+    if not text or len(text) < 20:
+        raise HTTPException(400, "Text too short to challenge")
+
+    text = text[:4000]  # Limit
+    challenges = {}
+    errors = {}
+
+    for key, prompt in CHALLENGE_PROMPTS.items():
+        config = REVIEWER_CONFIGS.get(key)
+        if not config:
+            continue
+        try:
+            result = call_external_reviewer(
+                config["provider"], config["model"],
+                prompt,
+                text, "Challenge"
+            )
+            if result.get("available"):
+                challenges[key] = {
+                    "name": config["name"],
+                    "icon": config["icon"],
+                    "model": result.get("model", config["model"]),
+                    "challenge": result["text"]
+                }
+            else:
+                errors[key] = result.get("error", "Not available")
+        except Exception as e:
+            errors[key] = str(e)[:100]
+
+    if not challenges:
+        raise HTTPException(500, f"No reviewers available. Errors: {errors}")
+
+    # Synthesis (Claude meta-analysis)
+    synthesis = ""
+    if len(challenges) >= 2 and ANTHROPIC_API_KEY:
+        import urllib.request as ureq, ssl
+        ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+        challenge_text = "\n\n".join([
+            f"{v['icon']} {v['name']}:\n{v['challenge'][:400]}"
+            for k, v in challenges.items()
+        ])
+        synth_msg = f"""Analysiere diese {len(challenges)} unabhängigen Challenges und erstelle eine kurze Synthese (max 100 Wörter):
+- Wo stimmen mehrere überein? (= WICHTIG)
+- Was sagt nur einer? (= INTERESSANT)
+- Was sollte der User als erstes beachten?
+
+{challenge_text}"""
+        try:
+            payload = json.dumps({
+                "model": "claude-sonnet-4-20250514", "max_tokens": 400,
+                "messages": [{"role": "user", "content": synth_msg}]
+            }).encode()
+            req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                         "Content-Type": "application/json"})
+            resp = json.loads(ureq.urlopen(req, context=ctx2, timeout=30).read())
+            synthesis = resp["content"][0]["text"]
+        except: pass
+
+    return {
+        "challenges": challenges,
+        "errors": errors,
+        "synthesis": synthesis,
+        "models_used": len(challenges)
+    }
