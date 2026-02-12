@@ -6418,11 +6418,19 @@ async def admin_chat_session_detail(session_id: str, user=Depends(require_permis
     finally: db.close()
 
 @app.post("/api/upload", response_model=DocumentResponse)
-async def upload_file(file: UploadFile = File(...), database: str = Form("knowledge_base"), user=Depends(require_auth)):
+async def upload_file(file: UploadFile = File(...), database: str = Form("knowledge_base"),
+                      title: Optional[str] = Form(None), category: Optional[str] = Form(None),
+                      language: Optional[str] = Form(None), tags: Optional[str] = Form(None),
+                      user=Depends(require_auth)):
     ext = file.filename.split(".")[-1].lower() if file.filename else ""
     if ext not in {"pdf", "txt", "md", "docx", "csv", "json"}: raise HTTPException(400, f"Dateityp .{ext} nicht unterstuetzt")
     content_bytes = await file.read()
     if len(content_bytes) > MAX_FILE_SIZE: raise HTTPException(400, "Datei zu gross (max 50 MB)")
+    # Parse tags from JSON string
+    parsed_tags = []
+    if tags:
+        try: parsed_tags = json.loads(tags)
+        except: parsed_tags = [t.strip() for t in tags.split(",") if t.strip()]
     # Duplicate check via SHA256 hash
     content_hash = hashlib.sha256(content_bytes).hexdigest()
     db = get_db()
@@ -6455,11 +6463,13 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
             logger.info(f"Paper → GitHub push: {github_url}")
 
         gh_status = "indexed+github" if github_url else "indexed"
+        doc_title = title or file.filename or "Unnamed"
         doc = Document(
-            id=file_id, title=file.filename or "Unnamed", content=text_content,
+            id=file_id, title=doc_title, content=text_content,
             source_type="file", file_type=ext, file_path=str(file_path),
             file_size=len(content_bytes), database_target=database, status=gh_status,
             github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash,
+            category=category or None, language=language or None, tags=parsed_tags or None,
             doc_metadata={
                 "original_filename": file.filename,
                 "content_length": len(text_content),
