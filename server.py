@@ -774,7 +774,7 @@ def push_to_github(filename, content_bytes, folder=None):
                "content": base64.b64encode(content_bytes).decode(), "branch": "main"}
     if sha: payload["sha"] = sha
     try:
-        req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="PUT", headers=headers)
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), method="PUT", headers=headers)
         resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=30).read())
         logger.info(f"GitHub push OK: {path}")
         return {"url": resp.get("content", {}).get("html_url", ""),
@@ -905,10 +905,10 @@ def gh_put_file(repo: str, path: str, content: str, message: str) -> dict:
         resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
         sha = resp.get("sha")
     except: pass
-    payload = {"message": message, "content": base64.b64encode(content.encode()).decode(), "branch": "main"}
+    payload = {"message": message, "content": base64.b64encode(content.encode('utf-8')).decode(), "branch": "main"}
     if sha: payload["sha"] = sha
     try:
-        req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="PUT", headers=headers)
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), method="PUT", headers=headers)
         resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=30).read())
         return {"ok": True, "url": resp.get("content", {}).get("html_url", ""), "sha": resp.get("content", {}).get("sha", "")}
     except Exception as e:
@@ -8779,9 +8779,9 @@ async def create_project(request: Request, user=Depends(require_permission("proj
                 seq_yaml = yaml.dump(seq_data, default_flow_style=False, allow_unicode=True, sort_keys=False)
                 seq_put = json.dumps({
                     "message": f"seq: {prefix} → {next_seq + 1} (nach {project_code})",
-                    "content": base64.b64encode(seq_yaml.encode()).decode(),
+                    "content": base64.b64encode(seq_yaml.encode('utf-8')).decode(),
                     "sha": seq_sha, "branch": "main"
-                }).encode()
+                }).encode('utf-8')
                 seq_req = urllib.request.Request(
                     f"https://api.github.com/repos/{GH_REPO}/contents/data/config/project-sequences.yaml",
                     data=seq_put, method="PUT", headers={**gh, "Content-Type": "application/json"})
@@ -8882,9 +8882,9 @@ async def create_project(request: Request, user=Depends(require_permission("proj
         put_url = f"https://api.github.com/repos/{GH_REPO}/contents/{file_path}"
         put_data = json.dumps({
             "message": f"Projekt eröffnet: {project_code} – {name} ({customer_code}) [{project_category}]",
-            "content": base64.b64encode(yaml_content.encode()).decode(),
+            "content": base64.b64encode(yaml_content.encode('utf-8')).decode(),
             "branch": "main"
-        }).encode()
+        }).encode('utf-8')
         req = urllib.request.Request(put_url, data=put_data, method="PUT",
             headers={**gh, "Content-Type": "application/json"})
         result = json.loads(urllib.request.urlopen(req, context=ctx, timeout=15).read())
@@ -9205,7 +9205,7 @@ def _sync_project_to_github(slug, section, data, user):
     # Push
     yaml_content = yaml.dump(project, default_flow_style=False, allow_unicode=True, sort_keys=False)
     commit_msg = f"update: {slug} – {section} (via BEATRIX)"
-    put_data = json.dumps({"message": commit_msg, "content": base64.b64encode(yaml_content.encode()).decode(), "sha": sha, "branch": "main"}).encode()
+    put_data = json.dumps({"message": commit_msg, "content": base64.b64encode(yaml_content.encode('utf-8')).decode(), "sha": sha, "branch": "main"}).encode('utf-8')
     req3 = urllib.request.Request(url, data=put_data, method="PUT", headers={**gh, "Content-Type": "application/json"})
     urllib.request.urlopen(req3, context=ctx, timeout=15)
 
@@ -9299,7 +9299,7 @@ async def crm_create_company(request: Request, user=Depends(require_permission("
                 new_yaml = _yaml.dump(registry, default_flow_style=False, allow_unicode=True, sort_keys=False)
                 put_data = json.dumps({
                     "message": f"feat: neue Firma {code} ({name}) via BEATRIX",
-                    "content": base64.b64encode(new_yaml.encode()).decode(),
+                    "content": base64.b64encode(new_yaml.encode('utf-8')).decode(),
                     "sha": sha, "branch": "main"
                 }).encode()
                 req2 = urllib.request.Request(
@@ -9323,7 +9323,7 @@ async def crm_create_company(request: Request, user=Depends(require_permission("
                         new_seq_yaml = _yaml.dump(seq_data, default_flow_style=False, allow_unicode=True, sort_keys=False)
                         put4 = json.dumps({
                             "message": f"feat: prefix mapping {code} für {name}",
-                            "content": base64.b64encode(new_seq_yaml.encode()).decode(),
+                            "content": base64.b64encode(new_seq_yaml.encode('utf-8')).decode(),
                             "sha": resp3["sha"], "branch": "main"
                         }).encode()
                         req4 = urllib.request.Request(
@@ -10729,7 +10729,7 @@ async def add_memory(request: Request, user=Depends(require_auth)):
         data["metadata"]["last_updated"] = today
         # Push back
         yaml_content = yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        put_data = json.dumps({"message": f"memory: {entry_type} {new_id} – {topic}", "content": base64.b64encode(yaml_content.encode()).decode(), "sha": sha, "branch": "main"}).encode()
+        put_data = json.dumps({"message": f"memory: {entry_type} {new_id} – {topic}", "content": base64.b64encode(yaml_content.encode('utf-8')).decode(), "sha": sha, "branch": "main"}).encode('utf-8')
         req3 = urllib.request.Request(url, data=put_data, method="PUT", headers={"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab"})
         urllib.request.urlopen(req3, context=ctx, timeout=15)
         logger.info(f"Memory added: {new_id} by {user.get('sub','?')}")
@@ -11123,14 +11123,14 @@ def _sync_psi_to_github(analysis_id, lineage_id, version, question, data, user_e
 
     payload = {
         "message": f"Ψ-Analysis: {lineage_id} v{version} by {user_slug}",
-        "content": base64.b64encode(yaml_str.encode()).decode(),
+        "content": base64.b64encode(yaml_str.encode('utf-8')).decode(),
         "branch": "main"
     }
     if sha: payload["sha"] = sha
 
     try:
         req = urllib.request.Request(f"https://api.github.com/repos/{gh_repo}/contents/{file_path}",
-            data=json.dumps(payload).encode(), method="PUT", headers=headers)
+            data=json.dumps(payload).encode("utf-8"), method="PUT", headers=headers)
         urllib.request.urlopen(req, context=ctx)
         logger.info(f"Ψ-Analysis synced to GitHub: {file_path}")
     except Exception as e:
