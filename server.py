@@ -7247,7 +7247,7 @@ async def get_paper_upload_priority(user=Depends(require_auth)):
 
     if not GH_TOKEN:
         raise HTTPException(500, "GitHub not configured")
-    import urllib.request as ur
+    import urllib.request as ur, ssl
     ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
     gh = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
     try:
