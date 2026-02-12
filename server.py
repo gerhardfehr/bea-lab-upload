@@ -7263,6 +7263,184 @@ async def get_paper_upload_priority(user=Depends(require_auth)):
         raise HTTPException(500, f"Konnte Priority-Liste nicht laden: {e}")
 
 
+@app.post("/api/papers/find-pdf")
+async def find_paper_pdf(request: Request, user=Depends(require_auth)):
+    """Search for Open Access PDF via Unpaywall, Semantic Scholar, CORE."""
+    import urllib.request as ur, ssl, urllib.parse
+    body = await request.json()
+    doi = body.get("doi", "")
+    title = body.get("title", "")
+    author = body.get("author", "")
+    year = body.get("year", "")
+
+    ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+    results = []
+
+    # 1. Unpaywall (best for OA)
+    if doi:
+        try:
+            url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi, safe='')}?email=gerhard.fehr@fehradvice.com"
+            req = ur.Request(url, headers={"User-Agent": "BEATRIX/1.0"})
+            resp = json.loads(ur.urlopen(req, context=ctx2, timeout=8).read())
+            if resp.get("is_oa"):
+                best = resp.get("best_oa_location") or {}
+                pdf_url = best.get("url_for_pdf") or best.get("url")
+                if pdf_url:
+                    results.append({"source": "Unpaywall", "url": pdf_url, "type": "pdf" if best.get("url_for_pdf") else "landing"})
+                # Check all OA locations
+                for loc in (resp.get("oa_locations") or []):
+                    loc_url = loc.get("url_for_pdf")
+                    if loc_url and not any(r["url"] == loc_url for r in results):
+                        results.append({"source": f"Unpaywall ({loc.get('host_type','')})", "url": loc_url, "type": "pdf"})
+        except Exception as e:
+            logger.debug(f"Unpaywall error: {e}")
+
+    # 2. Semantic Scholar
+    if doi:
+        try:
+            url = f"https://api.semanticscholar.org/graph/v1/paper/DOI:{urllib.parse.quote(doi, safe='')}?fields=openAccessPdf,title,externalIds"
+            req = ur.Request(url, headers={"User-Agent": "BEATRIX/1.0"})
+            resp = json.loads(ur.urlopen(req, context=ctx2, timeout=8).read())
+            oa = resp.get("openAccessPdf") or {}
+            if oa.get("url"):
+                if not any(r["url"] == oa["url"] for r in results):
+                    results.append({"source": "Semantic Scholar", "url": oa["url"], "type": "pdf"})
+        except Exception as e:
+            logger.debug(f"S2 error: {e}")
+
+    # 3. Semantic Scholar by title (if no DOI or no results yet)
+    if not results and title:
+        try:
+            q = urllib.parse.quote(title[:100])
+            url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={q}&limit=3&fields=openAccessPdf,title,year"
+            req = ur.Request(url, headers={"User-Agent": "BEATRIX/1.0"})
+            resp = json.loads(ur.urlopen(req, context=ctx2, timeout=8).read())
+            for p in (resp.get("data") or []):
+                oa = p.get("openAccessPdf") or {}
+                if oa.get("url"):
+                    results.append({"source": f"S2 Search", "url": oa["url"], "type": "pdf", "match_title": p.get("title","")[:80]})
+        except Exception as e:
+            logger.debug(f"S2 search error: {e}")
+
+    # 4. CORE (European OA)
+    if not results and title:
+        try:
+            q = urllib.parse.quote(f"{author} {title}"[:100])
+            url = f"https://api.core.ac.uk/v3/search/works?q={q}&limit=3"
+            req = ur.Request(url, headers={"User-Agent": "BEATRIX/1.0"})
+            resp = json.loads(ur.urlopen(req, context=ctx2, timeout=8).read())
+            for r in (resp.get("results") or []):
+                dl = r.get("downloadUrl")
+                if dl:
+                    results.append({"source": "CORE", "url": dl, "type": "pdf", "match_title": r.get("title","")[:80]})
+        except Exception as e:
+            logger.debug(f"CORE error: {e}")
+
+    # 5. Construct known URLs
+    if doi:
+        # DOI landing page always works
+        results.append({"source": "DOI.org", "url": f"https://doi.org/{doi}", "type": "landing"})
+        # Sci-Hub alternative hint (not linked)
+        # NBER working papers
+        if "nber" in doi.lower() or "3386" in doi:
+            nber_id = doi.split("/")[-1].replace("w","")
+            results.append({"source": "NBER", "url": f"https://www.nber.org/papers/w{nber_id}", "type": "landing"})
+    
+    # Google Scholar search link
+    scholar_q = urllib.parse.quote(f'{author} {year} {title}'[:150])
+    results.append({"source": "Google Scholar", "url": f"https://scholar.google.com/scholar?q={scholar_q}", "type": "search"})
+
+    return {
+        "doi": doi, "title": title, "author": author, "year": year,
+        "found": len([r for r in results if r["type"] == "pdf"]),
+        "results": results
+    }
+
+
+@app.post("/api/papers/fetch-and-upload")
+async def fetch_and_upload_pdf(request: Request, user=Depends(require_auth)):
+    """Fetch a PDF from URL and upload it to GitHub as a paper."""
+    import urllib.request as ur, ssl
+    body = await request.json()
+    pdf_url = body.get("url", "")
+    paper_id = body.get("paper_id", "")
+    title = body.get("title", "")
+    author = body.get("author", "")
+    year = body.get("year", "")
+    doi = body.get("doi", "")
+
+    if not pdf_url:
+        raise HTTPException(400, "URL required")
+    if not GH_TOKEN:
+        raise HTTPException(500, "GitHub not configured")
+
+    ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+
+    # Fetch PDF
+    try:
+        req = ur.Request(pdf_url, headers={"User-Agent": "Mozilla/5.0 (BEATRIX Academic Paper Fetcher)"})
+        resp = ur.urlopen(req, context=ctx2, timeout=30)
+        pdf_bytes = resp.read()
+        content_type = resp.headers.get("Content-Type", "")
+        if len(pdf_bytes) < 1000:
+            raise HTTPException(400, f"File too small ({len(pdf_bytes)} bytes) – likely not a PDF")
+        if len(pdf_bytes) > 50_000_000:
+            raise HTTPException(400, "File too large (>50MB)")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, f"Could not fetch PDF: {e}")
+
+    # Generate filename
+    is_pdf = pdf_bytes[:5] == b'%PDF-' or 'pdf' in content_type.lower()
+    ext = "pdf" if is_pdf else "txt"
+    
+    # Use canonical naming
+    safe_author = (author or "Unknown").split(",")[0].split(" ")[-1].strip()
+    safe_year = str(year) if year else "0000"
+    safe_title = (title or "paper")[:50].strip()
+    for ch in ['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\n', '\r']:
+        safe_title = safe_title.replace(ch, '')
+    safe_title = safe_title.replace(' ', '-')
+    filename = f"PAP_{safe_author}_{safe_year}_{safe_title}.{ext}"
+
+    # Upload to GitHub
+    gh_headers = {"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json",
+                  "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
+    path = f"papers/evaluated/integrated/{filename}"
+    url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+
+    # Check if exists
+    sha = None
+    try:
+        req = ur.Request(url, headers={k:v for k,v in gh_headers.items() if k != "Content-Type"})
+        sha = json.loads(ur.urlopen(req, context=ctx2, timeout=10).read()).get("sha")
+    except: pass
+
+    payload = {
+        "message": f"Auto-fetch: {filename} (DOI: {doi})" if doi else f"Auto-fetch: {filename}",
+        "content": base64.b64encode(pdf_bytes).decode(),
+        "branch": "main"
+    }
+    if sha:
+        payload["sha"] = sha
+
+    try:
+        req = ur.Request(url, data=json.dumps(payload).encode(), method="PUT", headers=gh_headers)
+        resp = json.loads(ur.urlopen(req, context=ctx2, timeout=60).read())
+        return {
+            "ok": True,
+            "filename": filename,
+            "size": len(pdf_bytes),
+            "is_pdf": is_pdf,
+            "path": path,
+            "html_url": resp.get("content", {}).get("html_url", ""),
+            "sha": resp.get("content", {}).get("sha", "")
+        }
+    except Exception as e:
+        raise HTTPException(500, f"GitHub upload failed: {e}")
+
+
 @app.post("/api/text/analyze")
 async def analyze_text(request: Request, user=Depends(require_auth)):
     """Analyze pasted text: detect paper, classify Content Level (L0-L3),
