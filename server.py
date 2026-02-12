@@ -11623,3 +11623,705 @@ async def batch_review_papers(request: Request, user=Depends(require_auth)):
         "successful": len([r for r in results if "score" in r]),
         "failed": len([r for r in results if "error" in r])
     }
+
+
+# ============================================================================
+# LERNFELD 1: Systematisches Ideen-Töten (Paper Triage)
+# POST /api/documents/{doc_id}/triage
+# ============================================================================
+
+TRIAGE_SYSTEM_PROMPT = """Du bist ein Research-Evaluator für Behavioral Economics.
+Bewerte dieses Paper/Dokument auf einer 100-Punkte-Skala.
+
+Bewertungsdimensionen (je 0-25):
+1. BCM-Relevanz: Wie relevant für das Behavioral Complementarity Model?
+2. Methodische Rigorosität: DiD, RDD, RCT, Quasi-Experiment, Meta-Analyse?
+3. Daten-Neuheit: Neue Datenquellen, Populationen, Kontexte?
+4. Praktische Anwendbarkeit: Direkt umsetzbar für FehrAdvice-Projekte?
+
+Basierend auf dem Total Score:
+- PURSUE (>65): Sofort in KB integrieren, detaillierte Analyse
+- CONSIDER (45-65): In Warteschlange, Review bei Bedarf
+- SKIP (<45): Archivieren, nicht in aktive KB
+
+WICHTIG: Vergib auch CONDITIONS – Bedingungen, unter denen das Paper relevant wird.
+Beispiel: "PURSUE, WENN die Ergebnisse auf europäische Kontexte übertragbar sind"
+
+Antworte NUR mit diesem JSON (kein anderer Text):
+```json
+{
+  "score": 78,
+  "recommendation": "PURSUE",
+  "dimensions": {
+    "bcm_relevance": {"score": 22, "reasoning": "..."},
+    "methodological_rigor": {"score": 18, "reasoning": "..."},
+    "data_novelty": {"score": 20, "reasoning": "..."},
+    "practical_applicability": {"score": 18, "reasoning": "..."}
+  },
+  "conditions": ["Bedingung 1", "Bedingung 2"],
+  "key_findings": ["Finding 1", "Finding 2"],
+  "kill_reason": null,
+  "one_line_summary": "Kurze Zusammenfassung in einem Satz"
+}
+```
+Wenn SKIP, setze kill_reason auf den Hauptgrund."""
+
+
+@app.post("/api/documents/{doc_id}/triage")
+async def triage_document(doc_id: str, user=Depends(require_auth)):
+    """Lernfeld 1: Systematisches Ideen-Töten – PURSUE/CONSIDER/SKIP mit Conditions."""
+    import urllib.request as ureq, ssl, re
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    db = get_db()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+        if not ANTHROPIC_API_KEY:
+            raise HTTPException(501, "Claude API not configured")
+
+        content = (doc.content or "")[:25000]
+        user_msg = f"Titel: {doc.title}\n\nInhalt:\n{content}"
+
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1500,
+            "system": TRIAGE_SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": user_msg}]
+        }).encode()
+
+        req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                     "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-triage"})
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=60).read())
+        answer = resp["content"][0]["text"]
+
+        # Parse JSON
+        triage_data = None
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', answer, re.DOTALL)
+        if json_match:
+            try: triage_data = json.loads(json_match.group(1))
+            except: pass
+        if not triage_data:
+            try: triage_data = json.loads(answer.strip())
+            except: triage_data = {"score": 0, "recommendation": "ERROR", "error": answer[:500]}
+
+        # Update document metadata
+        meta = doc.doc_metadata or {}
+        meta["triage"] = triage_data
+        meta["triage_at"] = datetime.utcnow().isoformat()
+        doc.doc_metadata = meta
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(doc, "doc_metadata")
+        db.commit()
+
+        # Push triage result to GitHub
+        triage_md = f"""# Triage: {doc.title}
+
+**Score:** {triage_data.get('score', '?')}/100 → **{triage_data.get('recommendation', '?')}**
+**Date:** {datetime.utcnow().strftime('%Y-%m-%d')}
+
+## Dimensions
+| Dimension | Score | Reasoning |
+|-----------|-------|-----------|
+| BCM Relevance | {triage_data.get('dimensions',{}).get('bcm_relevance',{}).get('score','?')}/25 | {triage_data.get('dimensions',{}).get('bcm_relevance',{}).get('reasoning','?')} |
+| Methodological Rigor | {triage_data.get('dimensions',{}).get('methodological_rigor',{}).get('score','?')}/25 | {triage_data.get('dimensions',{}).get('methodological_rigor',{}).get('reasoning','?')} |
+| Data Novelty | {triage_data.get('dimensions',{}).get('data_novelty',{}).get('score','?')}/25 | {triage_data.get('dimensions',{}).get('data_novelty',{}).get('reasoning','?')} |
+| Practical Applicability | {triage_data.get('dimensions',{}).get('practical_applicability',{}).get('score','?')}/25 | {triage_data.get('dimensions',{}).get('practical_applicability',{}).get('reasoning','?')} |
+
+## Conditions
+{chr(10).join('- ' + c for c in triage_data.get('conditions', [])) or '- None'}
+
+## Key Findings
+{chr(10).join('- ' + f for f in triage_data.get('key_findings', [])) or '- None'}
+
+{f"## Kill Reason{chr(10)}{triage_data.get('kill_reason')}" if triage_data.get('kill_reason') else ''}
+
+**Summary:** {triage_data.get('one_line_summary', '')}
+"""
+        gh_put_file(GH_REPO, f"papers/triage/{doc_id}/triage.md", triage_md,
+                    f"triage: {triage_data.get('recommendation','?')} ({triage_data.get('score','?')}/100) – {(doc.title or '')[:50]}")
+
+        return triage_data
+
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Triage failed: {e}")
+    finally:
+        db.close()
+
+
+# ============================================================================
+# LERNFELD 2: Pre-Commitment Plan Locking
+# POST /api/projects/{project_id}/pre-commitment
+# POST /api/pre-commitment
+# ============================================================================
+
+PRECOMMIT_SYSTEM_PROMPT = """Du bist ein Research-Design-Berater für Behavioral Economics.
+Erstelle ein Pre-Commitment-Template für ein Forschungs- oder Beratungsprojekt.
+
+Das Template wird auf GitHub mit Timestamp gepusht und ist danach NICHT mehr änderbar.
+Es dient als Pre-Registration: Hypothesen und Erfolgskriterien werden VOR der Analyse festgelegt.
+
+Erstelle das Template im folgenden Markdown-Format:
+
+# Pre-Commitment: [Projekttitel]
+
+**Status: 🔒 LOCKED – Do not modify after commit**
+**Locked at:** [Timestamp]
+**Author:** [Email]
+
+## 1. Fragestellung
+Was genau wollen wir wissen? (Eine klare, beantwortbare Frage)
+
+## 2. Kontext-Hypothese (BCM/Ψ)
+Was erwarten wir aufgrund des BCM und der Ψ-Dimensionen?
+Welche Ψ-Dimensionen sind beteiligt?
+
+## 3. Methode
+Wie evaluieren wir die Intervention / das Projekt?
+(Befragung, A/B-Test, Pre-Post, RCT, Beobachtung, etc.)
+
+## 4. Vorab definierte Erfolgskriterien
+Wann gilt die Intervention als wirksam?
+(Konkrete Schwellenwerte, z.B. "Effektstärke d > 0.3")
+
+## 5. Planned Checks
+Welche Alternativerklärungen prüfen wir?
+Welche Robustness Checks sind geplant?
+
+## 6. Datenquellen
+Woher kommen die Daten?
+
+## 7. Timeline
+Wann wird was gemacht?
+
+## 8. Potential Concerns
+Bekannte Einschränkungen und Risiken.
+
+Fülle alle Sections basierend auf den Projekt-Informationen des Users aus.
+Sei konkret und spezifisch – keine Platzhalter."""
+
+
+@app.post("/api/pre-commitment")
+async def create_pre_commitment(request: Request, user=Depends(require_auth)):
+    """Lernfeld 2: Pre-Commitment Plan Locking – unmanipulierbares Analyse-Template."""
+    import urllib.request as ureq, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    body = await request.json()
+    project_title = body.get("title", "Untitled Project")
+    description = body.get("description", "")
+    context = body.get("context", "")
+
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(501, "Claude API not configured")
+
+    user_msg = f"""Erstelle ein Pre-Commitment-Template für:
+
+Projekt: {project_title}
+Beschreibung: {description}
+Kontext: {context}
+Author: {user.get('sub', 'unknown')}
+Timestamp: {datetime.utcnow().isoformat()}Z"""
+
+    payload = json.dumps({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 2500,
+        "system": PRECOMMIT_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_msg}]
+    }).encode()
+
+    req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+        headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                 "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-precommit"})
+    resp = json.loads(ureq.urlopen(req, context=ctx, timeout=60).read())
+    template = resp["content"][0]["text"]
+
+    # Ensure LOCKED marker
+    if "LOCKED" not in template:
+        template = template.replace("# Pre-Commitment:",
+            "# Pre-Commitment:").replace("\n",
+            f"\n\n**Status: 🔒 LOCKED – Do not modify after commit**\n**Locked at:** {datetime.utcnow().isoformat()}Z\n**Author:** {user.get('sub', 'unknown')}\n",
+            1)
+
+    # Generate unique ID
+    commit_id = hashlib.sha256(f"{project_title}{datetime.utcnow().isoformat()}".encode()).hexdigest()[:12]
+    safe_title = project_title.replace(" ", "_").replace("/", "-")[:50]
+
+    # Push to GitHub (immutable – no SHA override)
+    gh_path = f"pre-commitments/{commit_id}_{safe_title}.md"
+    gh_result = gh_put_file(GH_REPO, gh_path, template,
+                            f"🔒 pre-commitment: {project_title[:60]} (LOCKED)")
+
+    # Store in DB
+    db = get_db()
+    try:
+        content_hash = hashlib.sha256(template.encode()).hexdigest()
+        doc = Document(
+            title=f"🔒 Pre-Commitment: {project_title}",
+            content=template,
+            source_type="text",
+            database_target="knowledge_base",
+            category="document",
+            language="de",
+            tags=["pre-commitment", "locked", "research-plan"],
+            status="indexed+github",
+            uploaded_by=user.get("sub"),
+            content_hash=content_hash,
+            github_url=gh_result.get("url", ""),
+            doc_metadata={
+                "type": "pre-commitment",
+                "locked_at": datetime.utcnow().isoformat(),
+                "commit_id": commit_id,
+                "project_title": project_title
+            }
+        )
+        db.add(doc); db.commit(); db.refresh(doc)
+        try: embed_document(db, doc.id)
+        except: pass
+        doc_id = str(doc.id)
+    except:
+        db.rollback()
+        doc_id = None
+    finally:
+        db.close()
+
+    return {
+        "commit_id": commit_id,
+        "doc_id": doc_id,
+        "github": gh_result,
+        "locked_at": datetime.utcnow().isoformat(),
+        "template_preview": template[:500]
+    }
+
+
+# ============================================================================
+# LERNFELD 3: Adversarial Quality Control (Multi-Perspective Review)
+# POST /api/documents/{doc_id}/multi-review
+# ============================================================================
+
+MULTI_REVIEW_PERSPECTIVES = {
+    "analytical": {
+        "name": "Analytischer Reviewer",
+        "system": """Du bist ein strenger methodischer Reviewer. Du prüfst NUR:
+- Sind empirische Claims durch Daten/Quellen gedeckt?
+- Ist die Methodik angemessen?
+- Stimmen die Schlussfolgerungen mit den Ergebnissen überein?
+- Werden Limitationen ehrlich diskutiert?
+Verdikt: ACCEPT / MINOR REVISION / MAJOR REVISION / REJECT
+Antworte in 300-500 Wörtern."""
+    },
+    "practical": {
+        "name": "Praxis-Reviewer",
+        "system": """Du bist ein praxisorientierter Reviewer aus der Beratung. Du prüfst NUR:
+- Kann ein Kunde/Unternehmen das umsetzen?
+- Sind die Empfehlungen konkret genug?
+- Fehlen wichtige Praxisaspekte (Budget, Timeline, Stakeholder)?
+- Ist der Kosten-Nutzen klar?
+Verdikt: ACCEPT / MINOR REVISION / MAJOR REVISION / REJECT
+Antworte in 300-500 Wörtern."""
+    },
+    "devils_advocate": {
+        "name": "Devil's Advocate",
+        "system": """Du bist ein bewusst skeptischer Reviewer (Devil's Advocate). Du prüfst NUR:
+- Was könnte schiefgehen?
+- Welche Gegenargumente gibt es?
+- Welche alternativen Erklärungen wurden ignoriert?
+- Was sind die versteckten Annahmen?
+Verdikt: ACCEPT / MINOR REVISION / MAJOR REVISION / REJECT
+Antworte in 300-500 Wörtern."""
+    }
+}
+
+
+@app.post("/api/documents/{doc_id}/multi-review")
+async def multi_review_document(doc_id: str, user=Depends(require_auth)):
+    """Lernfeld 3: Adversarial QC – 3 unabhängige Perspektiven + Disagreement-Analyse."""
+    import urllib.request as ureq, ssl, re
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    db = get_db()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+        if not ANTHROPIC_API_KEY:
+            raise HTTPException(501, "Claude API not configured")
+
+        content = (doc.content or "")[:20000]
+        reviews = {}
+
+        # Generate 3 independent reviews
+        for perspective_key, perspective in MULTI_REVIEW_PERSPECTIVES.items():
+            payload = json.dumps({
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1200,
+                "system": perspective["system"],
+                "messages": [{"role": "user", "content": f"Review dieses Dokument:\n\nTitel: {doc.title}\n\n{content}"}]
+            }).encode()
+
+            req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                         "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-multireview"})
+            resp = json.loads(ureq.urlopen(req, context=ctx, timeout=60).read())
+            review_text = resp["content"][0]["text"]
+
+            # Extract verdict
+            verdict = "UNKNOWN"
+            for v in ["REJECT", "MAJOR REVISION", "MINOR REVISION", "ACCEPT"]:
+                if v in review_text.upper():
+                    verdict = v
+                    break
+
+            reviews[perspective_key] = {
+                "name": perspective["name"],
+                "verdict": verdict,
+                "review": review_text
+            }
+
+        # Disagreement analysis
+        verdicts = [r["verdict"] for r in reviews.values()]
+        all_agree = len(set(verdicts)) == 1
+        consensus_verdict = max(set(verdicts), key=verdicts.count) if verdicts else "UNKNOWN"
+
+        # Generate synthesis
+        synthesis_prompt = f"""Analysiere diese 3 unabhängigen Reviews des Dokuments "{doc.title}":
+
+ANALYTISCHER REVIEWER ({reviews['analytical']['verdict']}):
+{reviews['analytical']['review'][:800]}
+
+PRAXIS-REVIEWER ({reviews['practical']['verdict']}):
+{reviews['practical']['review'][:800]}
+
+DEVIL'S ADVOCATE ({reviews['devils_advocate']['verdict']}):
+{reviews['devils_advocate']['review'][:800]}
+
+Erstelle eine Synthese:
+1. Wo stimmen alle 3 überein? (HIGH PRIORITY Issues)
+2. Wo widersprechen sich 2? (MEDIUM PRIORITY)
+3. Was sagt nur einer? (LOW PRIORITY)
+4. Gesamtverdikt basierend auf Konsens
+Antworte in 200-400 Wörtern."""
+
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1000,
+            "messages": [{"role": "user", "content": synthesis_prompt}]
+        }).encode()
+        req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                     "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-synthesis"})
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=60).read())
+        synthesis = resp["content"][0]["text"]
+
+        # Build full report
+        report = f"""# Multi-Perspective Review: {doc.title}
+
+**Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC
+**Document ID:** {doc_id}
+**Consensus:** {'✅ All agree' if all_agree else '⚠️ Disagreement detected'} → **{consensus_verdict}**
+
+## Verdicts
+| Perspective | Verdict |
+|-------------|---------|
+| 🔬 {reviews['analytical']['name']} | {reviews['analytical']['verdict']} |
+| 🏢 {reviews['practical']['name']} | {reviews['practical']['verdict']} |
+| 😈 {reviews['devils_advocate']['name']} | {reviews['devils_advocate']['verdict']} |
+
+## Analytical Review
+{reviews['analytical']['review']}
+
+## Practical Review
+{reviews['practical']['review']}
+
+## Devil's Advocate
+{reviews['devils_advocate']['review']}
+
+## Synthesis & Priority
+{synthesis}
+"""
+
+        # Push to GitHub
+        gh_result = gh_put_file(GH_REPO, f"papers/multi-review/{doc_id}/multi_review.md", report,
+                    f"multi-review: {consensus_verdict} – {(doc.title or '')[:50]}")
+
+        # Store in DB
+        content_hash = hashlib.sha256(report.encode()).hexdigest()
+        review_doc = Document(
+            title=f"Multi-Review: {(doc.title or 'Untitled')[:80]}",
+            content=report, source_type="text", database_target="knowledge_base",
+            category="study", language="en",
+            tags=["multi-review", "adversarial-qc", "analytical", "practical", "devils-advocate"],
+            status="indexed", uploaded_by=user.get("sub"), content_hash=content_hash,
+            doc_metadata={"reviewed_doc_id": doc_id, "consensus_verdict": consensus_verdict,
+                          "all_agree": all_agree, "verdicts": {k: v["verdict"] for k, v in reviews.items()},
+                          "review_type": "multi_perspective"}
+        )
+        db.add(review_doc); db.commit(); db.refresh(review_doc)
+        try: embed_document(db, review_doc.id)
+        except: pass
+
+        return {
+            "review_id": str(review_doc.id),
+            "consensus": consensus_verdict,
+            "all_agree": all_agree,
+            "verdicts": {k: v["verdict"] for k, v in reviews.items()},
+            "synthesis_preview": synthesis[:500],
+            "github": gh_result
+        }
+
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Multi-review failed: {e}")
+    finally:
+        db.close()
+
+
+# ============================================================================
+# LERNFELD 4: Integrity Scanning
+# POST /api/documents/{doc_id}/integrity-check
+# ============================================================================
+
+INTEGRITY_SYSTEM_PROMPT = """Du bist ein Integrity Scanner für akademische und professionelle Dokumente.
+Prüfe das Dokument auf folgende 6 Kategorien:
+
+1. CLAIM_DATA_CONSISTENCY: Stimmen quantitative Claims im Text überein? (Z.B. Abstract sagt 23%, Discussion sagt 25%)
+2. SOURCE_PROVENANCE: Sind Quellen für empirische Claims angegeben und nachvollziehbar?
+3. EFFECT_SIZE_CONTEXT: Werden Effektgrössen im richtigen Kontext interpretiert? (Relative vs. absolute Werte)
+4. METHODOLOGY_CLARITY: Ist die Methodik klar genug beschrieben, um repliziert zu werden?
+5. SAMPLE_DESCRIPTION: Sind Stichprobe/Population ausreichend beschrieben?
+6. LIMITATION_HONESTY: Werden Einschränkungen ehrlich diskutiert?
+
+Für jede Kategorie:
+- Flag-Level: CLEAN (kein Problem), LOW (minor), MEDIUM (should fix), HIGH (critical)
+- Evidence: Konkrete Textstelle die das Problem zeigt
+- Confidence: 0.0-1.0
+
+Antworte NUR mit JSON:
+```json
+{
+  "overall_verdict": "CLEAN oder SUSPICIOUS",
+  "flags": [
+    {"category": "CLAIM_DATA_CONSISTENCY", "severity": "MEDIUM", "evidence": "Abstract says 23% but Section 4 says 25%", "confidence": 0.85}
+  ],
+  "summary": "Kurze Zusammenfassung der Integrity-Analyse"
+}
+```"""
+
+
+@app.post("/api/documents/{doc_id}/integrity-check")
+async def integrity_check_document(doc_id: str, user=Depends(require_auth)):
+    """Lernfeld 4: Integrity Scanning – automatische Konsistenz- und Quellenprüfung."""
+    import urllib.request as ureq, ssl, re
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    db = get_db()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+        if not ANTHROPIC_API_KEY:
+            raise HTTPException(501, "Claude API not configured")
+
+        content = (doc.content or "")[:30000]
+
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 2000,
+            "system": INTEGRITY_SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": f"Prüfe dieses Dokument:\n\nTitel: {doc.title}\n\n{content}"}]
+        }).encode()
+
+        req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                     "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-integrity"})
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=60).read())
+        answer = resp["content"][0]["text"]
+
+        # Parse JSON
+        integrity_data = None
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', answer, re.DOTALL)
+        if json_match:
+            try: integrity_data = json.loads(json_match.group(1))
+            except: pass
+        if not integrity_data:
+            try: integrity_data = json.loads(answer.strip())
+            except: integrity_data = {"overall_verdict": "ERROR", "flags": [], "summary": answer[:500]}
+
+        # Update document metadata
+        meta = doc.doc_metadata or {}
+        meta["integrity"] = integrity_data
+        meta["integrity_at"] = datetime.utcnow().isoformat()
+        doc.doc_metadata = meta
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(doc, "doc_metadata")
+        db.commit()
+
+        # Push to GitHub
+        flags = integrity_data.get("flags", [])
+        high_count = len([f for f in flags if f.get("severity") == "HIGH"])
+        med_count = len([f for f in flags if f.get("severity") == "MEDIUM"])
+
+        integrity_md = f"""# Integrity Check: {doc.title}
+
+**Verdict:** {integrity_data.get('overall_verdict', '?')}
+**Date:** {datetime.utcnow().strftime('%Y-%m-%d')}
+**Flags:** {high_count} HIGH, {med_count} MEDIUM, {len(flags) - high_count - med_count} LOW
+
+## Summary
+{integrity_data.get('summary', '')}
+
+## Flags
+{''.join(f'''
+### [{f.get("severity")}] {f.get("category")}
+**Evidence:** {f.get("evidence", "?")}
+**Confidence:** {f.get("confidence", "?")}
+''' for f in flags) if flags else "No flags found."}
+"""
+        gh_put_file(GH_REPO, f"papers/integrity/{doc_id}/integrity_check.md", integrity_md,
+                    f"integrity: {integrity_data.get('overall_verdict','?')} ({high_count}H/{med_count}M) – {(doc.title or '')[:50]}")
+
+        return integrity_data
+
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Integrity check failed: {e}")
+    finally:
+        db.close()
+
+
+# ============================================================================
+# LERNFELD 5: Reply-to-Reviewers (Feedback Response + Knowledge Distillation)
+# POST /api/documents/{doc_id}/reply-to-feedback
+# ============================================================================
+
+REPLY_SYSTEM_PROMPT = """Du bist ein wissenschaftlicher Autor, der auf Reviewer-Feedback antwortet.
+Du erhältst ein Dokument und Feedback dazu.
+
+Erstelle eine strukturierte Reply-to-Reviewers im folgenden Format:
+
+# Reply to Feedback
+
+## Summary of Changes
+Kurze Übersicht der vorgenommenen Änderungen.
+
+## Point-by-Point Response
+
+### Feedback-Punkt 1: [Zusammenfassung]
+**Feedback:** "[Zitat]"
+**Response:** [Deine Antwort]
+**Action:** [IMPLEMENTED / ACKNOWLEDGED / DECLINED with reason]
+**Priority:** [HIGH / MEDIUM / LOW]
+
+[Wiederhole für jeden Punkt]
+
+## Changes NOT Implemented (with justification)
+Punkte die bewusst nicht geändert wurden, mit Begründung.
+
+## Knowledge Distilled
+Was haben wir aus diesem Feedback gelernt? (2-3 Sätze)
+
+Regeln:
+- Sei ehrlich: Wenn der Reviewer Recht hat, sag es
+- Sei konkret: Verweise auf exakte Stellen
+- Sei konstruktiv: Auch bei Ablehnung, erkläre warum
+- Destilliere Wissen: Jede Kritik ist eine Lerngelegenheit"""
+
+
+@app.post("/api/documents/{doc_id}/reply-to-feedback")
+async def reply_to_feedback(doc_id: str, request: Request, user=Depends(require_auth)):
+    """Lernfeld 5: Reply-to-Reviewers – strukturierte Wissens-Destillation aus Feedback."""
+    import urllib.request as ureq, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    body = await request.json()
+    feedback = body.get("feedback", "")
+    if not feedback:
+        raise HTTPException(400, "feedback required")
+
+    db = get_db()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+        if not ANTHROPIC_API_KEY:
+            raise HTTPException(501, "Claude API not configured")
+
+        content = (doc.content or "")[:20000]
+
+        user_msg = f"""Dokument: {doc.title}
+
+Inhalt (Auszug):
+{content}
+
+---
+
+Feedback das beantwortet werden muss:
+{feedback}"""
+
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 2500,
+            "system": REPLY_SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": user_msg}]
+        }).encode()
+
+        req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                     "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-reply"})
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=60).read())
+        reply = resp["content"][0]["text"]
+
+        # Push to GitHub
+        reply_count = 1
+        # Check if there are existing replies
+        try:
+            import urllib.request
+            check_url = f"https://api.github.com/repos/{GH_REPO}/contents/papers/replies/{doc_id}"
+            check_req = urllib.request.Request(check_url,
+                headers={"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIX"})
+            existing = json.loads(urllib.request.urlopen(check_req, context=ctx, timeout=10).read())
+            reply_count = len([f for f in existing if f["name"].startswith("reply_")]) + 1
+        except: pass
+
+        gh_result = gh_put_file(GH_REPO, f"papers/replies/{doc_id}/reply_{reply_count}.md", reply,
+                    f"reply: Response to feedback #{reply_count} – {(doc.title or '')[:50]}")
+
+        # Store as KB document (FAQ enrichment)
+        content_hash = hashlib.sha256(reply.encode()).hexdigest()
+        reply_doc = Document(
+            title=f"Reply to Feedback #{reply_count}: {(doc.title or 'Untitled')[:70]}",
+            content=reply, source_type="text", database_target="knowledge_base",
+            category="document", language="de",
+            tags=["reply-to-feedback", "knowledge-distillation", "quality-control"],
+            status="indexed", uploaded_by=user.get("sub"), content_hash=content_hash,
+            doc_metadata={"original_doc_id": doc_id, "reply_number": reply_count,
+                          "feedback_preview": feedback[:200], "review_type": "reply_to_feedback"}
+        )
+        db.add(reply_doc); db.commit(); db.refresh(reply_doc)
+        try: embed_document(db, reply_doc.id)
+        except: pass
+
+        return {
+            "reply_id": str(reply_doc.id),
+            "reply_number": reply_count,
+            "github": gh_result,
+            "reply_preview": reply[:500],
+            "reply": reply
+        }
+
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Reply generation failed: {e}")
+    finally:
+        db.close()
