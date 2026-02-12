@@ -2041,11 +2041,11 @@ class DocumentResponse(BaseModel):
 def extract_text(file_path, file_type):
     try:
         if file_type == "pdf":
-            import fitz; doc = fitz.open(file_path); text = "\n".join(page.get_text() for page in doc); doc.close(); return text.strip()
+            import fitz; doc = fitz.open(file_path); text = "\n".join(page.get_text() for page in doc); doc.close(); return text.replace("\x00", "").strip()
         elif file_type == "docx":
-            from docx import Document as DocxDoc; doc = DocxDoc(file_path); return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            from docx import Document as DocxDoc; doc = DocxDoc(file_path); return "\n".join(p.text for p in doc.paragraphs if p.text.strip()).replace("\x00", "")
         elif file_type in ("txt", "md", "csv", "json", "ics"):
-            with open(file_path, "r", encoding="utf-8") as f: return f.read()
+            with open(file_path, "r", encoding="utf-8") as f: return f.read().replace("\x00", "")
     except Exception as e: return f"[Extraction error: {e}]"
     return ""
 
