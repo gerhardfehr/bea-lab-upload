@@ -7308,13 +7308,14 @@ async def find_paper_pdf(request: Request, user=Depends(require_auth)):
     # 1. DuckDuckGo EXACT title search (finds university-hosted PDFs: Stanford, UCLA, UCSD etc.)
     if title:
         clean_title = title.split(":")[0].strip() if len(title.split(":")[0]) > 20 else title
-        exact_q = f'\"{clean_title}\" filetype:pdf'
+        exact_q = '"' + clean_title + '" filetype:pdf'
         logger.info(f"PDF-Finder Step 1: DDG exact → {exact_q[:80]}")
         for source, url in ddg_search(exact_q, max_pdfs=4):
             add_result(source, url)
 
     # 2. DuckDuckGo author+year+title (broader, catches different title formats)
     if len([r for r in results if r["type"] == "pdf"]) < 3:
+        import time as _time; _time.sleep(0.5)  # Small delay to avoid DDG rate limiting
         broad_q = f"{author} {year} {title} filetype:pdf".strip()[:150]
         logger.info(f"PDF-Finder Step 2: DDG broad → {broad_q[:80]}")
         for source, url in ddg_search(broad_q, max_pdfs=3):
