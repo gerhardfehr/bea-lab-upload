@@ -8791,8 +8791,11 @@ async def create_project(request: Request, user=Depends(require_permission("proj
             logger.warning(f"Could not update sequence registry: {seq_update_err}")
 
         # ── Step 6: Generate slug (folder name) ──
+        # Normalize German umlauts and special chars for URL-safe slugs
+        umlaut_map = {'ä':'ae','ö':'oe','ü':'ue','ß':'ss','é':'e','è':'e','ê':'e','à':'a','â':'a','ô':'o','î':'i','ç':'c','ñ':'n'}
         slug_base = f"{customer_code}-{name}".lower()
-        slug = "".join(c if c.isalnum() or c == '-' else '-' for c in slug_base)
+        slug_base = "".join(umlaut_map.get(c, c) for c in slug_base)
+        slug = "".join(c if (c.isascii() and c.isalnum()) or c == '-' else '-' for c in slug_base)
         slug = "-".join(part for part in slug.split("-") if part)[:60]
         if slug in existing_slugs:
             for n in range(2, 100):
