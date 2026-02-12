@@ -12325,3 +12325,363 @@ Feedback das beantwortet werden muss:
         raise HTTPException(500, f"Reply generation failed: {e}")
     finally:
         db.close()
+
+
+# ============================================================================
+# EXTERNAL REVIEWERS – Multi-Model Review System (wie APE)
+# POST /api/documents/{doc_id}/ape-review
+# ============================================================================
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+XAI_API_KEY = os.getenv("XAI_API_KEY", "")
+
+REVIEWER_CONFIGS = {
+    "beatrix": {
+        "name": "BEATRIX (Claude)",
+        "icon": "🧠",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-20250514",
+        "focus": "Behavioral Economics, BCM, Ψ-Dimensions",
+        "system": """You are BEATRIX, a Behavioral Economics reviewer. Focus EXCLUSIVELY on:
+1. Missing behavioral mechanisms (present bias, loss aversion, social norms, default effects, etc.)
+2. Ψ-Dimensions analysis (which of the 8 BCM psychological dimensions are relevant?)
+3. Practical intervention design improvements
+4. Policy implications from a behavioral science perspective
+Score 0-100. Verdict: ACCEPT / CONDITIONAL ACCEPT / MAJOR REVISION / REJECT.
+Be specific, cite mechanisms, suggest literature."""
+    },
+    "methodologist": {
+        "name": "Methodologist (GPT)",
+        "icon": "🔬",
+        "provider": "openai",
+        "model": "gpt-4o",
+        "focus": "Statistical Methods, Identification Strategy, Causal Inference",
+        "system": """You are a strict methodological reviewer for empirical research. Focus EXCLUSIVELY on:
+1. Identification strategy: Is the causal claim credible? What are the threats?
+2. Statistical methods: Are they appropriate? Standard errors correct? Power adequate?
+3. Data quality: Sample size, measurement, selection bias, attrition
+4. Robustness: What checks are missing? What would falsify the findings?
+Score 0-100. Verdict: ACCEPT / MINOR REVISION / MAJOR REVISION / REJECT.
+Be technically precise. Reference specific statistical tests and assumptions."""
+    },
+    "skeptic": {
+        "name": "Skeptic (Grok)",
+        "icon": "🦊",
+        "provider": "xai",
+        "model": "grok-3-mini",
+        "focus": "Alternative Explanations, Hidden Assumptions, Replication Concerns",
+        "system": """You are a deeply skeptical reviewer. Your job is to find what EVERYONE ELSE missed. Focus on:
+1. Alternative explanations the authors didn't consider
+2. Hidden assumptions that could invalidate the findings
+3. Selection effects, confounders, reverse causality
+4. Would this replicate? What's the file-drawer problem here?
+5. Is the framing honest or does it oversell the findings?
+Score 0-100. Verdict: ACCEPT / MINOR REVISION / MAJOR REVISION / REJECT.
+Be direct and unflinching. No diplomatic hedging."""
+    },
+    "practitioner": {
+        "name": "Practitioner (Gemini)",
+        "icon": "💼",
+        "provider": "google",
+        "model": "gemini-2.0-flash",
+        "focus": "Real-World Applicability, Implementation, Stakeholder Perspective",
+        "system": """You are a practitioner reviewer from management consulting. Focus EXCLUSIVELY on:
+1. Can these findings be implemented in practice? What's the cost-benefit?
+2. What stakeholder perspectives are missing?
+3. Is the effect size practically meaningful (not just statistically significant)?
+4. What would a CEO/policy-maker need to know before acting on this?
+5. External validity: Does this generalize beyond the specific context studied?
+Score 0-100. Verdict: ACCEPT / MINOR REVISION / MAJOR REVISION / REJECT.
+Be concrete about implementation barriers and opportunities."""
+    }
+}
+
+
+def call_external_reviewer(provider: str, model: str, system_prompt: str, content: str, title: str) -> dict:
+    """Call an external AI model for review."""
+    import urllib.request as ureq, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    user_msg = f"Review this document:\n\nTitle: {title}\n\n{content[:20000]}"
+
+    if provider == "anthropic":
+        if not ANTHROPIC_API_KEY:
+            return {"error": "Anthropic API key not configured", "available": False}
+        payload = json.dumps({
+            "model": model, "max_tokens": 1500, "system": system_prompt,
+            "messages": [{"role": "user", "content": user_msg}]
+        }).encode()
+        req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+            headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                     "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-ape"})
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=90).read())
+        return {"text": resp["content"][0]["text"], "model": model, "available": True}
+
+    elif provider == "openai":
+        if not OPENAI_API_KEY:
+            return {"error": "OpenAI API key not configured", "available": False}
+        payload = json.dumps({
+            "model": model, "max_tokens": 1500,
+            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
+        }).encode()
+        req = ureq.Request("https://api.openai.com/v1/chat/completions", data=payload, method="POST",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                     "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-ape"})
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=90).read())
+        return {"text": resp["choices"][0]["message"]["content"], "model": model, "available": True}
+
+    elif provider == "xai":
+        if not XAI_API_KEY:
+            return {"error": "xAI API key not configured", "available": False}
+        payload = json.dumps({
+            "model": model, "max_tokens": 1500, "stream": False,
+            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
+        }).encode()
+        req = ureq.Request("https://api.x.ai/v1/chat/completions", data=payload, method="POST",
+            headers={"Authorization": f"Bearer {XAI_API_KEY}",
+                     "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-ape"})
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=90).read())
+        return {"text": resp["choices"][0]["message"]["content"], "model": model, "available": True}
+
+    elif provider == "google":
+        if not GOOGLE_API_KEY:
+            return {"error": "Google API key not configured", "available": False}
+        payload = json.dumps({
+            "contents": [{"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_msg}"}]}],
+            "generationConfig": {"maxOutputTokens": 1500}
+        }).encode()
+        req = ureq.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GOOGLE_API_KEY}",
+            data=payload, method="POST",
+            headers={"Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7-ape"})
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=90).read())
+        text = resp.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        return {"text": text, "model": model, "available": True}
+
+    return {"error": f"Unknown provider: {provider}", "available": False}
+
+
+def extract_verdict_from_review(text: str) -> str:
+    """Extract verdict from review text."""
+    upper = text.upper()
+    for v in ["REJECT", "MAJOR REVISION", "CONDITIONAL ACCEPT", "MINOR REVISION", "ACCEPT"]:
+        if v in upper:
+            return v
+    return "UNKNOWN"
+
+
+def extract_score_from_review(text: str) -> int:
+    """Extract score from review text."""
+    import re
+    patterns = [
+        r'(?:score|total|overall)[:\s]*(\d{1,3})\s*/?\s*100',
+        r'(\d{1,3})\s*/\s*100',
+        r'(?:score|total|overall)[:\s]*(\d{1,3})',
+    ]
+    for p in patterns:
+        m = re.search(p, text, re.IGNORECASE)
+        if m:
+            s = int(m.group(1))
+            if 0 <= s <= 100:
+                return s
+    return 0
+
+
+@app.get("/api/reviewers")
+async def list_reviewers(user=Depends(require_auth)):
+    """List available reviewers and their status."""
+    result = []
+    for key, config in REVIEWER_CONFIGS.items():
+        available = False
+        if config["provider"] == "anthropic" and ANTHROPIC_API_KEY: available = True
+        elif config["provider"] == "openai" and OPENAI_API_KEY: available = True
+        elif config["provider"] == "xai" and XAI_API_KEY: available = True
+        elif config["provider"] == "google" and GOOGLE_API_KEY: available = True
+
+        result.append({
+            "key": key,
+            "name": config["name"],
+            "icon": config["icon"],
+            "provider": config["provider"],
+            "model": config["model"],
+            "focus": config["focus"],
+            "available": available
+        })
+    return result
+
+
+@app.post("/api/documents/{doc_id}/ape-review")
+async def ape_review_document(doc_id: str, request: Request, user=Depends(require_auth)):
+    """APE-style multi-model review. Calls all available reviewers + generates synthesis."""
+    body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
+    selected_reviewers = body.get("reviewers", None)  # None = all available
+
+    db = get_db()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+        content = (doc.content or "")[:20000]
+        title = doc.title or "Untitled"
+        reviews = {}
+        errors = {}
+
+        # Determine which reviewers to call
+        to_call = selected_reviewers or list(REVIEWER_CONFIGS.keys())
+
+        for reviewer_key in to_call:
+            if reviewer_key not in REVIEWER_CONFIGS:
+                continue
+            config = REVIEWER_CONFIGS[reviewer_key]
+            try:
+                result = call_external_reviewer(
+                    config["provider"], config["model"], config["system"], content, title
+                )
+                if result.get("available"):
+                    review_text = result["text"]
+                    reviews[reviewer_key] = {
+                        "name": config["name"],
+                        "icon": config["icon"],
+                        "provider": config["provider"],
+                        "model": result.get("model", config["model"]),
+                        "focus": config["focus"],
+                        "review": review_text,
+                        "verdict": extract_verdict_from_review(review_text),
+                        "score": extract_score_from_review(review_text)
+                    }
+                else:
+                    errors[reviewer_key] = result.get("error", "Not available")
+            except Exception as e:
+                errors[reviewer_key] = str(e)[:200]
+
+        if not reviews:
+            raise HTTPException(500, f"No reviewers available. Errors: {errors}")
+
+        # Disagreement analysis
+        verdicts = {k: v["verdict"] for k, v in reviews.items()}
+        scores = {k: v["score"] for k, v in reviews.items()}
+        all_verdicts = list(verdicts.values())
+        unique_verdicts = set(all_verdicts)
+        consensus = max(set(all_verdicts), key=all_verdicts.count) if all_verdicts else "UNKNOWN"
+        avg_score = sum(scores.values()) / len(scores) if scores else 0
+
+        # Generate synthesis (using Claude as meta-reviewer)
+        synthesis = ""
+        if len(reviews) >= 2 and ANTHROPIC_API_KEY:
+            import urllib.request as ureq, ssl
+            ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+            review_summaries = "\n\n".join([
+                f"### {v['icon']} {v['name']} ({v['verdict']}, {v['score']}/100):\n{v['review'][:600]}"
+                for k, v in reviews.items()
+            ])
+            synth_prompt = f"""Analysiere diese {len(reviews)} unabhängigen Reviews von "{title}":
+
+{review_summaries}
+
+Erstelle eine Synthese (300 Wörter max):
+1. HIGH PRIORITY: Wo stimmen alle/die meisten überein?
+2. MEDIUM PRIORITY: Wo gibt es Disagreement?
+3. LOW PRIORITY: Einzelne Reviewer-Meinungen
+4. Gesamtempfehlung basierend auf Konsens
+5. Top 3 Verbesserungsvorschläge"""
+
+            payload = json.dumps({
+                "model": "claude-sonnet-4-20250514", "max_tokens": 1000,
+                "messages": [{"role": "user", "content": synth_prompt}]
+            }).encode()
+            try:
+                req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+                    headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                             "Content-Type": "application/json"})
+                resp = json.loads(ureq.urlopen(req, context=ctx2, timeout=60).read())
+                synthesis = resp["content"][0]["text"]
+            except: pass
+
+        # Build full report
+        report_lines = [f"# APE-Style Multi-Model Review: {title}\n"]
+        report_lines.append(f"**Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC")
+        report_lines.append(f"**Document:** {doc_id}")
+        report_lines.append(f"**Reviewers:** {len(reviews)} active, {len(errors)} unavailable")
+        report_lines.append(f"**Consensus:** {consensus} (avg score: {avg_score:.0f}/100)")
+        report_lines.append(f"**Agreement:** {'✅ Unanimous' if len(unique_verdicts) == 1 else '⚠️ Disagreement'}\n")
+
+        report_lines.append("## Verdict Summary\n| Reviewer | Verdict | Score |")
+        report_lines.append("|----------|---------|-------|")
+        for k, v in reviews.items():
+            report_lines.append(f"| {v['icon']} {v['name']} | {v['verdict']} | {v['score']}/100 |")
+        if errors:
+            report_lines.append(f"\n*Unavailable:* {', '.join(f'{k} ({v})' for k, v in errors.items())}")
+
+        for k, v in reviews.items():
+            report_lines.append(f"\n## {v['icon']} {v['name']}\n**Focus:** {v['focus']}")
+            report_lines.append(f"**Model:** {v['model']}\n**Verdict:** {v['verdict']} ({v['score']}/100)\n")
+            report_lines.append(v['review'])
+
+        if synthesis:
+            report_lines.append(f"\n## 🔄 Synthesis & Priority Analysis\n{synthesis}")
+
+        report = "\n".join(report_lines)
+
+        # Push to GitHub
+        gh_put_file(GH_REPO, f"papers/ape-reviews/{doc_id}/ape_review.md", report,
+                    f"ape-review: {consensus} ({avg_score:.0f}/100) [{len(reviews)} reviewers] – {title[:50]}")
+
+        # Store in DB
+        content_hash = hashlib.sha256(report.encode()).hexdigest()
+        review_doc = Document(
+            title=f"APE Review: {title[:70]}",
+            content=report, source_type="text", database_target="knowledge_base",
+            category="study", language="en",
+            tags=["ape-review", "multi-model"] + [k for k in reviews.keys()],
+            status="indexed", uploaded_by=user.get("sub"), content_hash=content_hash,
+            doc_metadata={
+                "reviewed_doc_id": doc_id, "review_type": "ape_multi_model",
+                "consensus": consensus, "avg_score": round(avg_score, 1),
+                "reviewers": {k: {"verdict": v["verdict"], "score": v["score"]} for k, v in reviews.items()},
+                "errors": errors, "unanimous": len(unique_verdicts) == 1
+            }
+        )
+        db.add(review_doc); db.commit(); db.refresh(review_doc)
+        try: embed_document(db, review_doc.id)
+        except: pass
+
+        return {
+            "review_id": str(review_doc.id),
+            "consensus": consensus,
+            "avg_score": round(avg_score, 1),
+            "unanimous": len(unique_verdicts) == 1,
+            "reviewers": {k: {"name": v["name"], "icon": v["icon"], "verdict": v["verdict"],
+                              "score": v["score"], "preview": v["review"][:300]} for k, v in reviews.items()},
+            "errors": errors,
+            "synthesis_preview": synthesis[:500] if synthesis else None,
+            "github": f"papers/ape-reviews/{doc_id}/ape_review.md"
+        }
+
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"APE review failed: {e}")
+    finally:
+        db.close()
+
+
+@app.post("/api/admin/reviewer-keys")
+async def set_reviewer_keys(request: Request, user=Depends(require_auth)):
+    """Admin: Set API keys for external reviewers (runtime only, not persisted)."""
+    if not user.get("admin"):
+        raise HTTPException(403, "Admin required")
+    body = await request.json()
+    global OPENAI_API_KEY, GOOGLE_API_KEY, XAI_API_KEY
+    updated = []
+    if "openai" in body and body["openai"]:
+        OPENAI_API_KEY = body["openai"]
+        updated.append("openai")
+    if "google" in body and body["google"]:
+        GOOGLE_API_KEY = body["google"]
+        updated.append("google")
+    if "xai" in body and body["xai"]:
+        XAI_API_KEY = body["xai"]
+        updated.append("xai")
+    return {"updated": updated, "message": f"Keys set for: {', '.join(updated)}. Note: Runtime only, set env vars for persistence."}
