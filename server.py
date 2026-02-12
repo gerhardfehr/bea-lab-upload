@@ -11186,3 +11186,440 @@ async def update_feedback(fb_id: str, request: Request, user=Depends(require_per
         db.commit()
         return {"status": "updated"}
     finally: db.close()
+
+
+# ============================================================================
+# BEATRIX Review System – Behavioral Economics Paper Reviewer
+# The 6th Reviewer for APE papers (and any paper in the KB)
+# ============================================================================
+
+BEATRIX_REVIEW_SYSTEM_PROMPT = """Du bist BEATRIX, ein Behavioral Economics Reviewer.
+Du bist der 6. Reviewer in einem System mit 5 statistisch/methodisch orientierten Reviewern.
+
+Deine EINZIGARTIGE Perspektive:
+- Du bewertest Papers durch die Linse der Verhaltensökonomie
+- Du nutzt das BCM 2.0 Framework (Behavioral Complementarity Model)
+- Du analysierst die 8 Ψ-Dimensionen
+- Du identifizierst behavioral mechanisms, die statistische Reviewer übersehen
+- Du gibst praktische Gestaltungsempfehlungen für Policy-Interventionen
+
+Du prüfst NICHT (das machen die anderen Reviewer):
+- Statistische Korrektheit (Format Check, Regression Sanity)
+- Identifikationsstrategie-Details (Pre-Trends, Placebo Tests)
+- Formale Journal-Anforderungen
+
+Du prüfst NUR:
+
+## 1. BEHAVIORAL MECHANISM ANALYSIS
+Welche behavioral mechanisms sind im Spiel? Welche werden diskutiert, welche fehlen?
+(Present bias, defaults, social norms, framing, anchoring, loss aversion, 
+choice architecture, commitment devices, identity utility, etc.)
+
+## 2. Ψ-DIMENSIONS MAPPING (BCM 2.0)
+Welche der 8 Ψ-Dimensionen sind relevant?
+- Ψ₁ Risk Perception, Ψ₂ Time Preferences, Ψ₃ Social Preferences
+- Ψ₄ Reference Dependence, Ψ₅ Attention/Salience, Ψ₆ Self-Control
+- Ψ₇ Beliefs & Mental Models, Ψ₈ Identity & Self-Image
+Tabellenformat: Dimension | Relevance | Addressed? | Gap
+
+## 3. POLICY DESIGN IMPLICATIONS
+Wie könnte die Intervention behavioral verbessert werden?
+Commitment devices, framing, choice architecture, nudges, scaling predictions.
+Heterogeneous treatment effects by behavioral type.
+
+## 4. LITERATURE GAPS
+Welche behavioral economics Literatur fehlt? Max. 7 Referenzen.
+Nur wirklich relevante – keine generischen Textbook-Zitate.
+
+## 5. SCORING
+Tabellenformat:
+| Dimension | Score (0-25) | Reasoning |
+BCM Relevance, Methodological Rigor, Data Novelty, Practical Applicability
+Total Score: X/100 → PURSUE (>65) / CONSIDER (45-65) / SKIP (<45)
+
+## 6. VERDICT
+ACCEPT / CONDITIONAL ACCEPT / MAJOR REVISION / REJECT
+Immer aus behavioral Perspektive, nicht statistisch.
+
+## 7. KB INTEGRATION TAGS
+JSON-Block mit: bcm_dimensions, psi_dimensions, behavioral_mechanisms,
+evidence_type, method, policy_domain, application_areas, connections
+
+Antworte IMMER im Markdown-Format mit allen 7 Sections.
+Sei konkret und spezifisch – beziehe dich auf exakte Textstellen.
+Sprache: Englisch für den Review-Text, unabhängig von der Paper-Sprache."""
+
+
+def call_claude_review(paper_content: str, paper_id: str, title: str,
+                       method: str = "unknown", model_name: str = "unknown") -> str:
+    """Call Claude API to generate a BEATRIX Behavioral Economics Review."""
+    import urllib.request, ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    if not ANTHROPIC_API_KEY:
+        return "ERROR: Claude API not configured"
+
+    user_prompt = f"""Please create a BEATRIX Behavioral Economics Review for:
+
+**Paper ID:** {paper_id}
+**Title:** {title}
+**Method:** {method}
+**Authoring Model:** {model_name}
+
+**Paper Content:**
+{paper_content[:35000]}
+
+---
+Create the review with all 7 sections. Focus on what statistical reviewers miss."""
+
+    payload = json.dumps({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 4096,
+        "system": BEATRIX_REVIEW_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_prompt}]
+    }).encode()
+
+    req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
+        headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            "User-Agent": "BEATRIXLab/3.7-review"
+        })
+    resp = json.loads(urllib.request.urlopen(req, context=ctx, timeout=120).read())
+    return resp["content"][0]["text"]
+
+
+def extract_review_score(review_text: str) -> int:
+    """Extract total score from BEATRIX review."""
+    import re
+    patterns = [
+        r"Total\s*(?:Score)?:\s*(\d+)/100",
+        r"\*\*Total\s*(?:Score)?:\s*(\d+)",
+        r"(\d+)/100\s*→\s*(PURSUE|CONSIDER|SKIP)"
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, review_text)
+        if match:
+            return int(match.group(1))
+    return 0
+
+
+def extract_review_verdict(review_text: str) -> str:
+    """Extract verdict from BEATRIX review."""
+    import re
+    patterns = [
+        r"(?:BEATRIX\s+)?Verdict[:\s]*\*?\*?(ACCEPT|CONDITIONAL ACCEPT|MAJOR REVISION|REJECT)",
+        r"\*\*(ACCEPT|CONDITIONAL ACCEPT|MAJOR REVISION|REJECT)\s*[–-]",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, review_text, re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+    return "UNKNOWN"
+
+
+def extract_review_tags(review_text: str) -> dict:
+    """Extract KB integration tags JSON from review."""
+    import re
+    try:
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', review_text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(1))
+    except:
+        pass
+    return {}
+
+
+@app.post("/api/documents/{doc_id}/review")
+async def create_document_review(doc_id: str, user=Depends(require_auth)):
+    """Generate a BEATRIX Behavioral Economics Review for a KB document."""
+    db = get_db()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+        # Extract method from tags
+        method = "unknown"
+        if doc.tags:
+            tag_list = doc.tags if isinstance(doc.tags, list) else doc.tags.split(",")
+            for t in tag_list:
+                if t.strip() in ["DiD", "RDD", "RCT", "SCM", "synthetic_control", "IV", "regression_discontinuity"]:
+                    method = t.strip()
+                    break
+
+        # Generate review
+        review_text = call_claude_review(
+            paper_content=doc.content[:35000] if doc.content else "",
+            paper_id=doc_id,
+            title=doc.title or "Untitled",
+            method=method
+        )
+
+        score = extract_review_score(review_text)
+        verdict = extract_review_verdict(review_text)
+        tags = extract_review_tags(review_text)
+
+        # Store review as new document in KB
+        content_hash = hashlib.sha256(review_text.encode("utf-8")).hexdigest()
+        review_doc = Document(
+            title=f"BEATRIX Review: {(doc.title or 'Untitled')[:80]}",
+            content=review_text,
+            source_type="text",
+            database_target="knowledge_base",
+            category="study",
+            language="en",
+            tags=["BEATRIX-review", "behavioral-economics"] + tags.get("bcm_dimensions", [])[:5],
+            status="indexed",
+            uploaded_by=user.get("sub"),
+            content_hash=content_hash,
+            doc_metadata={
+                "reviewed_doc_id": doc_id,
+                "reviewed_doc_title": doc.title,
+                "score": score,
+                "verdict": verdict,
+                "psi_dimensions": tags.get("psi_dimensions", []),
+                "behavioral_mechanisms": tags.get("behavioral_mechanisms", []),
+                "review_type": "beatrix_behavioral_economics"
+            }
+        )
+        db.add(review_doc)
+        db.commit()
+        db.refresh(review_doc)
+
+        # Embed for vector search
+        try:
+            embed_document(db, review_doc.id)
+        except: pass
+
+        # Push to GitHub
+        gh_path = f"papers/reviews/{doc_id}/review_beatrix.md"
+        gh_result = gh_put_file(GH_REPO, gh_path, review_text,
+                                f"review: BEATRIX BE Review – {(doc.title or 'Untitled')[:60]}")
+
+        return {
+            "review_id": str(review_doc.id),
+            "score": score,
+            "verdict": verdict,
+            "tags": tags,
+            "github": gh_result,
+            "review_preview": review_text[:500]
+        }
+    except HTTPException: raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Review generation failed for {doc_id}: {e}")
+        raise HTTPException(500, f"Review generation failed: {e}")
+    finally:
+        db.close()
+
+
+@app.post("/api/review/external")
+async def review_external_paper(request: Request, user=Depends(require_auth)):
+    """Review an external paper (e.g., APE GitHub) by URL or paper_id."""
+    import urllib.request as ureq, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    body = await request.json()
+    paper_url = body.get("paper_url", "")
+    paper_id = body.get("paper_id", "")
+
+    if not paper_url and not paper_id:
+        raise HTTPException(400, "paper_url or paper_id required")
+
+    # If paper_id looks like an APE paper, construct URL
+    if paper_id.startswith("apep_") and not paper_url:
+        paper_url = f"https://raw.githubusercontent.com/SocialCatalystLab/ape-papers/main/{paper_id}/v1/paper.tex"
+
+    # Fetch content
+    try:
+        req = ureq.Request(paper_url, headers={"User-Agent": "BEATRIX"})
+        content = ureq.urlopen(req, context=ctx, timeout=30).read().decode(errors="replace")
+    except Exception as e:
+        raise HTTPException(400, f"Could not fetch paper: {e}")
+
+    # Try to get metadata for APE papers
+    title = body.get("title", paper_id or "External Paper")
+    method = body.get("method", "unknown")
+    authoring_model = "unknown"
+
+    if paper_id.startswith("apep_"):
+        try:
+            meta_url = f"https://raw.githubusercontent.com/SocialCatalystLab/ape-papers/main/{paper_id}/v1/metadata.json"
+            req = ureq.Request(meta_url, headers={"User-Agent": "BEATRIX"})
+            meta = json.loads(ureq.urlopen(req, context=ctx, timeout=10).read())
+            title = meta.get("title", title)
+            method = meta.get("method", method)
+            authoring_model = meta.get("authoring_model", "unknown")
+        except: pass
+
+    # Generate review
+    review_text = call_claude_review(
+        paper_content=content[:35000],
+        paper_id=paper_id or "external",
+        title=title,
+        method=method,
+        model_name=authoring_model
+    )
+
+    score = extract_review_score(review_text)
+    verdict = extract_review_verdict(review_text)
+    tags = extract_review_tags(review_text)
+
+    # Optionally store in KB
+    store = body.get("store", True)
+    review_id = None
+    if store:
+        db = get_db()
+        try:
+            content_hash = hashlib.sha256(review_text.encode("utf-8")).hexdigest()
+            review_doc = Document(
+                title=f"BEATRIX Review: {title[:80]}",
+                content=review_text,
+                source_type="text",
+                database_target="knowledge_base",
+                category="study",
+                language="en",
+                tags=["BEATRIX-review", "behavioral-economics", "external-review"] + tags.get("bcm_dimensions", [])[:5],
+                status="indexed",
+                uploaded_by=user.get("sub"),
+                content_hash=content_hash,
+                doc_metadata={
+                    "reviewed_paper_id": paper_id,
+                    "reviewed_paper_url": paper_url,
+                    "score": score, "verdict": verdict,
+                    "review_type": "beatrix_behavioral_economics"
+                }
+            )
+            db.add(review_doc); db.commit(); db.refresh(review_doc)
+            review_id = str(review_doc.id)
+            try: embed_document(db, review_doc.id)
+            except: pass
+        except: db.rollback()
+        finally: db.close()
+
+    # Push to GitHub if APE paper
+    gh_result = {}
+    if paper_id.startswith("apep_"):
+        gh_path = f"papers/external/ape/analysis/{paper_id}/review_beatrix.md"
+        gh_result = gh_put_file(GH_REPO, gh_path, review_text,
+                                f"review: BEATRIX BE Review – {paper_id}")
+
+    return {
+        "review_id": review_id,
+        "paper_id": paper_id,
+        "title": title,
+        "score": score,
+        "verdict": verdict,
+        "tags": tags,
+        "github": gh_result,
+        "review": review_text
+    }
+
+
+@app.post("/api/review/batch")
+async def batch_review_papers(request: Request, user=Depends(require_auth)):
+    """Batch review multiple papers. Accepts list of paper_ids (APE) or doc_ids (KB)."""
+    import urllib.request as ureq, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+    body = await request.json()
+    paper_ids = body.get("paper_ids", [])
+    source = body.get("source", "ape")  # "ape" or "kb"
+    store = body.get("store", True)
+
+    if not paper_ids:
+        raise HTTPException(400, "paper_ids required")
+    if len(paper_ids) > 20:
+        raise HTTPException(400, "Max 20 papers per batch")
+
+    results = []
+    for pid in paper_ids:
+        try:
+            if source == "ape" and pid.startswith("apep_"):
+                # Fetch from APE GitHub
+                tex_url = f"https://raw.githubusercontent.com/SocialCatalystLab/ape-papers/main/{pid}/v1/paper.tex"
+                meta_url = f"https://raw.githubusercontent.com/SocialCatalystLab/ape-papers/main/{pid}/v1/metadata.json"
+
+                req = ureq.Request(tex_url, headers={"User-Agent": "BEATRIX"})
+                content = ureq.urlopen(req, context=ctx, timeout=30).read().decode(errors="replace")
+
+                title = pid
+                method = "unknown"
+                try:
+                    req = ureq.Request(meta_url, headers={"User-Agent": "BEATRIX"})
+                    meta = json.loads(ureq.urlopen(req, context=ctx, timeout=10).read())
+                    title = meta.get("title", pid)
+                    method = meta.get("method", "unknown")
+                except: pass
+
+                review_text = call_claude_review(content[:30000], pid, title, method)
+
+            elif source == "kb":
+                # Fetch from BEATRIX DB
+                db = get_db()
+                try:
+                    doc = db.query(Document).filter(Document.id == pid).first()
+                    if not doc:
+                        results.append({"paper_id": pid, "error": "not found"})
+                        continue
+                    review_text = call_claude_review(
+                        (doc.content or "")[:30000], pid, doc.title or pid)
+                    title = doc.title
+                finally:
+                    db.close()
+            else:
+                results.append({"paper_id": pid, "error": f"unknown source: {source}"})
+                continue
+
+            score = extract_review_score(review_text)
+            verdict = extract_review_verdict(review_text)
+
+            # Store if requested
+            review_id = None
+            if store:
+                db = get_db()
+                try:
+                    content_hash = hashlib.sha256(review_text.encode("utf-8")).hexdigest()
+                    review_doc = Document(
+                        title=f"BEATRIX Review: {title[:80]}",
+                        content=review_text,
+                        source_type="text",
+                        database_target="knowledge_base",
+                        category="study",
+                        language="en",
+                        tags=["BEATRIX-review", "behavioral-economics", "batch-review"],
+                        status="indexed",
+                        uploaded_by=user.get("sub"),
+                        content_hash=content_hash,
+                        doc_metadata={"reviewed_paper_id": pid, "score": score, "verdict": verdict,
+                                      "review_type": "beatrix_behavioral_economics"}
+                    )
+                    db.add(review_doc); db.commit(); db.refresh(review_doc)
+                    review_id = str(review_doc.id)
+                    try: embed_document(db, review_doc.id)
+                    except: pass
+                except: db.rollback()
+                finally: db.close()
+
+            results.append({
+                "paper_id": pid,
+                "title": title,
+                "review_id": review_id,
+                "score": score,
+                "verdict": verdict,
+                "review_preview": review_text[:300]
+            })
+
+        except Exception as e:
+            results.append({"paper_id": pid, "error": str(e)})
+
+    return {
+        "reviews": results,
+        "total": len(results),
+        "successful": len([r for r in results if "score" in r]),
+        "failed": len([r for r in results if "error" in r])
+    }
