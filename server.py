@@ -6570,6 +6570,45 @@ async def analyze_text(request: Request, user=Depends(require_auth)):
     total_length = body.get("total_length", len(text))  # Frontend sends actual text length
     if not text or len(text) < 100:
         return {"ok": False, "error": "Text zu kurz für Analyse"}
+    return await _run_text_analysis(text, total_length)
+
+@app.post("/api/file/analyze")
+async def analyze_file(file: UploadFile = File(...), user=Depends(require_auth)):
+    """Analyze an uploaded file (PDF, DOCX, TXT etc.) without storing it.
+    Extracts text, runs paper detection, Content Level, Integration Level, EBF classification."""
+    ext = file.filename.split(".")[-1].lower() if file.filename else ""
+    if ext not in {"pdf", "txt", "md", "docx", "csv", "json"}:
+        return {"ok": False, "error": f"Dateityp .{ext} nicht unterstützt"}
+    content_bytes = await file.read()
+    if len(content_bytes) > MAX_FILE_SIZE:
+        return {"ok": False, "error": "Datei zu groß (max 50 MB)"}
+    # Save to temp file for extraction
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
+        tmp.write(content_bytes)
+        tmp_path = tmp.name
+    try:
+        text = extract_text(tmp_path, ext)
+        if not text or len(text) < 50:
+            return {"ok": False, "error": "Kein Text extrahierbar"}
+        total_length = len(text)
+        # Send first 10k for analysis (same as text preview), full length for Content Level
+        preview_text = text[:10000]
+        result = await _run_text_analysis(preview_text, total_length)
+        result["filename"] = file.filename
+        result["file_ext"] = ext
+        result["file_size"] = len(content_bytes)
+        return result
+    except Exception as e:
+        logger.error(f"File analyze error for {file.filename}: {e}")
+        return {"ok": False, "error": f"Analyse fehlgeschlagen: {str(e)}"}
+    finally:
+        import os
+        try: os.unlink(tmp_path)
+        except: pass
+
+async def _run_text_analysis(text: str, total_length: int) -> dict:
+    """Shared analysis logic for both text and file analyze endpoints."""
 
     # ═══════════════════════════════════════════════════════
     # STEP 1: Paper detection (instant, no API call)
