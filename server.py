@@ -12394,7 +12394,7 @@ Be direct and unflinching. No diplomatic hedging."""
 5. External validity: Does this generalize beyond the specific context studied?
 Score 0-100. Verdict: ACCEPT / MINOR REVISION / MAJOR REVISION / REJECT.
 Be concrete about implementation barriers and opportunities."""
-    }
+    },
     "contrarian": {
         "name": "Contrarian (Haiku)",
         "icon": "⚡",
