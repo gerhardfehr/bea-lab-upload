@@ -12336,6 +12336,51 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 XAI_API_KEY = os.getenv("XAI_API_KEY", "")
 
+# Persistent key storage in DB (survives Railway restarts)
+def _init_reviewer_keys_table():
+    try:
+        db = get_db()
+        db.execute(text("""CREATE TABLE IF NOT EXISTS reviewer_keys (
+            provider VARCHAR(50) PRIMARY KEY,
+            api_key TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT NOW()
+        )"""))
+        db.commit()
+        db.close()
+    except: pass
+
+def _load_keys_from_db():
+    global OPENAI_API_KEY, GOOGLE_API_KEY, XAI_API_KEY
+    try:
+        db = get_db()
+        rows = db.execute(text("SELECT provider, api_key FROM reviewer_keys")).fetchall()
+        for row in rows:
+            p, k = row[0], row[1]
+            if p == "openai" and not OPENAI_API_KEY: OPENAI_API_KEY = k
+            elif p == "google" and not GOOGLE_API_KEY: GOOGLE_API_KEY = k
+            elif p == "xai" and not XAI_API_KEY: XAI_API_KEY = k
+        db.close()
+        loaded = [p for p, _ in rows]
+        if loaded: print(f"[BOOT] Reviewer keys loaded from DB: {loaded}")
+    except Exception as e:
+        print(f"[BOOT] Key load from DB failed (first run?): {e}")
+
+def _save_key_to_db(provider: str, api_key: str):
+    try:
+        db = get_db()
+        db.execute(text("""INSERT INTO reviewer_keys (provider, api_key, updated_at)
+            VALUES (:p, :k, NOW()) ON CONFLICT (provider) DO UPDATE
+            SET api_key = :k, updated_at = NOW()"""), {"p": provider, "k": api_key})
+        db.commit()
+        db.close()
+    except: pass
+
+# Init on startup
+try:
+    _init_reviewer_keys_table()
+    _load_keys_from_db()
+except: pass
+
 REVIEWER_CONFIGS = {
     "beatrix": {
         "name": "BEATRIX (Claude)",
@@ -12692,11 +12737,14 @@ async def set_reviewer_keys(request: Request, user=Depends(require_auth)):
     updated = []
     if "openai" in body and body["openai"]:
         OPENAI_API_KEY = body["openai"]
+        _save_key_to_db("openai", body["openai"])
         updated.append("openai")
     if "google" in body and body["google"]:
         GOOGLE_API_KEY = body["google"]
+        _save_key_to_db("google", body["google"])
         updated.append("google")
     if "xai" in body and body["xai"]:
         XAI_API_KEY = body["xai"]
+        _save_key_to_db("xai", body["xai"])
         updated.append("xai")
-    return {"updated": updated, "message": f"Keys set for: {', '.join(updated)}. Note: Runtime only, set env vars for persistence."}
+    return {"updated": updated, "message": f"Keys set and persisted for: {', '.join(updated)}. Will survive restarts."}
