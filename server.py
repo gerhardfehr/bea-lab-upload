@@ -6641,10 +6641,50 @@ async def chat_session_messages(session_id: str, user=Depends(require_auth)):
 
 @app.get("/api/chat/sessions")
 async def chat_sessions(user=Depends(require_auth)):
-    """List all chat sessions for the current user."""
+    """List all chat sessions for the current user. Auto-closes sessions inactive >24h."""
     db = get_db()
     try:
         from sqlalchemy import func as sql_func
+        from datetime import timedelta
+
+        # Auto-close sessions inactive for >24h
+        try:
+            cutoff = datetime.utcnow() - timedelta(hours=24)
+            stale = db.execute(text("""
+                SELECT cs.id FROM chat_sessions cs
+                WHERE cs.user_email = :email
+                  AND (cs.session_type IS NULL OR cs.session_type != 'closed')
+                  AND cs.updated_at < :cutoff
+            """), {"email": user["sub"], "cutoff": cutoff}).fetchall()
+
+            for row in stale:
+                sid = row[0]
+                # Get message count and first user message for title
+                msg_info = db.execute(text("""
+                    SELECT COUNT(*), MIN(created_at), MAX(created_at)
+                    FROM chat_messages WHERE session_id = :sid
+                """), {"sid": sid}).fetchone()
+                preview = db.execute(text(
+                    "SELECT content FROM chat_messages WHERE session_id = :sid AND role = 'user' ORDER BY created_at ASC LIMIT 1"
+                ), {"sid": sid}).fetchone()
+                title = (preview[0][:80] if preview else "")
+                dur = round((msg_info[2] - msg_info[1]).total_seconds() / 60, 1) if msg_info[1] and msg_info[2] else 0
+
+                db.execute(text("""
+                    UPDATE chat_sessions
+                    SET session_type = 'closed', title = COALESCE(NULLIF(title,''), :title),
+                        summary = COALESCE(NULLIF(summary,''), 'Auto-geschlossen nach 24h Inaktivität'),
+                        msg_count = :cnt, duration_min = :dur, closed_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :sid
+                """), {"sid": sid, "title": title, "cnt": msg_info[0] or 0, "dur": dur})
+                logger.info(f"Auto-closed stale session {sid} (>24h inactive)")
+            if stale:
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"Auto-close error: {e}")
+
         sessions = db.query(
             ChatMessage.session_id,
             sql_func.count(ChatMessage.id).label("msg_count"),
@@ -6657,12 +6697,13 @@ async def chat_sessions(user=Depends(require_auth)):
         result = []
         for s in sessions:
             st_row = db.execute(text(
-                "SELECT session_type, title, summary, closed_at FROM chat_sessions WHERE id = :sid"
+                "SELECT session_type, title, summary, closed_at, updated_at FROM chat_sessions WHERE id = :sid"
             ), {"sid": s.session_id}).fetchone()
             st = st_row[0] if st_row else "general"
             title = (st_row[1] or "") if st_row else ""
             summary = (st_row[2] or "") if st_row else ""
             closed_at = st_row[3].isoformat() if st_row and st_row[3] else None
+            updated_at = st_row[4].isoformat() if st_row and len(st_row) > 4 and st_row[4] else s.last_msg_at.isoformat()
             st_info = SESSION_TYPES.get(st, SESSION_TYPES.get("general", {}))
 
             # Auto-preview from first user message if no title
@@ -6680,6 +6721,7 @@ async def chat_sessions(user=Depends(require_auth)):
                 "title": title, "summary": summary,
                 "messages": s.msg_count,
                 "started_at": s.started_at.isoformat(),
+                "updated_at": updated_at,
                 "last_message": s.last_msg_at.isoformat(),
                 "closed_at": closed_at,
                 "duration_minutes": round(duration_sec / 60, 1),
