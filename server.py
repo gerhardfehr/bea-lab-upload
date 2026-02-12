@@ -7336,7 +7336,30 @@ async def find_paper_pdf(request: Request, user=Depends(require_auth)):
         except Exception as e:
             logger.debug(f"CORE error: {e}")
 
-    # 5. Construct known URLs
+    # 5. DuckDuckGo web search for hosted PDFs
+    search_q = f"{author} {year} {title} filetype:pdf".strip()[:150]
+    if search_q:
+        try:
+            ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(search_q)}"
+            req = ur.Request(ddg_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
+            resp_bytes = ur.urlopen(req, context=ctx2, timeout=10).read().decode(errors='replace')
+            import re
+            raw_links = re.findall(r'uddg=([^&"]+)', resp_bytes)
+            seen = set(r["url"] for r in results)
+            for raw in raw_links:
+                link = urllib.parse.unquote(raw)
+                if '.pdf' in link.lower() and link.startswith('http') and link not in seen:
+                    # Determine source from domain
+                    domain = link.split('/')[2] if len(link.split('/')) > 2 else ''
+                    short_domain = '.'.join(domain.split('.')[-2:]) if domain else 'Web'
+                    results.append({"source": f"Web ({short_domain})", "url": link, "type": "pdf"})
+                    seen.add(link)
+                    if len([r for r in results if r["type"] == "pdf"]) >= 6:
+                        break
+        except Exception as e:
+            logger.debug(f"DDG search error: {e}")
+
+    # 6. Construct known URLs
     if doi:
         # DOI landing page always works
         results.append({"source": "DOI.org", "url": f"https://doi.org/{doi}", "type": "landing"})
