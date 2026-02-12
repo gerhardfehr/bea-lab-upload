@@ -3349,8 +3349,102 @@ async def admin_reset_password(user_id: str, request: Request, user=Depends(requ
         target.password_salt = pw_salt
         db.commit()
         logger.info(f"Admin password reset: {target.email}")
-        return {"email": target.email, "status": "password_reset"}
+
+        # Auto-send notification email if requested
+        data_notify = data.get("notify", True)
+        email_sent = False
+        if data_notify and RESEND_API_KEY:
+            email_sent = send_admin_notification(
+                to_email=target.email,
+                to_name=target.name or target.email.split("@")[0],
+                subject="🔐 BEATRIX – Dein Passwort wurde zurückgesetzt",
+                template="password_reset",
+                context={"new_password": new_pw}
+            )
+
+        return {"email": target.email, "status": "password_reset", "email_sent": email_sent}
     finally: db.close()
+
+# ═══════════════════════════════════════════════════════════════
+# ADMIN: Send notification email
+# ═══════════════════════════════════════════════════════════════
+def send_admin_notification(to_email: str, to_name: str, subject: str, template: str = "generic", context: dict = None):
+    """Send admin notification email via Resend. Supports templates: password_reset, welcome, generic."""
+    if not RESEND_API_KEY:
+        logger.warning("RESEND_API_KEY not set, cannot send notification")
+        return False
+    import urllib.request, ssl
+    ctx_ssl = ssl.create_default_context(); ctx_ssl.check_hostname = False; ctx_ssl.verify_mode = ssl.CERT_NONE
+    context = context or {}
+
+    # ── Templates ──
+    if template == "password_reset":
+        body_html = f"""
+        <p style="margin:0 0 12px;color:#e2e8f0">Hallo {to_name},</p>
+        <p style="margin:0 0 16px;color:#94a3b8">Dein BEATRIX-Passwort wurde soeben zurückgesetzt.</p>
+        <div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:16px;margin:16px 0">
+            <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Neue Login-Daten</div>
+            <div style="color:#e2e8f0"><strong>E-Mail:</strong> {to_email}</div>
+            <div style="color:#e2e8f0;margin-top:4px"><strong>Passwort:</strong> {context.get('new_password', '(nicht angezeigt)')}</div>
+            <div style="color:#e2e8f0;margin-top:4px"><strong>URL:</strong> <a href="{APP_URL}" style="color:#2a7f8e">{APP_URL.replace('https://','')}</a></div>
+        </div>
+        <p style="margin:16px 0 0;font-size:12px;color:#64748b">Bitte ändere dein Passwort nach dem ersten Login.</p>"""
+    elif template == "welcome":
+        body_html = f"""
+        <p style="margin:0 0 12px;color:#e2e8f0">Hallo {to_name},</p>
+        <p style="margin:0 0 16px;color:#94a3b8">Willkommen bei BEATRIX! Dein Account wurde eingerichtet.</p>
+        <div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:16px;margin:16px 0">
+            <div style="color:#e2e8f0"><strong>URL:</strong> <a href="{APP_URL}" style="color:#2a7f8e">{APP_URL.replace('https://','')}</a></div>
+        </div>
+        <p style="margin:16px 0 0;font-size:12px;color:#64748b">{context.get('message', '')}</p>"""
+    else:  # generic
+        body_html = f"""
+        <p style="margin:0 0 12px;color:#e2e8f0">Hallo {to_name},</p>
+        <p style="margin:0 0 16px;color:#94a3b8">{context.get('message', 'Dies ist eine Benachrichtigung von BEATRIX.')}</p>"""
+
+    html = f"""<div style="font-family:system-ui,-apple-system,sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0a1628;color:#e2e8f0;border-radius:16px">
+    <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:28px;font-weight:700;color:#2a7f8e">BEATRIX</div>
+        <div style="font-size:12px;color:#64748b;letter-spacing:1px">BEHAVIORAL ECONOMICS LAB</div>
+    </div>
+    <div style="background:rgba(42,127,142,0.08);border:1px solid rgba(42,127,142,0.2);border-radius:12px;padding:24px;margin:20px 0">
+        {body_html}
+    </div>
+    <div style="text-align:center;margin-top:24px">
+        <a href="{APP_URL}" style="display:inline-block;background:#2a7f8e;color:white;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600">Jetzt einloggen →</a>
+    </div>
+    <div style="text-align:center;margin-top:24px;font-size:11px;color:#475569">BEATRIX · FehrAdvice &amp; Partners AG · Zürich</div>
+    </div>"""
+
+    payload = json.dumps({
+        "from": EMAIL_FROM,
+        "to": [to_email],
+        "subject": subject,
+        "html": html,
+    }).encode()
+    try:
+        req = urllib.request.Request("https://api.resend.com/emails", data=payload, method="POST",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab/3.7"})
+        resp = json.loads(urllib.request.urlopen(req, context=ctx_ssl).read())
+        logger.info(f"Admin notification sent to {to_email}: {resp.get('id','?')}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send notification to {to_email}: {e}")
+        return False
+
+@app.post("/api/admin/notify")
+async def admin_send_notification(request: Request, user=Depends(require_permission("platform.manage_users"))):
+    """Admin sends a notification email to any user. Templates: password_reset, welcome, generic."""
+    data = await request.json()
+    to_email = data.get("email", "").strip()
+    if not to_email: raise HTTPException(400, "E-Mail-Adresse erforderlich")
+    to_name = data.get("name", to_email.split("@")[0])
+    subject = data.get("subject", "BEATRIX – Benachrichtigung")
+    template = data.get("template", "generic")
+    context = data.get("context", {})
+    sent = send_admin_notification(to_email, to_name, subject, template, context)
+    if not sent: raise HTTPException(500, "E-Mail konnte nicht gesendet werden")
+    return {"status": "sent", "email": to_email, "template": template}
 
 @app.put("/api/admin/users/{user_id}/toggle-admin")
 async def admin_toggle_admin(user_id: str, request: Request, user=Depends(require_permission("platform.manage_roles"))):
