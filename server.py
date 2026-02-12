@@ -9060,6 +9060,64 @@ async def get_project_landing(slug: str, user=Depends(require_auth)):
     except Exception as e:
         logger.warning(f"Landing: other projects error: {e}")
 
+    # 5. Find other BEATRIX projects with same customer (from data/projects/)
+    if customer_code:
+        try:
+            prj_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects"
+            req_prj = urllib.request.Request(prj_url, headers=gh)
+            prj_dirs = json.loads(urllib.request.urlopen(req_prj, context=ctx, timeout=15).read())
+            for pd in prj_dirs:
+                if pd["type"] != "dir" or pd["name"] == slug:
+                    continue
+                # Check if slug starts with customer code
+                if pd["name"].startswith(customer_code + "-") or pd["name"].startswith(customer_code.replace("-", "") + "-"):
+                    # Load minimal project info
+                    try:
+                        p_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{pd['name']}/project.yaml"
+                        req_p = urllib.request.Request(p_url, headers=gh_raw)
+                        p_data = yaml.safe_load(urllib.request.urlopen(req_p, context=ctx, timeout=10).read().decode()) or {}
+                        p_meta = p_data.get("metadata", {})
+                        p_proj = p_data.get("project", {})
+                        result["other_projects"].append({
+                            "name": p_proj.get("name") or p_meta.get("name") or pd["name"],
+                            "slug": pd["name"],
+                            "project_code": p_meta.get("project_code") or "",
+                            "status": p_meta.get("status") or "planning",
+                            "source": "github"
+                        })
+                    except:
+                        pass
+        except Exception as e:
+            logger.warning(f"Landing: project scan error: {e}")
+
+    # 6. Load manually linked projects
+    linked = project_data.get("linked_projects", [])
+    result["linked_projects"] = []
+    for link in linked:
+        link_slug = link.get("slug", "")
+        if not link_slug:
+            continue
+        try:
+            lp_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{link_slug}/project.yaml"
+            req_lp = urllib.request.Request(lp_url, headers=gh_raw)
+            lp_data = yaml.safe_load(urllib.request.urlopen(req_lp, context=ctx, timeout=10).read().decode()) or {}
+            lp_meta = lp_data.get("metadata", {})
+            lp_proj = lp_data.get("project", {})
+            result["linked_projects"].append({
+                "name": lp_proj.get("name") or lp_meta.get("name") or link_slug,
+                "slug": link_slug,
+                "project_code": lp_meta.get("project_code") or "",
+                "status": lp_meta.get("status") or "planning",
+                "type": link.get("type", "related"),
+                "note": link.get("note", "")
+            })
+        except:
+            result["linked_projects"].append({
+                "name": link_slug, "slug": link_slug,
+                "project_code": "", "status": "unknown",
+                "type": link.get("type", "related"), "note": link.get("note", "")
+            })
+
     # ── Merge DB edits (project_edits table) ──
     try:
         db = get_db()
@@ -9113,6 +9171,95 @@ def _get_customer_folders():
         return folders
     except:
         return _customer_folders_cache["data"]
+
+@app.post("/api/projects/{slug}/link")
+async def link_project(slug: str, request: Request, user=Depends(require_auth)):
+    """Add a linked project to this project's YAML"""
+    import urllib.request, ssl, yaml
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab"}
+    gh_raw = {**gh, "Accept": "application/vnd.github.v3.raw"}
+
+    body = await request.json()
+    target_slug = body.get("target_slug", "")
+    link_type = body.get("type", "related")
+    note = body.get("note", "")
+
+    if not target_slug or target_slug == slug:
+        raise HTTPException(400, "Ungültiges Ziel-Projekt")
+
+    # Load current project.yaml
+    try:
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{slug}/project.yaml"
+        req = urllib.request.Request(url, headers=gh_raw)
+        project_data = yaml.safe_load(urllib.request.urlopen(req, context=ctx, timeout=15).read().decode()) or {}
+    except:
+        raise HTTPException(404, f"Projekt '{slug}' nicht gefunden")
+
+    # Add link (avoid duplicates)
+    linked = project_data.get("linked_projects", [])
+    if any(l.get("slug") == target_slug for l in linked):
+        return {"status": "already_linked"}
+
+    linked.append({"slug": target_slug, "type": link_type, "note": note, "added_by": user.email, "added_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())})
+    project_data["linked_projects"] = linked
+
+    # Save to GitHub
+    try:
+        import base64
+        yaml_content = yaml.dump(project_data, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        sha_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{slug}/project.yaml"
+        req_sha = urllib.request.Request(sha_url, headers={"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"})
+        sha = json.loads(urllib.request.urlopen(req_sha, context=ctx, timeout=15).read()).get("sha")
+        payload = json.dumps({"message": f"link: {slug} ↔ {target_slug} ({link_type})", "content": base64.b64encode(yaml_content.encode("utf-8")).decode(), "sha": sha})
+        req_put = urllib.request.Request(sha_url, data=payload.encode("utf-8"), method="PUT", headers=gh)
+        urllib.request.urlopen(req_put, context=ctx, timeout=15)
+        logger.info(f"Project linked: {slug} → {target_slug} ({link_type}) by {user.email}")
+    except Exception as e:
+        logger.error(f"Link save error: {e}")
+        raise HTTPException(500, f"Fehler beim Speichern: {e}")
+
+    return {"status": "linked", "target": target_slug, "type": link_type}
+
+
+@app.delete("/api/projects/{slug}/link/{target_slug}")
+async def unlink_project(slug: str, target_slug: str, user=Depends(require_auth)):
+    """Remove a linked project"""
+    import urllib.request, ssl, yaml
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json", "User-Agent": "BEATRIXLab"}
+    gh_raw = {**gh, "Accept": "application/vnd.github.v3.raw"}
+
+    try:
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{slug}/project.yaml"
+        req = urllib.request.Request(url, headers=gh_raw)
+        project_data = yaml.safe_load(urllib.request.urlopen(req, context=ctx, timeout=15).read().decode()) or {}
+    except:
+        raise HTTPException(404, f"Projekt '{slug}' nicht gefunden")
+
+    linked = project_data.get("linked_projects", [])
+    new_linked = [l for l in linked if l.get("slug") != target_slug]
+    if len(new_linked) == len(linked):
+        return {"status": "not_found"}
+
+    project_data["linked_projects"] = new_linked
+
+    try:
+        import base64
+        yaml_content = yaml.dump(project_data, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        sha_url = f"https://api.github.com/repos/{GH_REPO}/contents/data/projects/{slug}/project.yaml"
+        req_sha = urllib.request.Request(sha_url, headers={"Authorization": f"token {GH_TOKEN}", "User-Agent": "BEATRIXLab"})
+        sha = json.loads(urllib.request.urlopen(req_sha, context=ctx, timeout=15).read()).get("sha")
+        payload = json.dumps({"message": f"unlink: {slug} ↔ {target_slug}", "content": base64.b64encode(yaml_content.encode("utf-8")).decode(), "sha": sha})
+        req_put = urllib.request.Request(sha_url, data=payload.encode("utf-8"), method="PUT", headers=gh)
+        urllib.request.urlopen(req_put, context=ctx, timeout=15)
+        logger.info(f"Project unlinked: {slug} → {target_slug} by {user.email}")
+    except Exception as e:
+        logger.error(f"Unlink save error: {e}")
+        raise HTTPException(500, f"Fehler beim Speichern: {e}")
+
+    return {"status": "unlinked", "target": target_slug}
+
 
 @app.put("/api/projects/{slug}")
 async def update_project(slug: str, request: Request, user=Depends(require_auth)):
