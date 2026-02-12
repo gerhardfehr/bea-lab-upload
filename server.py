@@ -6575,6 +6575,34 @@ async def close_chat_session(session_id: str, user=Depends(require_auth)):
     finally:
         db.close()
 
+@app.delete("/api/chat/session/{session_id}")
+async def delete_chat_session(session_id: str, user=Depends(require_auth)):
+    """Permanently delete a chat session and all its messages."""
+    db = get_db()
+    try:
+        # Verify ownership
+        sess = db.execute(text(
+            "SELECT id FROM chat_sessions WHERE id = :sid AND user_email = :email"
+        ), {"sid": session_id, "email": user["sub"]}).fetchone()
+        if not sess:
+            raise HTTPException(404, "Session not found")
+
+        # Delete messages first, then session
+        db.execute(text("DELETE FROM chat_messages WHERE session_id = :sid"), {"sid": session_id})
+        db.execute(text("DELETE FROM chat_sessions WHERE id = :sid"), {"sid": session_id})
+        db.commit()
+        logger.info(f"Session {session_id} deleted by {user['sub']}")
+        return {"session_id": session_id, "status": "deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Session delete error: {e}")
+        raise HTTPException(500, str(e))
+    finally:
+        db.close()
+
+
 @app.get("/api/chat/session/{session_id}/messages")
 async def chat_session_messages(session_id: str, user=Depends(require_auth)):
     """Get full conversation history of a session (own sessions only)."""
