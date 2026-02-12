@@ -4090,23 +4090,45 @@ def extract_paper_metadata(text: str, filename: str = "") -> dict:
         break
 
     # ── Author: look for name patterns near the top ──
-    author_patterns = [
-        # "FirstName LastName" or "F. LastName" patterns
-        r'(?:^|\n)\s*((?:[A-Z][a-zäöü]+\.?\s+){1,3}[A-Z][a-zäöüA-ZÄÖÜß]+)(?:\s*[\*†,\d]|\s*\n)',
-        # "LastName, FirstName" pattern
-        r'(?:^|\n)\s*([A-Z][a-zäöü]+,\s+[A-Z][a-zäöü]+)',
-        # Multiple authors: "Author1 and Author2"
-        r'(?:^|\n)\s*([A-Z][a-zäöü]+(?:\s+[A-Z][a-zäöü]+)*)\s+(?:and|und|&)\s+',
-    ]
+    # Strategy: find lines between title and abstract/venue that look like author names
+    author_blacklist = {'vol', 'no', 'pp', 'ed', 'eds', 'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+                        'jul', 'aug', 'sep', 'oct', 'nov', 'dec', 'the', 'and', 'for', 'doi',
+                        'abstract', 'introduction', 'econometrica', 'quarterly', 'journal',
+                        'review', 'american', 'economic', 'political', 'science', 'annual',
+                        'university', 'institute', 'department', 'working', 'paper', 'discussion',
+                        'national', 'bureau', 'research', 'electronic', 'copy', 'available'}
+
+    def is_valid_author(name):
+        parts = name.strip().split()
+        if not parts: return False
+        for p in parts:
+            if p.lower().rstrip('.,') in author_blacklist: return False
+            if len(p) < 2: return False
+        return True
+
+    # First: try "FirstName LastName and FirstName LastName" pattern (most reliable)
     text_top = text[:3000]
-    for pat in author_patterns:
-        m = re.search(pat, text_top)
-        if m:
-            candidate = m.group(1).strip().rstrip('*†,0123456789')
-            # Validate: not too long, not a title word
-            if 3 < len(candidate) < 40 and candidate != title[:len(candidate)]:
-                author = candidate
-                break
+    # Pattern 1: "FirstName [M.] LastName and FirstName [M.] LastName" (most reliable)
+    m = re.search(r'(?:^|\n)\s*([A-Z][a-zäöüé]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-zäöüéA-ZÄÖÜß]+)\s+(?:and|und|&)\s+([A-Z][a-zäöüé]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-zäöüéA-ZÄÖÜß]+)', text_top)
+    if m and is_valid_author(m.group(1)):
+        author = m.group(1)
+    else:
+        # Search only AFTER the title line for single-author patterns
+        title_pos = text_top.find(title) + len(title) if title else 0
+        search_text = text_top[title_pos:]
+        author_patterns = [
+            # "FirstName M. LastName" or "FirstName LastName" on own line
+            r'(?:^|\n)\s*((?:[A-Z][a-zäöüé]+\.?\s+)(?:[A-Z]\.?\s+)?[A-Z][a-zäöüéA-ZÄÖÜß]+)\s*[\*†\n]',
+            # "LastName, FirstName" pattern
+            r'(?:^|\n)\s*([A-Z][a-zäöüé]+,\s+[A-Z][a-zäöüé]+)',
+        ]
+        for pat in author_patterns:
+            m = re.search(pat, search_text)
+            if m:
+                candidate = m.group(1).strip().rstrip('*†,0123456789 ')
+                if is_valid_author(candidate):
+                    author = candidate
+                    break
 
     # Fallback: extract from filename if pattern like "Author_Year_Title" or "Author (Year)"
     if not author and filename:
