@@ -6473,6 +6473,7 @@ async def analyze_text(request: Request, user=Depends(require_auth)):
     estimate Integration Level (I1-I5), extract EBF metadata via Claude."""
     body = await request.json()
     text = (body.get("text", "") or "").strip()
+    total_length = body.get("total_length", len(text))  # Frontend sends actual text length
     if not text or len(text) < 100:
         return {"ok": False, "error": "Text zu kurz für Analyse"}
 
@@ -6489,7 +6490,7 @@ async def analyze_text(request: Request, user=Depends(require_auth)):
     # L2 = Full template (~6k chars, has structured YAML-worthy content)
     # L3 = Full text (>50k chars)
     # ═══════════════════════════════════════════════════════
-    text_len = len(text)
+    text_len = total_length  # Use actual document length, not truncated preview length
     has_abstract = any(s in text[:5000].lower() for s in ["abstract", "zusammenfassung"])
     # Implicit abstract detection: substantial text block before "Introduction" without explicit label
     if not has_abstract:
