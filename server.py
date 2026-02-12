@@ -751,14 +751,16 @@ def get_db():
             raise HTTPException(503, "Datenbank nicht bereit")
     return _SessionLocal()
 
-def push_to_github(filename, content_bytes):
-    """Push uploaded file to GitHub papers/evaluated/integrated/ in the context repo."""
+def push_to_github(filename, content_bytes, folder=None):
+    """Push uploaded file to GitHub in the context repo.
+    folder: custom path like 'books/' or 'studies/' – defaults to papers/evaluated/integrated/"""
     if not GH_TOKEN:
         logger.warning("GH_TOKEN not set, skipping GitHub push")
         return {"error": "GH_TOKEN not configured"}
     import urllib.request, ssl
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-    path = f"{GH_UPLOAD_PATH}/{filename}"
+    base_path = folder if folder else GH_UPLOAD_PATH
+    path = f"{base_path}/{filename}"
     url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
     headers = {"Authorization": f"token {GH_TOKEN}", "Content-Type": "application/json",
                "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
@@ -6756,20 +6758,24 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
         with open(file_path, "wb") as f: f.write(content_bytes)
         text_content = extract_text(str(file_path), ext)
 
-        # Book detection: books are NOT papers, don't push to GitHub
+        # Book detection: books go to GitHub books/ folder
         book_det = detect_book(text_content)
         if book_det["is_book"]:
             logger.info(f"Book detected for '{file.filename}': score={book_det['score']}, isbn={book_det.get('isbn')}, signals={book_det['signals']}")
+            gh_result = push_to_github(file.filename, content_bytes, folder="books") or {}
+            github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
+            gh_status = "indexed+github" if github_url else "indexed"
             doc_title = title or file.filename or "Unnamed"
             doc = Document(
                 id=file_id, title=doc_title, content=text_content,
                 source_type="file", file_type=ext, file_path=str(file_path),
-                file_size=len(content_bytes), database_target=database, status="indexed",
-                uploaded_by=user.get("sub"), content_hash=content_hash,
+                file_size=len(content_bytes), database_target=database, status=gh_status,
+                github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash,
                 category=category or "book", language=language or None, tags=parsed_tags or None,
                 doc_metadata={
                     "original_filename": file.filename,
                     "content_length": len(text_content),
+                    "github": gh_result or {},
                     "book_detected": True,
                     "book_score": book_det["score"],
                     "book_signals": book_det["signals"],
@@ -6780,22 +6786,26 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
             db.add(doc); db.commit(); db.refresh(doc)
             try: embed_document(db, doc.id)
             except Exception as e: logger.warning(f"Embedding failed for {file.filename}: {e}")
-            return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=None)
+            return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=github_url)
 
-        # Study/Report detection: studies are NOT papers, don't push to GitHub
+        # Study/Report detection: studies go to GitHub studies/ folder
         study_det = detect_study_report(text_content, file.filename)
         if study_det["is_study"]:
             logger.info(f"Study/Report detected for '{file.filename}': score={study_det['score']}, type={study_det.get('study_type')}, org={study_det.get('org')}, signals={study_det['signals']}")
+            gh_result = push_to_github(file.filename, content_bytes, folder="studies") or {}
+            github_url = gh_result.get("url", None) if isinstance(gh_result, dict) else None
+            gh_status = "indexed+github" if github_url else "indexed"
             doc_title = title or file.filename or "Unnamed"
             doc = Document(
                 id=file_id, title=doc_title, content=text_content,
                 source_type="file", file_type=ext, file_path=str(file_path),
-                file_size=len(content_bytes), database_target=database, status="indexed",
-                uploaded_by=user.get("sub"), content_hash=content_hash,
+                file_size=len(content_bytes), database_target=database, status=gh_status,
+                github_url=github_url, uploaded_by=user.get("sub"), content_hash=content_hash,
                 category=category or "study", language=language or None, tags=parsed_tags or None,
                 doc_metadata={
                     "original_filename": file.filename,
                     "content_length": len(text_content),
+                    "github": gh_result or {},
                     "study_detected": True,
                     "study_score": study_det["score"],
                     "study_signals": study_det["signals"],
@@ -6806,7 +6816,7 @@ async def upload_file(file: UploadFile = File(...), database: str = Form("knowle
             db.add(doc); db.commit(); db.refresh(doc)
             try: embed_document(db, doc.id)
             except Exception as e: logger.warning(f"Embedding failed for {file.filename}: {e}")
-            return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=None)
+            return DocumentResponse(id=doc.id, title=doc.title, source_type=doc.source_type, file_type=doc.file_type, database_target=doc.database_target, status=doc.status, created_at=doc.created_at.isoformat(), github_url=github_url)
 
         # Paper detection: only push papers to GitHub papers/evaluated/integrated/
         detection = detect_scientific_paper(text_content)
