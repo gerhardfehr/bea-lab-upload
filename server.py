@@ -7159,23 +7159,22 @@ async def delete_document(doc_id: str, user=Depends(require_permission("document
 @app.on_event("startup")
 async def startup_embed():
     """On startup, embed any documents that don't have embeddings yet."""
-    # ── Fix admin passwords if needed ──
+    # ── Ensure admin accounts are active ──
     try:
         db = get_db()
         admin_emails = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
         for email in admin_emails:
             user = db.query(User).filter(User.email == email).first()
             if user:
-                pw_hash, pw_salt = hash_password("BeatrixLab2026!")
-                user.password_hash = pw_hash
-                user.password_salt = pw_salt
                 user.email_verified = True
                 user.is_active = True
-                logger.info(f"Startup: reset password for {email}")
+                if not user.role or user.role != "admin":
+                    user.role = "admin"
+                    logger.info(f"Startup: ensured admin role for {email}")
         db.commit()
         db.close()
     except Exception as e:
-        logger.warning(f"Startup password reset error: {e}")
+        logger.warning(f"Startup admin check error: {e}")
 
     if not VOYAGE_API_KEY:
         logger.info("No VOYAGE_API_KEY set — vector search disabled, using keyword fallback")
