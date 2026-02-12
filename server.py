@@ -9614,6 +9614,132 @@ async def sync_project_to_github(slug: str, user=Depends(require_auth)):
     
     return {"ok": True, "synced": synced, "failed": failed}
 
+
+# ========== PROJECT DELIVERABLE FILES ==========
+
+@app.get("/api/projects/{slug}/deliverables/files")
+async def list_deliverable_files(slug: str, user=Depends(require_auth)):
+    """List all files in a project's deliverables folder on GitHub."""
+    if not GH_TOKEN:
+        return {"files": [], "error": "GitHub not configured"}
+    import urllib.request as ur, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
+    path = f"data/projects/{slug}/deliverables"
+    url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+    try:
+        req = ur.Request(url, headers=gh)
+        items = json.loads(ur.urlopen(req, context=ctx, timeout=15).read())
+        files = []
+        for item in items:
+            if item["type"] == "file":
+                files.append({
+                    "name": item["name"],
+                    "size": item["size"],
+                    "sha": item["sha"],
+                    "download_url": item.get("download_url", ""),
+                    "html_url": item.get("html_url", ""),
+                })
+        return {"files": files, "path": path}
+    except Exception as e:
+        if "404" in str(e):
+            return {"files": [], "path": path}
+        return {"files": [], "error": str(e)}
+
+
+@app.post("/api/projects/{slug}/deliverables/upload")
+async def upload_deliverable_file(slug: str, file: UploadFile = File(...),
+                                   deliverable_name: Optional[str] = Form(None),
+                                   user=Depends(require_auth)):
+    """Upload a file to a project's deliverables folder on GitHub."""
+    if not GH_TOKEN:
+        raise HTTPException(500, "GitHub not configured")
+    import urllib.request as ur, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json",
+          "User-Agent": "BEATRIXLab", "Content-Type": "application/json"}
+
+    content_bytes = await file.read()
+    if len(content_bytes) > 50 * 1024 * 1024:
+        raise HTTPException(400, "Datei zu gross (max 50 MB)")
+
+    # Sanitize filename
+    import re
+    safe_name = re.sub(r'[^\w\s\-.]', '', file.filename or "unnamed").strip()
+    safe_name = re.sub(r'\s+', '_', safe_name)
+    if not safe_name:
+        safe_name = f"deliverable_{uuid.uuid4().hex[:8]}"
+
+    path = f"data/projects/{slug}/deliverables/{safe_name}"
+    url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+
+    # Check if file exists (for update)
+    sha = None
+    try:
+        req = ur.Request(url, headers={k: v for k, v in gh.items() if k != "Content-Type"})
+        resp = json.loads(ur.urlopen(req, context=ctx, timeout=15).read())
+        sha = resp.get("sha")
+    except:
+        pass
+
+    payload = {
+        "message": f"deliverable: {slug} – {safe_name}" + (f" ({deliverable_name})" if deliverable_name else ""),
+        "content": base64.b64encode(content_bytes).decode(),
+        "branch": "main"
+    }
+    if sha:
+        payload["sha"] = sha
+
+    try:
+        req = ur.Request(url, data=json.dumps(payload).encode("utf-8"), method="PUT", headers=gh)
+        resp = json.loads(ur.urlopen(req, context=ctx, timeout=30).read())
+        result = {
+            "ok": True,
+            "name": safe_name,
+            "size": len(content_bytes),
+            "html_url": resp.get("content", {}).get("html_url", ""),
+            "download_url": resp.get("content", {}).get("download_url", ""),
+            "sha": resp.get("content", {}).get("sha", ""),
+            "deliverable_name": deliverable_name,
+        }
+        logger.info(f"Deliverable file uploaded: {slug}/{safe_name} ({len(content_bytes)} bytes)")
+        return result
+    except Exception as e:
+        logger.error(f"Deliverable upload failed: {e}")
+        raise HTTPException(500, f"Upload fehlgeschlagen: {e}")
+
+
+@app.delete("/api/projects/{slug}/deliverables/files/{filename}")
+async def delete_deliverable_file(slug: str, filename: str, user=Depends(require_auth)):
+    """Delete a file from a project's deliverables folder on GitHub."""
+    if not GH_TOKEN:
+        raise HTTPException(500, "GitHub not configured")
+    import urllib.request as ur, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json",
+          "User-Agent": "BEATRIXLab", "Content-Type": "application/json"}
+
+    path = f"data/projects/{slug}/deliverables/{filename}"
+    url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+
+    # Get SHA
+    try:
+        req = ur.Request(url, headers={k: v for k, v in gh.items() if k != "Content-Type"})
+        resp = json.loads(ur.urlopen(req, context=ctx, timeout=15).read())
+        sha = resp["sha"]
+    except:
+        raise HTTPException(404, "Datei nicht gefunden")
+
+    payload = {"message": f"delete deliverable: {slug} – {filename}", "sha": sha, "branch": "main"}
+    try:
+        req = ur.Request(url, data=json.dumps(payload).encode("utf-8"), method="DELETE", headers=gh)
+        ur.urlopen(req, context=ctx, timeout=15)
+        logger.info(f"Deliverable file deleted: {slug}/{filename}")
+        return {"ok": True, "deleted": filename}
+    except Exception as e:
+        raise HTTPException(500, f"Löschen fehlgeschlagen: {e}")
+
+
 @app.post("/api/crm/companies")
 async def crm_create_company(request: Request, user=Depends(require_permission("crm.write"))):
     import yaml as _yaml
