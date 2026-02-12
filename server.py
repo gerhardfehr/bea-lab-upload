@@ -7265,8 +7265,8 @@ async def get_paper_upload_priority(user=Depends(require_auth)):
 
 @app.post("/api/papers/find-pdf")
 async def find_paper_pdf(request: Request, user=Depends(require_auth)):
-    """Search for Open Access PDF via Unpaywall, Semantic Scholar, CORE."""
-    import urllib.request as ur, ssl, urllib.parse
+    """Search for exact paper PDF. Strategy: exact title web search first, then DOI-based APIs."""
+    import urllib.request as ur, ssl, urllib.parse, re
     body = await request.json()
     doi = body.get("doi", "")
     title = body.get("title", "")
@@ -7275,8 +7275,52 @@ async def find_paper_pdf(request: Request, user=Depends(require_auth)):
 
     ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
     results = []
+    seen = set()
 
-    # 1. Unpaywall (best for OA)
+    def add_result(source, url, rtype="pdf"):
+        if url and url not in seen:
+            seen.add(url)
+            results.append({"source": source, "url": url, "type": rtype})
+
+    def ddg_search(query, max_pdfs=5):
+        """Search DuckDuckGo and return PDF URLs."""
+        try:
+            ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+            req = ur.Request(ddg_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
+            resp_bytes = ur.urlopen(req, context=ctx2, timeout=10).read().decode(errors='replace')
+            raw_links = re.findall(r'uddg=([^&"]+)', resp_bytes)
+            found = []
+            for raw in raw_links:
+                link = urllib.parse.unquote(raw)
+                if '.pdf' in link.lower() and link.startswith('http') and link not in seen:
+                    domain = link.split('/')[2] if len(link.split('/')) > 2 else ''
+                    short_domain = '.'.join(domain.split('.')[-2:]) if domain else 'Web'
+                    found.append((f"Web ({short_domain})", link))
+                    if len(found) >= max_pdfs:
+                        break
+            return found
+        except Exception as e:
+            logger.debug(f"DDG search error: {e}")
+            return []
+
+    # === STRATEGY: Exact title search first, then DOI-based APIs ===
+
+    # 1. DuckDuckGo EXACT title search (finds university-hosted PDFs: Stanford, UCLA, UCSD etc.)
+    if title:
+        clean_title = title.split(":")[0].strip() if len(title.split(":")[0]) > 20 else title
+        exact_q = f'\"{clean_title}\" filetype:pdf'
+        logger.info(f"PDF-Finder Step 1: DDG exact → {exact_q[:80]}")
+        for source, url in ddg_search(exact_q, max_pdfs=4):
+            add_result(source, url)
+
+    # 2. DuckDuckGo author+year+title (broader, catches different title formats)
+    if len([r for r in results if r["type"] == "pdf"]) < 3:
+        broad_q = f"{author} {year} {title} filetype:pdf".strip()[:150]
+        logger.info(f"PDF-Finder Step 2: DDG broad → {broad_q[:80]}")
+        for source, url in ddg_search(broad_q, max_pdfs=3):
+            add_result(source, url)
+
+    # 3. Unpaywall (DOI only – reliable official OA versions)
     if doi:
         try:
             url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi, safe='')}?email=gerhard.fehr@fehradvice.com"
@@ -7286,99 +7330,54 @@ async def find_paper_pdf(request: Request, user=Depends(require_auth)):
                 best = resp.get("best_oa_location") or {}
                 pdf_url = best.get("url_for_pdf") or best.get("url")
                 if pdf_url:
-                    results.append({"source": "Unpaywall", "url": pdf_url, "type": "pdf" if best.get("url_for_pdf") else "landing"})
-                # Check all OA locations
-                for loc in (resp.get("oa_locations") or []):
-                    loc_url = loc.get("url_for_pdf")
-                    if loc_url and not any(r["url"] == loc_url for r in results):
-                        results.append({"source": f"Unpaywall ({loc.get('host_type','')})", "url": loc_url, "type": "pdf"})
+                    add_result("Unpaywall", pdf_url, "pdf" if best.get("url_for_pdf") else "landing")
+                for loc in resp.get("oa_locations", [])[:3]:
+                    loc_url = loc.get("url_for_pdf") or loc.get("url")
+                    if loc_url:
+                        add_result(f"Unpaywall ({loc.get('host_type','')})", loc_url, "pdf" if loc.get("url_for_pdf") else "landing")
         except Exception as e:
             logger.debug(f"Unpaywall error: {e}")
 
-    # 2. Semantic Scholar
+    # 4. Semantic Scholar (DOI only! Title search returns wrong papers)
     if doi:
         try:
-            url = f"https://api.semanticscholar.org/graph/v1/paper/DOI:{urllib.parse.quote(doi, safe='')}?fields=openAccessPdf,title,externalIds"
+            url = f"https://api.semanticscholar.org/graph/v1/paper/DOI:{urllib.parse.quote(doi, safe='')}?fields=openAccessPdf,title"
             req = ur.Request(url, headers={"User-Agent": "BEATRIX/1.0"})
             resp = json.loads(ur.urlopen(req, context=ctx2, timeout=8).read())
             oa = resp.get("openAccessPdf") or {}
             if oa.get("url"):
-                if not any(r["url"] == oa["url"] for r in results):
-                    results.append({"source": "Semantic Scholar", "url": oa["url"], "type": "pdf"})
+                add_result("Semantic Scholar", oa["url"])
         except Exception as e:
-            logger.debug(f"S2 error: {e}")
+            logger.debug(f"S2 DOI error: {e}")
 
-    # 3. Semantic Scholar by title (if no DOI or no results yet)
-    if not results and title:
+    # 5. CORE (DOI only!)
+    if doi:
         try:
-            q = urllib.parse.quote(title[:100])
-            url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={q}&limit=3&fields=openAccessPdf,title,year"
+            url = f"https://api.core.ac.uk/v3/search/works?q=doi:{urllib.parse.quote(doi, safe='')}%limit=2"
             req = ur.Request(url, headers={"User-Agent": "BEATRIX/1.0"})
             resp = json.loads(ur.urlopen(req, context=ctx2, timeout=8).read())
-            for p in (resp.get("data") or []):
-                oa = p.get("openAccessPdf") or {}
-                if oa.get("url"):
-                    results.append({"source": f"S2 Search", "url": oa["url"], "type": "pdf", "match_title": p.get("title","")[:80]})
-        except Exception as e:
-            logger.debug(f"S2 search error: {e}")
-
-    # 4. CORE (European OA)
-    if not results and title:
-        try:
-            q = urllib.parse.quote(f"{author} {title}"[:100])
-            url = f"https://api.core.ac.uk/v3/search/works?q={q}&limit=3"
-            req = ur.Request(url, headers={"User-Agent": "BEATRIX/1.0"})
-            resp = json.loads(ur.urlopen(req, context=ctx2, timeout=8).read())
-            for r in (resp.get("results") or []):
-                dl = r.get("downloadUrl")
+            for hit in resp.get("results", [])[:2]:
+                dl = hit.get("downloadUrl")
                 if dl:
-                    results.append({"source": "CORE", "url": dl, "type": "pdf", "match_title": r.get("title","")[:80]})
+                    add_result("CORE", dl)
         except Exception as e:
             logger.debug(f"CORE error: {e}")
 
-    # 5. DuckDuckGo web search for hosted PDFs
-    search_q = f"{author} {year} {title} filetype:pdf".strip()[:150]
-    if search_q:
-        try:
-            ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(search_q)}"
-            req = ur.Request(ddg_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
-            resp_bytes = ur.urlopen(req, context=ctx2, timeout=10).read().decode(errors='replace')
-            import re
-            raw_links = re.findall(r'uddg=([^&"]+)', resp_bytes)
-            seen = set(r["url"] for r in results)
-            for raw in raw_links:
-                link = urllib.parse.unquote(raw)
-                if '.pdf' in link.lower() and link.startswith('http') and link not in seen:
-                    # Determine source from domain
-                    domain = link.split('/')[2] if len(link.split('/')) > 2 else ''
-                    short_domain = '.'.join(domain.split('.')[-2:]) if domain else 'Web'
-                    results.append({"source": f"Web ({short_domain})", "url": link, "type": "pdf"})
-                    seen.add(link)
-                    if len([r for r in results if r["type"] == "pdf"]) >= 6:
-                        break
-        except Exception as e:
-            logger.debug(f"DDG search error: {e}")
-
-    # 6. Construct known URLs
+    # 6. Fallback links
     if doi:
-        # DOI landing page always works
-        results.append({"source": "DOI.org", "url": f"https://doi.org/{doi}", "type": "landing"})
-        # Sci-Hub alternative hint (not linked)
-        # NBER working papers
+        add_result("DOI.org", f"https://doi.org/{doi}", "landing")
         if "nber" in doi.lower() or "3386" in doi:
             nber_id = doi.split("/")[-1].replace("w","")
-            results.append({"source": "NBER", "url": f"https://www.nber.org/papers/w{nber_id}", "type": "landing"})
-    
-    # Google Scholar search link
+            add_result("NBER", f"https://www.nber.org/papers/w{nber_id}", "landing")
+
     scholar_q = urllib.parse.quote(f'{author} {year} {title}'[:150])
-    results.append({"source": "Google Scholar", "url": f"https://scholar.google.com/scholar?q={scholar_q}", "type": "search"})
+    add_result("Google Scholar", f"https://scholar.google.com/scholar?q={scholar_q}", "search")
 
     return {
         "doi": doi, "title": title, "author": author, "year": year,
         "found": len([r for r in results if r["type"] == "pdf"]),
         "results": results
     }
-
 
 @app.post("/api/papers/fetch-and-upload")
 async def fetch_and_upload_pdf(request: Request, user=Depends(require_auth)):
@@ -7437,6 +7436,29 @@ async def fetch_and_upload_pdf(request: Request, user=Depends(require_auth)):
 
         # 4. Extract text
         text_content = extract_text(str(file_path), ext)
+
+        # 4b. TITLE VERIFICATION – check the fetched PDF is actually the right paper
+        if hint_title and text_content:
+            # Extract significant words from expected title (>3 chars, not stopwords)
+            stopwords = {"the","and","for","with","from","that","this","into","than","also","have","been","were","they","their","which","about","would","there","could","other","more","some","these","only","over","such","after","most","then","them","will","each","made","like","long","many","much","very","just","before","between","through","during","without","within","against","among","across","under","above","below","along","since","upon","around","toward","towards"}
+            title_words = [w.lower() for w in hint_title.split() if len(w) > 3 and w.lower() not in stopwords]
+            if title_words:
+                text_lower = text_content[:5000].lower()  # Check first 5000 chars (title page)
+                matched = sum(1 for w in title_words if w in text_lower)
+                match_ratio = matched / len(title_words) if title_words else 0
+                logger.info(f"Title verification: {matched}/{len(title_words)} words matched ({match_ratio:.0%}) for '{hint_title[:50]}'")
+                if match_ratio < 0.4:
+                    # This is probably the WRONG paper – reject it
+                    logger.warning(f"Title verification FAILED: expected '{hint_title[:50]}' but PDF text doesn't match (ratio={match_ratio:.0%})")
+                    # Clean up temp file
+                    try: os.remove(file_path)
+                    except: pass
+                    return JSONResponse(status_code=422, content={
+                        "verified": False,
+                        "match_ratio": round(match_ratio, 2),
+                        "expected_title": hint_title,
+                        "message": f"PDF enthält nicht das erwartete Paper. Titel-Match: {match_ratio:.0%}. Möglicherweise ein anderes Paper."
+                    })
 
         # 5. Detect paper
         detection = detect_scientific_paper(text_content, original_filename)
