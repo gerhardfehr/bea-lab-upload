@@ -49,6 +49,13 @@ GH_CONTEXT_REPO = os.getenv("GH_CONTEXT_REPO", "FehrAdvice-Partners-AG/complemen
 VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY", "")
 VOYAGE_MODEL = "voyage-3-lite"  # 512 dimensions, fast, free tier 200M tokens/month
 
+# NotebookLM Enterprise API config
+GCP_PROJECT_NUMBER = os.getenv("GCP_PROJECT_NUMBER", "368877792942")
+GCP_NOTEBOOKLM_LOCATION = os.getenv("GCP_NOTEBOOKLM_LOCATION", "eu")
+GCP_OAUTH_CLIENT_ID = os.getenv("GCP_OAUTH_CLIENT_ID", "")
+GCP_OAUTH_CLIENT_SECRET = os.getenv("GCP_OAUTH_CLIENT_SECRET", "")
+GCP_REFRESH_TOKEN = os.getenv("GCP_REFRESH_TOKEN", "")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
 
@@ -13872,4 +13879,162 @@ async def challenge_text(request: Request, user=Depends(require_auth)):
         "errors": errors,
         "synthesis": synthesis,
         "models_used": len(challenges)
+    }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NOTEBOOKLM ENTERPRISE INTEGRATION v1.0
+# Creates notebooks and adds paper text as source via Discovery Engine API
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _gcp_get_access_token():
+    """Get a fresh GCP access token using OAuth2 refresh token."""
+    if not GCP_REFRESH_TOKEN or not GCP_OAUTH_CLIENT_ID or not GCP_OAUTH_CLIENT_SECRET:
+        return None
+    import urllib.request as ureq, urllib.parse, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    data = urllib.parse.urlencode({
+        "client_id": GCP_OAUTH_CLIENT_ID,
+        "client_secret": GCP_OAUTH_CLIENT_SECRET,
+        "refresh_token": GCP_REFRESH_TOKEN,
+        "grant_type": "refresh_token"
+    }).encode()
+    req = ureq.Request("https://oauth2.googleapis.com/token", data=data, method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=15).read())
+        return resp.get("access_token")
+    except Exception as e:
+        logger.error(f"GCP token refresh failed: {e}")
+        return None
+
+def _notebooklm_api(method, path, body=None, access_token=None):
+    """Call NotebookLM Enterprise API via Discovery Engine."""
+    token = access_token or _gcp_get_access_token()
+    if not token:
+        return {"error": "No GCP access token available. Configure GCP_REFRESH_TOKEN."}
+    import urllib.request as ureq, ssl
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    loc = GCP_NOTEBOOKLM_LOCATION
+    base = f"https://{loc}-discoveryengine.googleapis.com/v1alpha/projects/{GCP_PROJECT_NUMBER}/locations/{loc}"
+    url = f"{base}{path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    data = json.dumps(body).encode() if body else None
+    req = ureq.Request(url, data=data, method=method, headers=headers)
+    try:
+        resp = json.loads(ureq.urlopen(req, context=ctx, timeout=30).read())
+        return resp
+    except Exception as e:
+        error_body = ""
+        if hasattr(e, 'read'):
+            try: error_body = json.loads(e.read())
+            except: pass
+        return {"error": str(e), "details": error_body}
+
+class NotebookLMRequest(BaseModel):
+    title: str = "BEATRIX Paper"
+    text: Optional[str] = None
+    source_name: Optional[str] = None
+    url: Optional[str] = None
+    paper_id: Optional[str] = None
+
+@app.get("/api/notebooklm/status")
+async def notebooklm_status(user=Depends(require_auth)):
+    """Check if NotebookLM Enterprise is configured."""
+    configured = bool(GCP_REFRESH_TOKEN and GCP_OAUTH_CLIENT_ID and GCP_OAUTH_CLIENT_SECRET)
+    return {
+        "configured": configured,
+        "project_number": GCP_PROJECT_NUMBER,
+        "location": GCP_NOTEBOOKLM_LOCATION,
+        "enterprise_url": f"https://notebooklm.cloud.google.com/{GCP_NOTEBOOKLM_LOCATION}/?project={GCP_PROJECT_NUMBER}",
+        "missing": [k for k, v in {
+            "GCP_OAUTH_CLIENT_ID": GCP_OAUTH_CLIENT_ID,
+            "GCP_OAUTH_CLIENT_SECRET": GCP_OAUTH_CLIENT_SECRET,
+            "GCP_REFRESH_TOKEN": GCP_REFRESH_TOKEN
+        }.items() if not v]
+    }
+
+@app.post("/api/notebooklm/create")
+async def notebooklm_create(body: NotebookLMRequest, user=Depends(require_auth)):
+    """Create a NotebookLM notebook and add paper text/URL as source.
+    
+    Flow: Create notebook → Add source (text or URL) → Return notebook link.
+    User clicks link → opens Enterprise UI → clicks Infographic/Slide Deck.
+    """
+    # If paper_id given, fetch text from database
+    text_content = body.text
+    source_name = body.source_name or body.title
+    
+    if body.paper_id and not text_content:
+        session = SessionLocal()
+        try:
+            doc = session.execute(
+                text("SELECT title, extracted_text FROM documents WHERE id = :id"),
+                {"id": body.paper_id}
+            ).fetchone()
+            if doc:
+                source_name = doc[0] or source_name
+                text_content = doc[1]
+                if not body.title or body.title == "BEATRIX Paper":
+                    body.title = f"BEATRIX: {source_name[:80]}"
+            else:
+                raise HTTPException(404, "Paper not found")
+        finally:
+            session.close()
+    
+    if not text_content and not body.url:
+        raise HTTPException(400, "Provide text, url, or paper_id")
+    
+    # Step 1: Create notebook
+    logger.info(f"NotebookLM: Creating notebook '{body.title}'")
+    nb_result = _notebooklm_api("POST", "/notebooks", {"title": body.title})
+    
+    if "error" in nb_result:
+        raise HTTPException(502, f"Failed to create notebook: {nb_result}")
+    
+    notebook_id = nb_result.get("notebookId")
+    if not notebook_id:
+        raise HTTPException(502, f"No notebook ID returned: {nb_result}")
+    
+    logger.info(f"NotebookLM: Notebook created: {notebook_id}")
+    
+    # Step 2: Add source
+    if text_content:
+        source_body = {
+            "userContents": [{
+                "textContent": {
+                    "sourceName": source_name[:200],
+                    "content": text_content[:500000]  # API limit
+                }
+            }]
+        }
+    elif body.url:
+        source_body = {
+            "userContents": [{
+                "webContent": {
+                    "url": body.url,
+                    "sourceName": source_name[:200]
+                }
+            }]
+        }
+    
+    src_result = _notebooklm_api("POST", f"/notebooks/{notebook_id}/sources:batchCreate", source_body)
+    
+    if "error" in src_result:
+        logger.warning(f"NotebookLM: Source add failed (notebook still created): {src_result}")
+    
+    # Build enterprise UI link
+    loc = GCP_NOTEBOOKLM_LOCATION
+    notebook_url = f"https://notebooklm.cloud.google.com/{loc}/?project={GCP_PROJECT_NUMBER}#notebook={notebook_id}"
+    
+    return {
+        "success": True,
+        "notebook_id": notebook_id,
+        "notebook_url": notebook_url,
+        "title": body.title,
+        "source_added": "error" not in src_result,
+        "source_type": "text" if text_content else "url",
+        "message": f"Notebook ready! Open the link and click 'Infographic' or 'Slide Deck' in the Studio panel."
     }
