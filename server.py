@@ -7637,6 +7637,10 @@ async def pdf_view_proxy(url: str = ""):
     import urllib.request as ur, ssl, re
     if not url:
         raise HTTPException(400, "url parameter required")
+    # Re-encode spaces and special chars that get decoded by the web server
+    from urllib.parse import quote, urlparse, urlunparse
+    parsed = urlparse(url)
+    url = urlunparse(parsed._replace(path=quote(parsed.path, safe='/')))
     # Only allow PDF URLs from known academic sources
     allowed = ['caltech.edu', 'uzh.ch', 'zora.uzh.ch', 'nber.org', 'ssrn.com', 'arxiv.org', 'repec.org',
                'iza.org', 'briq-institute.org', 'princeton.edu', 'harvard.edu', 'stanford.edu', 'mit.edu',
