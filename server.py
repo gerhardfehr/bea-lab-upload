@@ -7633,56 +7633,33 @@ async def fetch_and_upload_pdf(request: Request, user=Depends(require_auth)):
 
 
 @app.get("/api/pdf-view")
-async def pdf_view_proxy(url: str = ""):
-    """Proxy a PDF and serve it inline (Content-Disposition: inline) so browsers display it instead of downloading."""
-    import urllib.request as ur, ssl, re
-    from urllib.parse import urlparse, quote, urlunparse
+async def pdf_view_page(url: str = ""):
+    """Serve a lightweight HTML page with embedded PDF viewer (works on iPad/Safari)."""
     if not url:
         raise HTTPException(400, "url parameter required")
-    # Re-encode spaces in URL path (FastAPI/Starlette decodes %20 to spaces)
-    parsed = urlparse(url)
-    url = urlunparse(parsed._replace(path=quote(parsed.path, safe='/')))
-    # Only allow PDF URLs from known academic sources
-    allowed = ['caltech.edu', 'uzh.ch', 'zora.uzh.ch', 'nber.org', 'ssrn.com', 'arxiv.org', 'repec.org',
-               'iza.org', 'briq-institute.org', 'princeton.edu', 'harvard.edu', 'stanford.edu', 'mit.edu',
-               'uchicago.edu', 'yale.edu', 'berkeley.edu', 'upenn.edu', 'duke.edu', 'cmu.edu', 'cornell.edu',
-               'ucla.edu', 'ucsd.edu', 'lse.ac.uk', 'warwick.ac.uk', 'nottingham.ac.uk', 'unibocconi.it',
-               'unifr.ch', 'ceu.edu', 'pitt.edu', 'amazonaws.com']
-    domain = parsed.hostname or ""
+    from urllib.parse import urlparse
+    import html as _html
+    domain = urlparse(url).hostname or ""
+    allowed = ['caltech.edu', 'uzh.ch', 'nber.org', 'ssrn.com', 'arxiv.org', 'iza.org',
+               'princeton.edu', 'harvard.edu', 'stanford.edu', 'mit.edu', 'uchicago.edu',
+               'yale.edu', 'berkeley.edu', 'upenn.edu', 'duke.edu', 'cmu.edu', 'cornell.edu',
+               'ucla.edu', 'ucsd.edu', 'lse.ac.uk', 'warwick.ac.uk', 'nottingham.ac.uk',
+               'unibocconi.it', 'unifr.ch', 'ceu.edu', 'pitt.edu', 'amazonaws.com']
     if not any(domain.endswith(a) for a in allowed):
         raise HTTPException(403, f"Domain not allowed: {domain}")
-    ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
-    try:
-        req = ur.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 BEATRIX/1.0"})
-        resp = ur.urlopen(req, context=ctx2, timeout=30)
-        content = resp.read()
-        ct = resp.headers.get("Content-Type", "")
-        if 'html' in ct.lower() or content[:20].lower().startswith((b'<!doctype', b'<html')):
-            match = re.search(r'citation_pdf_url.+?content="([^"]+)"', content.decode('utf-8', errors='ignore'))
-            if match:
-                resolved = match.group(1)
-                parsed2 = urlparse(resolved)
-                resolved = urlunparse(parsed2._replace(path=quote(parsed2.path, safe='/')))
-                req2 = ur.Request(resolved, headers={"User-Agent": "Mozilla/5.0 BEATRIX/1.0"})
-                resp2 = ur.urlopen(req2, context=ctx2, timeout=30)
-                content = resp2.read()
-                ct = "application/pdf"
-            else:
-                raise HTTPException(404, "No PDF found at this URL")
-        from starlette.responses import Response
-        filename = url.split("/")[-1].split("?")[0] or "paper.pdf"
-        return Response(
-            content=content,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'inline; filename="{filename}"',
-                "Cache-Control": "public, max-age=3600"
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Could not fetch PDF: {e}")
+    safe = _html.escape(url)
+    page = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BEATRIX PDF Viewer</title>
+<style>*{{margin:0;padding:0}}body{{background:#525659;display:flex;flex-direction:column;height:100vh;font-family:system-ui}}
+.tb{{background:#1a2332;padding:8px 16px;display:flex;align-items:center;gap:12px}}
+.tb a{{color:#fff;text-decoration:none;font-size:14px;padding:6px 14px;border-radius:6px;background:rgba(255,255,255,.15)}}
+.tb a:hover{{background:rgba(255,255,255,.25)}}.tb span{{color:rgba(255,255,255,.7);font-size:13px;flex:1}}
+iframe{{flex:1;border:none}}</style></head><body>
+<div class="tb"><a href="javascript:history.back()">← Zurück</a><span>BEATRIX Paper Viewer</span><a href="{safe}" download>⬇ Download</a></div>
+<iframe src="{safe}"></iframe></body></html>"""
+    from starlette.responses import HTMLResponse
+    return HTMLResponse(content=page)
 
 
 @app.post("/api/text/analyze")
