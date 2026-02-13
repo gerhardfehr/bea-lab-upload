@@ -7263,6 +7263,53 @@ async def get_paper_upload_priority(user=Depends(require_auth)):
         raise HTTPException(500, f"Konnte Priority-Liste nicht laden: {e}")
 
 
+# ========== PAPER FINDER SOURCES (verified researcher PDFs) ==========
+
+_paper_sources_cache = {"data": None, "ts": 0}
+
+@app.get("/api/papers/sources")
+async def get_paper_finder_sources(user=Depends(require_auth)):
+    """Serve verified researcher PDF sources from GitHub (cached 5 min).
+    Contains 352+ verified PDF URLs across 20+ researchers with discovery algorithm v3."""
+    import time
+    now = time.time()
+    if _paper_sources_cache["data"] and (now - _paper_sources_cache["ts"]) < 300:
+        return _paper_sources_cache["data"]
+
+    if not GH_TOKEN:
+        raise HTTPException(500, "GitHub not configured")
+    import urllib.request as ur, ssl
+    ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
+    try:
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/data/paper-finder-sources.json"
+        req = ur.Request(url, headers=gh)
+        resp = json.loads(ur.urlopen(req, context=ctx2, timeout=15).read())
+        data = json.loads(base64.b64decode(resp["content"]).decode())
+        _paper_sources_cache["data"] = data
+        _paper_sources_cache["ts"] = now
+        return data
+    except Exception as e:
+        logger.error(f"Paper sources fetch failed: {e}")
+        raise HTTPException(500, f"Konnte Sources nicht laden: {e}")
+
+@app.get("/api/papers/sources/{researcher}")
+async def get_researcher_sources(researcher: str, user=Depends(require_auth)):
+    """Get verified PDF sources for a specific researcher."""
+    all_sources = await get_paper_finder_sources(user)
+    researchers = all_sources.get("researchers", {})
+    # Try exact match first, then fuzzy
+    if researcher in researchers:
+        return {"researcher": researcher, **researchers[researcher]}
+    # Fuzzy: try replacing hyphens/spaces
+    normalized = researcher.lower().replace("-", "_").replace(" ", "_")
+    for key, val in researchers.items():
+        if key.lower() == normalized:
+            return {"researcher": key, **val}
+    available = sorted(researchers.keys())
+    raise HTTPException(404, f"Researcher '{researcher}' not found. Available: {', '.join(available)}")
+
+
 @app.post("/api/papers/find-pdf")
 async def find_paper_pdf(request: Request, user=Depends(require_auth)):
     """Search for exact paper PDF. Strategy: exact title web search first, then DOI-based APIs."""
