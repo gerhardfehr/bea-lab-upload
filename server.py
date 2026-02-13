@@ -7643,10 +7643,13 @@ async def pdf_view_proxy(url: str = ""):
                'uchicago.edu', 'yale.edu', 'berkeley.edu', 'upenn.edu', 'duke.edu', 'cmu.edu', 'cornell.edu',
                'ucla.edu', 'ucsd.edu', 'lse.ac.uk', 'warwick.ac.uk', 'nottingham.ac.uk', 'unibocconi.it',
                'unifr.ch', 'ceu.edu', 'pitt.edu', 'amazonaws.com']
-    from urllib.parse import urlparse
+    from urllib.parse import urlparse, quote
     domain = urlparse(url).hostname or ""
     if not any(domain.endswith(a) for a in allowed):
         raise HTTPException(403, f"Domain not allowed: {domain}")
+    # Re-encode spaces in URL path (FastAPI decodes %20 → space)
+    parsed = urlparse(url)
+    url = parsed._replace(path=quote(parsed.path, safe='/:@!$&'()*+,;=-._~')).geturl()
     ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
     try:
         # If URL is a record page, resolve to PDF first
