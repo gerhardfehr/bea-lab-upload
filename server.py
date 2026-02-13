@@ -7459,6 +7459,34 @@ async def fetch_and_upload_pdf(request: Request, user=Depends(require_auth)):
     except Exception as e:
         raise HTTPException(400, f"Could not fetch: {e}")
 
+    # === HTML→PDF RESOLUTION (Caltech InvenioRDM, etc.) ===
+    # If we got an HTML page instead of a PDF, try to extract the real PDF URL
+    # from the citation_pdf_url meta tag (standard for academic repositories).
+    is_html = 'html' in content_type.lower() or content_bytes[:50].lower().startswith((b'<!doctype', b'<html'))
+    if is_html:
+        import re as _re
+        html_text = content_bytes.decode('utf-8', errors='ignore')
+        pdf_meta = _re.search(r'<meta\s+name=["\'"]citation_pdf_url["\'"]\s+content=["\'"]([^"\'"]+)["\'"]', html_text)
+        if not pdf_meta:
+            pdf_meta = _re.search(r'content=["\'"]([^"\'"]+\.pdf)["\'"]\s+name=["\'"]citation_pdf_url["\'"]', html_text)
+        if pdf_meta:
+            resolved_url = pdf_meta.group(1)
+            logger.info(f"HTML→PDF resolved: {pdf_url[:60]} → {resolved_url[:80]}")
+            try:
+                req2 = ur.Request(resolved_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) BEATRIX/1.0"})
+                resp2 = ur.urlopen(req2, context=ctx2, timeout=30)
+                content_bytes = resp2.read()
+                content_type = resp2.headers.get("Content-Type", "")
+                pdf_url = resolved_url  # Update for filename extraction
+                if len(content_bytes) < 500:
+                    raise HTTPException(400, f"Resolved PDF too small ({len(content_bytes)} bytes)")
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(400, f"Could not fetch resolved PDF: {e}")
+        else:
+            raise HTTPException(400, "URL returned HTML instead of PDF — no citation_pdf_url meta tag found. Please use a direct PDF link.")
+
     is_pdf = content_bytes[:5] == b'%PDF-' or 'pdf' in content_type.lower()
     ext = "pdf" if is_pdf else "txt"
     original_filename = pdf_url.split("/")[-1].split("?")[0] or f"fetched.{ext}"
