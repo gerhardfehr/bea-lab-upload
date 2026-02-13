@@ -14001,6 +14001,9 @@ async def notebooklm_create(body: NotebookLMRequest, user=Depends(require_auth))
     logger.info(f"NotebookLM: Notebook created: {notebook_id}")
     
     # Step 2: Add source
+    source_type_used = "text" if text_content else "url"
+    src_result = {"error": "no source provided"}
+    
     if text_content:
         source_body = {
             "userContents": [{
@@ -14010,17 +14013,58 @@ async def notebooklm_create(body: NotebookLMRequest, user=Depends(require_auth))
                 }
             }]
         }
+        src_result = _notebooklm_api("POST", f"/notebooks/{notebook_id}/sources:batchCreate", source_body)
     elif body.url:
-        source_body = {
-            "userContents": [{
-                "webContent": {
-                    "url": body.url,
-                    "sourceName": source_name[:200]
-                }
-            }]
-        }
-    
-    src_result = _notebooklm_api("POST", f"/notebooks/{notebook_id}/sources:batchCreate", source_body)
+        # PDF URLs don't work with webContent - download and extract text
+        if body.url.lower().endswith(".pdf"):
+            logger.info(f"NotebookLM: PDF URL detected, downloading and extracting text...")
+            source_type_used = "pdf_text"
+            try:
+                import requests as req_lib
+                pdf_resp = req_lib.get(body.url, timeout=30)
+                pdf_resp.raise_for_status()
+                try:
+                    import fitz  # PyMuPDF
+                    doc = fitz.open(stream=pdf_resp.content, filetype="pdf")
+                    pdf_text = "\n\n".join(page.get_text() for page in doc)
+                    doc.close()
+                except ImportError:
+                    from io import BytesIO
+                    try:
+                        import pdfplumber
+                        with pdfplumber.open(BytesIO(pdf_resp.content)) as pdf:
+                            pdf_text = "\n\n".join(p.extract_text() or "" for p in pdf.pages)
+                    except ImportError:
+                        pdf_text = None
+                
+                if pdf_text and len(pdf_text.strip()) > 100:
+                    source_body = {
+                        "userContents": [{
+                            "textContent": {
+                                "sourceName": source_name[:200],
+                                "content": pdf_text[:500000]
+                            }
+                        }]
+                    }
+                    src_result = _notebooklm_api("POST", f"/notebooks/{notebook_id}/sources:batchCreate", source_body)
+                else:
+                    logger.warning("NotebookLM: PDF text extraction yielded no usable text")
+                    src_result = {"error": "PDF text extraction failed"}
+            except Exception as e:
+                logger.warning(f"NotebookLM: PDF download/extract failed: {e}")
+                src_result = {"error": f"PDF processing failed: {str(e)}"}
+        else:
+            # Regular web URL
+            source_type_used = "web_url"
+            source_body = {
+                "userContents": [{
+                    "webContent": {
+                        "url": body.url,
+                        "sourceName": source_name[:200]
+                    }
+                }]
+            }
+            src_result = _notebooklm_api("POST", f"/notebooks/{notebook_id}/sources:batchCreate", source_body)
     
     if "error" in src_result:
         logger.warning(f"NotebookLM: Source add failed (notebook still created): {src_result}")
@@ -14035,6 +14079,6 @@ async def notebooklm_create(body: NotebookLMRequest, user=Depends(require_auth))
         "notebook_url": notebook_url,
         "title": body.title,
         "source_added": "error" not in src_result,
-        "source_type": "text" if text_content else "url",
+        "source_type": source_type_used,
         "message": f"Notebook ready! Open the link and click 'Infographic' or 'Slide Deck' in the Studio panel."
     }
