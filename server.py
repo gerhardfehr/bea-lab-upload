@@ -7630,6 +7630,55 @@ async def fetch_and_upload_pdf(request: Request, user=Depends(require_auth)):
         db.close()
 
 
+
+@app.get("/api/pdf-view")
+async def pdf_view_proxy(url: str = ""):
+    """Proxy a PDF and serve it inline (Content-Disposition: inline) so browsers display it instead of downloading."""
+    import urllib.request as ur, ssl, re
+    if not url:
+        raise HTTPException(400, "url parameter required")
+    # Only allow PDF URLs from known academic sources
+    allowed = ['caltech.edu', 'uzh.ch', 'zora.uzh.ch', 'nber.org', 'ssrn.com', 'arxiv.org', 'repec.org',
+               'iza.org', 'briq-institute.org', 'princeton.edu', 'harvard.edu', 'stanford.edu', 'mit.edu',
+               'uchicago.edu', 'yale.edu', 'berkeley.edu', 'upenn.edu', 'duke.edu', 'cmu.edu', 'cornell.edu',
+               'ucla.edu', 'ucsd.edu', 'lse.ac.uk', 'warwick.ac.uk', 'nottingham.ac.uk', 'unibocconi.it',
+               'unifr.ch', 'ceu.edu', 'pitt.edu', 'amazonaws.com']
+    from urllib.parse import urlparse
+    domain = urlparse(url).hostname or ""
+    if not any(domain.endswith(a) for a in allowed):
+        raise HTTPException(403, f"Domain not allowed: {domain}")
+    ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+    try:
+        # If URL is a record page, resolve to PDF first
+        req = ur.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 BEATRIX/1.0"})
+        resp = ur.urlopen(req, context=ctx2, timeout=30)
+        content = resp.read()
+        ct = resp.headers.get("Content-Type", "")
+        # Check if we got HTML instead of PDF
+        if 'html' in ct.lower() or content[:20].lower().startswith((b'<!doctype', b'<html')):
+            match = re.search(r'citation_pdf_url.+?content="([^"]+)"', content.decode('utf-8', errors='ignore'))
+            if match:
+                req2 = ur.Request(match.group(1), headers={"User-Agent": "Mozilla/5.0 BEATRIX/1.0"})
+                resp2 = ur.urlopen(req2, context=ctx2, timeout=30)
+                content = resp2.read()
+                ct = "application/pdf"
+            else:
+                raise HTTPException(404, "No PDF found at this URL")
+        from starlette.responses import Response
+        filename = url.split("/")[-1].split("?")[0] or "paper.pdf"
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename=\"{filename}\"",
+                "Cache-Control": "public, max-age=3600"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Could not fetch PDF: {e}")
+
 @app.post("/api/text/analyze")
 async def analyze_text(request: Request, user=Depends(require_auth)):
     """Analyze pasted text: detect paper, classify Content Level (L0-L3),
