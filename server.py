@@ -7633,13 +7633,16 @@ async def fetch_and_upload_pdf(request: Request, user=Depends(require_auth)):
 
 
 @app.get("/api/pdf-view")
-async def pdf_view_page(url: str = ""):
-    """Serve a lightweight HTML page with embedded PDF viewer (works on iPad/Safari)."""
+async def pdf_view_proxy(url: str = ""):
+    """Proxy a PDF and serve it with Content-Disposition: inline so Safari/iPad displays it."""
     if not url:
         raise HTTPException(400, "url parameter required")
-    from urllib.parse import urlparse
-    import html as _html
-    domain = urlparse(url).hostname or ""
+    from urllib.parse import urlparse, quote, urlunparse
+    import urllib.request as ur, ssl
+    parsed = urlparse(url)
+    # Re-encode spaces that FastAPI/Starlette decoded
+    clean_url = urlunparse(parsed._replace(path=quote(parsed.path, safe='/')))
+    domain = parsed.hostname or ""
     allowed = ['caltech.edu', 'uzh.ch', 'nber.org', 'ssrn.com', 'arxiv.org', 'iza.org',
                'princeton.edu', 'harvard.edu', 'stanford.edu', 'mit.edu', 'uchicago.edu',
                'yale.edu', 'berkeley.edu', 'upenn.edu', 'duke.edu', 'cmu.edu', 'cornell.edu',
@@ -7647,19 +7650,31 @@ async def pdf_view_page(url: str = ""):
                'unibocconi.it', 'unifr.ch', 'ceu.edu', 'pitt.edu', 'amazonaws.com']
     if not any(domain.endswith(a) for a in allowed):
         raise HTTPException(403, f"Domain not allowed: {domain}")
-    safe = _html.escape(url)
-    page = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BEATRIX PDF Viewer</title>
-<style>*{{margin:0;padding:0}}body{{background:#525659;display:flex;flex-direction:column;height:100vh;font-family:system-ui}}
-.tb{{background:#1a2332;padding:8px 16px;display:flex;align-items:center;gap:12px}}
-.tb a{{color:#fff;text-decoration:none;font-size:14px;padding:6px 14px;border-radius:6px;background:rgba(255,255,255,.15)}}
-.tb a:hover{{background:rgba(255,255,255,.25)}}.tb span{{color:rgba(255,255,255,.7);font-size:13px;flex:1}}
-iframe{{flex:1;border:none}}</style></head><body>
-<div class="tb"><a href="javascript:history.back()">← Zurück</a><span>BEATRIX Paper Viewer</span><a href="{safe}" download>⬇ Download</a></div>
-<iframe src="{safe}"></iframe></body></html>"""
-    from starlette.responses import HTMLResponse
-    return HTMLResponse(content=page)
+    ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+    try:
+        req = ur.Request(clean_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 BEATRIX/1.0"})
+        resp = ur.urlopen(req, context=ctx2, timeout=60)
+        content_type = resp.headers.get("Content-Type", "application/pdf")
+        # Stream the response in chunks
+        from starlette.responses import StreamingResponse
+        def stream():
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+        fname = clean_url.split("/")[-1].split("?")[0] or "paper.pdf"
+        return StreamingResponse(
+            stream(),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{fname}"',
+                "Cache-Control": "public, max-age=3600",
+                "X-Content-Type-Options": "nosniff"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(502, f"Could not fetch PDF: {e}")
 
 
 @app.post("/api/text/analyze")
