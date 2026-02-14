@@ -14480,32 +14480,41 @@ async def _ai_triage_feedback(message: str, tab_context: str = None) -> dict:
     if not ANTHROPIC_API_KEY:
         return {"category": "other", "priority": "medium", "tier": 3, "summary": message[:100]}
     
-    import httpx
+    import urllib.request, ssl
     context = f"Tab: {tab_context}" if tab_context else "Unbekannt"
     
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
-                json={
-                    "model": ANTHROPIC_MODEL_LIGHT,
-                    "max_tokens": 500,
-                    "messages": [{"role": "user", "content": FEEDBACK_TRIAGE_PROMPT.format(
-                        message=message, context=context
-                    )}]
-                }
-            )
-            if resp.status_code == 200:
-                content = resp.json().get("content", [{}])[0].get("text", "{}")
-                # Extract JSON
-                if "```" in content:
-                    content = content.split("```")[1].replace("json", "").strip()
-                return json.loads(content)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        payload = json.dumps({
+            "model": ANTHROPIC_MODEL_LIGHT,
+            "max_tokens": 500,
+            "messages": [{"role": "user", "content": FEEDBACK_TRIAGE_PROMPT.format(
+                message=message, context=context
+            )}]
+        }).encode()
+        
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=payload,
+            method="POST",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            }
+        )
+        
+        resp = urllib.request.urlopen(req, context=ctx, timeout=20)
+        resp_data = json.loads(resp.read().decode())
+        content = resp_data.get("content", [{}])[0].get("text", "{}")
+        
+        # Extract JSON
+        if "```" in content:
+            content = content.split("```")[1].replace("json", "").strip()
+        return json.loads(content)
     except Exception as e:
         logger.warning(f"AI triage failed: {e}")
     
@@ -15040,7 +15049,7 @@ async def generate_feedback_solution(feedback_id: str, user=Depends(require_perm
         if not ANTHROPIC_API_KEY:
             raise HTTPException(400, "Anthropic API Key nicht konfiguriert")
         
-        import httpx
+        import urllib.request, ssl
         
         prompt = SOLUTION_PROMPT.format(
             message=feedback.message or "",
@@ -15049,52 +15058,57 @@ async def generate_feedback_solution(feedback_id: str, user=Depends(require_perm
             user_email=feedback.user_email or "unbekannt"
         )
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
-                json={
-                    "model": ANTHROPIC_MODEL_STANDARD,  # Use Sonnet for better solutions
-                    "max_tokens": 2000,
-                    "messages": [{"role": "user", "content": prompt}]
-                }
-            )
-            
-            if resp.status_code != 200:
-                raise HTTPException(500, f"Claude API Fehler: {resp.status_code}")
-            
-            content = resp.json().get("content", [{}])[0].get("text", "{}")
-            
-            # Extract JSON
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
-            
-            try:
-                solution = json.loads(content.strip())
-            except:
-                solution = {
-                    "problem_analysis": content[:500],
-                    "solution_description": "AI konnte keine strukturierte Lösung generieren",
-                    "solution_type": "manual"
-                }
-            
-            # Save to database
-            db.execute(text("""UPDATE feedback SET 
-                ai_solution_code = :code,
-                ai_summary = COALESCE(ai_summary, :summary)
-                WHERE id = :id"""),
-                {"code": json.dumps(solution, ensure_ascii=False), 
-                 "summary": solution.get("problem_analysis", "")[:200],
-                 "id": feedback_id})
-            db.commit()
-            
-            return {"solution": solution}
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        payload = json.dumps({
+            "model": ANTHROPIC_MODEL_STANDARD,
+            "max_tokens": 2000,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode()
+        
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=payload,
+            method="POST",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            }
+        )
+        
+        resp = urllib.request.urlopen(req, context=ctx, timeout=60)
+        resp_data = json.loads(resp.read().decode())
+        content = resp_data.get("content", [{}])[0].get("text", "{}")
+        
+        # Extract JSON
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0]
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0]
+        
+        try:
+            solution = json.loads(content.strip())
+        except:
+            solution = {
+                "problem_analysis": content[:500],
+                "solution_description": "AI konnte keine strukturierte Lösung generieren",
+                "solution_type": "manual"
+            }
+        
+        # Save to database
+        db.execute(text("""UPDATE feedback SET 
+            ai_solution_code = :code,
+            ai_summary = COALESCE(ai_summary, :summary)
+            WHERE id = :id"""),
+            {"code": json.dumps(solution, ensure_ascii=False), 
+             "summary": solution.get("problem_analysis", "")[:200],
+             "id": feedback_id})
+        db.commit()
+        
+        return {"solution": solution}
     
     except HTTPException:
         raise
