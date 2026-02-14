@@ -14896,3 +14896,94 @@ async def get_feedback_stats(user=Depends(require_permission("platform.admin_das
         db.close()
 
 logger.info("✅ Feedback Governance System v1.0 loaded")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FEEDBACK MIGRATION: Old → New Schema
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/admin/feedback/migrate")
+async def migrate_old_feedback(user=Depends(require_permission("platform.manage_settings"))):
+    """Migrate old feedback to new governance schema. One-time operation."""
+    db = get_db()
+    try:
+        # First, add new columns to existing feedback table if they don't exist
+        migrations = [
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS user_email VARCHAR(320)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS message TEXT",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS screenshot_url TEXT",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS tab_context VARCHAR(50)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS screen_size VARCHAR(20)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS browser_info TEXT",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS page_url TEXT",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS category VARCHAR(20)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS priority VARCHAR(20)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS affected_area VARCHAR(50)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(50)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS tier INTEGER",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS tier_reason TEXT",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS requires_approval_from VARCHAR(20) DEFAULT 'none'",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_category VARCHAR(20)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_priority VARCHAR(20)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_summary TEXT",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_suggested_tier INTEGER",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS approved_by VARCHAR(50)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS resolution_note TEXT",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS github_issue VARCHAR(200)",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        ]
+        
+        for sql in migrations:
+            try:
+                db.execute(text(sql))
+            except Exception as e:
+                logger.warning(f"Migration SQL warning: {e}")
+        db.commit()
+        
+        # Now migrate old data: map old columns to new columns
+        # Old: comment → message, type → category, screenshot → screenshot_url
+        # Old: page → tab_context, viewport → screen_size, user_agent → browser_info
+        # Old: url → page_url, created_by → user_email
+        
+        result = db.execute(text("""
+            UPDATE feedback SET
+                user_email = COALESCE(user_email, created_by),
+                message = COALESCE(message, comment),
+                screenshot_url = COALESCE(screenshot_url, screenshot),
+                tab_context = COALESCE(tab_context, page),
+                screen_size = COALESCE(screen_size, viewport),
+                browser_info = COALESCE(browser_info, user_agent),
+                page_url = COALESCE(page_url, url),
+                category = COALESCE(category, type),
+                tier = COALESCE(tier, 3),
+                priority = COALESCE(priority, 'medium'),
+                requires_approval_from = COALESCE(requires_approval_from, 'admin')
+            WHERE message IS NULL OR user_email IS NULL
+        """))
+        
+        migrated_count = result.rowcount
+        db.commit()
+        
+        # Create indexes
+        for idx in [
+            "CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status)",
+            "CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_email)",
+            "CREATE INDEX IF NOT EXISTS idx_feedback_tier ON feedback(tier)",
+        ]:
+            try:
+                db.execute(text(idx))
+            except:
+                pass
+        db.commit()
+        
+        logger.info(f"✅ Migrated {migrated_count} old feedbacks to new schema")
+        return {"success": True, "migrated": migrated_count}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Migration failed: {e}")
+        raise HTTPException(500, f"Migration fehlgeschlagen: {e}")
+    finally:
+        db.close()
+
+logger.info("✅ Feedback Migration endpoint loaded")
