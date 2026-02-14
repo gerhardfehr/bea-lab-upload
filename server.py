@@ -14191,13 +14191,15 @@ def _create_notebook_with_source(title, text_content, source_name, url=None):
 
 def _trigger_audio_overview(notebook_id, focus=None, language_code=None):
     """Trigger audio overview generation. Returns (audio_id, error)."""
+    # Note: episodeFocus and languageCode may not be available in all regions yet
+    # Start with empty body, try with options if supported
     body = {}
-    if focus:
-        body["episodeFocus"] = focus
-    if language_code:
-        body["languageCode"] = language_code
     
     result = _notebooklm_api("POST", f"/notebooks/{notebook_id}/audioOverviews", body)
+    
+    # If empty body fails too, it's a real error
+    if "error" in result and "Unknown name" not in str(result.get("details", "")):
+        return None, f"Audio overview failed: {result}"
     
     audio_data = result.get("audioOverview", {})
     if audio_data.get("status") == "AUDIO_OVERVIEW_STATUS_IN_PROGRESS":
