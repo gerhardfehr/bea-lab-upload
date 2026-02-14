@@ -45,7 +45,12 @@ APP_URL = os.getenv("APP_URL", "https://www.bea-lab.io")
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")  # Upgraded from claude-sonnet-4-20250514
+# 3-Tier Model Strategy for cost optimization
+ANTHROPIC_MODEL_HEAVY = os.getenv("ANTHROPIC_MODEL_HEAVY", "claude-opus-4-6")      # APE Review, Deep Research, Complex Analysis
+ANTHROPIC_MODEL_STANDARD = os.getenv("ANTHROPIC_MODEL_STANDARD", "claude-sonnet-4-5")  # RAG Chat, Fact-Check, Belief Analysis
+ANTHROPIC_MODEL_LIGHT = os.getenv("ANTHROPIC_MODEL_LIGHT", "claude-haiku-4-5")     # Intent, Triage, Metadata Extraction
+# Legacy fallback
+ANTHROPIC_MODEL = ANTHROPIC_MODEL_STANDARD
 GH_CONTEXT_REPO = os.getenv("GH_CONTEXT_REPO", "FehrAdvice-Partners-AG/complementarity-context-framework")
 VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY", "")
 VOYAGE_MODEL = "voyage-3-lite"  # 512 dimensions, fast, free tier 200M tokens/month
@@ -1127,7 +1132,7 @@ def fact_check_user_claims(user_message: str, user_email: str, chat_doc_id: str 
     # ── Step 1: Extract claims using Claude ──
     try:
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_STANDARD,
             "max_tokens": 1500,
             "system": FACT_CHECK_SYSTEM,
             "messages": [{"role": "user", "content": f"USER-NACHRICHT:\n{user_message[:3000]}"}]
@@ -1738,7 +1743,7 @@ def analyze_beliefs_and_biases(user_message: str, beatrix_response: str, user_em
     dialog = f"USER-NACHRICHT:\n{user_message.strip()[:3000]}\n\nBEATRIX-ANTWORT:\n{beatrix_response.strip()[:3000]}"
     try:
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_STANDARD,
             "max_tokens": 2000,
             "system": BIAS_DETECTION_SYSTEM,
             "messages": [{"role": "user", "content": dialog}]
@@ -4574,7 +4579,7 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
 Frage: {question}"""
 
     payload = json.dumps({
-        "model": ANTHROPIC_MODEL,
+        "model": ANTHROPIC_MODEL_STANDARD,
         "max_tokens": 3000,
         "system": system_prompt,
         "messages": [{"role": "user", "content": user_message}]
@@ -5315,7 +5320,7 @@ REGELN:
     }
 
 
-def call_claude_json(system_prompt, messages, today, model=ANTHROPIC_MODEL, max_tokens=2500):
+def call_claude_json(system_prompt, messages, today, model=ANTHROPIC_MODEL_STANDARD, max_tokens=2500):
     """Call Claude API and extract JSON from response."""
     import urllib.request, ssl, re
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
@@ -5755,7 +5760,7 @@ Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
 
         # Stream domain specialist
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_STANDARD,
             "max_tokens": 2500,
             "stream": True,
             "system": domain_prompt + draft_note + f"\n\nHeute ist: {today}",
@@ -6032,7 +6037,7 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
         ctx.verify_mode = ssl.CERT_NONE
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_STANDARD,
             "max_tokens": 4000,
             "stream": True,
             "system": system_prompt,
@@ -6395,7 +6400,7 @@ async def chat_project(slug: str, request: ChatRequest, user=Depends(require_aut
 
         ctx_ssl = ssl.create_default_context(); ctx_ssl.check_hostname = False; ctx_ssl.verify_mode = ssl.CERT_NONE
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_STANDARD,
             "max_tokens": 4000,
             "system": system_prompt,
             "messages": [{"role": "user", "content": user_content}]
@@ -6526,7 +6531,7 @@ async def chat_project_stream(slug: str, request: ChatRequest, user=Depends(requ
         user_content.append({"type": "text", "text": full_question})
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_STANDARD,
             "max_tokens": 4000,
             "stream": True,
             "system": system_prompt,
@@ -7830,7 +7835,7 @@ async def _run_text_analysis(text: str, total_length: int, filename: str = "") -
 TEXT:
 {excerpt}"""
                 payload = json.dumps({
-                    "model": ANTHROPIC_MODEL,
+                    "model": ANTHROPIC_MODEL_STANDARD,
                     "max_tokens": 400,
                     "messages": [{"role": "user", "content": prompt}]
                 }).encode()
@@ -7942,7 +7947,7 @@ TEXT:
 TEXT:
 {excerpt}"""
                 payload = json.dumps({
-                    "model": ANTHROPIC_MODEL,
+                    "model": ANTHROPIC_MODEL_STANDARD,
                     "max_tokens": 400,
                     "messages": [{"role": "user", "content": prompt}]
                 }).encode()
@@ -8139,7 +8144,7 @@ Antworte NUR mit validem JSON:
 }}"""
 
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL,
+                "model": ANTHROPIC_MODEL_STANDARD,
                 "max_tokens": 1200,
                 "messages": [{"role": "user", "content": prompt}]
             }).encode()
@@ -8217,7 +8222,7 @@ Antworte NUR mit validem JSON:
 TEXT:
 {excerpt}"""
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL,
+                "model": ANTHROPIC_MODEL_STANDARD,
                 "max_tokens": 300,
                 "messages": [{"role": "user", "content": prompt}]
             }).encode()
@@ -8449,7 +8454,7 @@ Antworte NUR mit validem JSON:
 }}"""
 
                 payload = json.dumps({
-                    "model": ANTHROPIC_MODEL, "max_tokens": 1200,
+                    "model": ANTHROPIC_MODEL_STANDARD, "max_tokens": 1200,
                     "messages": [{"role": "user", "content": prompt}]
                 }).encode()
                 req = ureq.Request("https://api.anthropic.com/v1/messages",
@@ -12190,7 +12195,7 @@ async def analyze_feedback(request: Request, user=Depends(require_auth)):
         ctx.verify_mode = ssl.CERT_NONE
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_STANDARD,
             "max_tokens": 600,
             "messages": [{
                 "role": "user",
@@ -12354,7 +12359,7 @@ def call_claude_review(paper_content: str, paper_id: str, title: str,
 Create the review with all 7 sections. Focus on what statistical reviewers miss."""
 
     payload = json.dumps({
-        "model": ANTHROPIC_MODEL,
+        "model": ANTHROPIC_MODEL_HEAVY,
         "max_tokens": 4096,
         "system": BEATRIX_REVIEW_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_prompt}]
@@ -12765,7 +12770,7 @@ async def triage_document(doc_id: str, user=Depends(require_auth)):
         user_msg = f"Titel: {doc.title}\n\nInhalt:\n{content}"
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_LIGHT,
             "max_tokens": 1500,
             "system": TRIAGE_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_msg}]
@@ -12908,7 +12913,7 @@ Author: {user.get('sub', 'unknown')}
 Timestamp: {datetime.utcnow().isoformat()}Z"""
 
     payload = json.dumps({
-        "model": ANTHROPIC_MODEL,
+        "model": ANTHROPIC_MODEL_STANDARD,
         "max_tokens": 2500,
         "system": PRECOMMIT_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_msg}]
@@ -13038,7 +13043,7 @@ async def multi_review_document(doc_id: str, user=Depends(require_auth)):
         # Generate 3 independent reviews
         for perspective_key, perspective in MULTI_REVIEW_PERSPECTIVES.items():
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL,
+                "model": ANTHROPIC_MODEL_HEAVY,
                 "max_tokens": 1200,
                 "system": perspective["system"],
                 "messages": [{"role": "user", "content": f"Review dieses Dokument:\n\nTitel: {doc.title}\n\n{content}"}]
@@ -13088,7 +13093,7 @@ Erstelle eine Synthese:
 Antworte in 200-400 Wörtern."""
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_HEAVY,
             "max_tokens": 1000,
             "messages": [{"role": "user", "content": synthesis_prompt}]
         }).encode()
@@ -13212,7 +13217,7 @@ async def integrity_check_document(doc_id: str, user=Depends(require_auth)):
         content = (doc.content or "")[:30000]
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_HEAVY,
             "max_tokens": 2000,
             "system": INTEGRITY_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": f"Prüfe dieses Dokument:\n\nTitel: {doc.title}\n\n{content}"}]
@@ -13348,7 +13353,7 @@ Feedback das beantwortet werden muss:
 {feedback}"""
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL,
+            "model": ANTHROPIC_MODEL_HEAVY,
             "max_tokens": 2500,
             "system": REPLY_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_msg}]
@@ -13465,7 +13470,7 @@ REVIEWER_CONFIGS = {
         "name": "BEATRIX (Claude)",
         "icon": "🧠",
         "provider": "anthropic",
-        "model": ANTHROPIC_MODEL,
+        "model": ANTHROPIC_MODEL_HEAVY,
         "focus": "Behavioral Economics, BCM, Ψ-Dimensions",
         "system": """You are BEATRIX, a Behavioral Economics reviewer. Focus EXCLUSIVELY on:
 1. Missing behavioral mechanisms (present bias, loss aversion, social norms, default effects, etc.)
@@ -13727,7 +13732,7 @@ Erstelle eine Synthese (300 Wörter max):
 5. Top 3 Verbesserungsvorschläge"""
 
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL, "max_tokens": 1000,
+                "model": ANTHROPIC_MODEL_HEAVY, "max_tokens": 1000,
                 "messages": [{"role": "user", "content": synth_prompt}]
             }).encode()
             try:
@@ -13921,7 +13926,7 @@ async def challenge_text(request: Request, user=Depends(require_auth)):
 {challenge_text}"""
         try:
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL, "max_tokens": 400,
+                "model": ANTHROPIC_MODEL_HEAVY, "max_tokens": 400,
                 "messages": [{"role": "user", "content": synth_msg}]
             }).encode()
             req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
