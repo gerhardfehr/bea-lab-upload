@@ -14082,3 +14082,238 @@ async def notebooklm_create(body: NotebookLMRequest, user=Depends(require_auth))
         "source_type": source_type_used,
         "message": f"Notebook ready! Open the link and click 'Infographic' or 'Slide Deck' in the Studio panel."
     }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CONTENT TRANSFORM PIPELINE v1.0
+# Generic content → NotebookLM transformation with auto-podcast generation
+# Supports: papers, analyses, briefings, research summaries — any text content
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TransformRequest(BaseModel):
+    """Generic content transformation request."""
+    title: str = "BEATRIX Content"
+    text: Optional[str] = None
+    url: Optional[str] = None
+    paper_id: Optional[str] = None
+    source_name: Optional[str] = None
+    # Output options
+    podcast: bool = True           # Generate audio overview
+    podcast_focus: Optional[str] = None  # What to focus the podcast on
+    podcast_language: Optional[str] = "de"  # Language code (de, en, etc.)
+    # Content type hint
+    content_type: Optional[str] = None  # paper, analysis, briefing, report, etc.
+
+def _resolve_content(body, session=None):
+    """Resolve content from text, URL, or paper_id. Returns (text, source_name, error)."""
+    text_content = body.text
+    source_name = body.source_name or body.title
+    
+    # Resolve from paper_id
+    if body.paper_id and not text_content:
+        if not session:
+            session = SessionLocal()
+            close_session = True
+        else:
+            close_session = False
+        try:
+            doc = session.execute(
+                text("SELECT title, extracted_text FROM documents WHERE id = :id"),
+                {"id": body.paper_id}
+            ).fetchone()
+            if doc:
+                source_name = doc[0] or source_name
+                text_content = doc[1]
+                if not body.title or body.title in ("BEATRIX Content", "BEATRIX Paper"):
+                    body.title = f"BEATRIX: {source_name[:80]}"
+            else:
+                return None, source_name, "Paper not found"
+        finally:
+            if close_session:
+                session.close()
+    
+    # Resolve from PDF URL - download and extract
+    if not text_content and body.url and body.url.lower().endswith(".pdf"):
+        try:
+            import requests as req_lib
+            pdf_resp = req_lib.get(body.url, timeout=30)
+            pdf_resp.raise_for_status()
+            import fitz
+            doc = fitz.open(stream=pdf_resp.content, filetype="pdf")
+            text_content = "\n\n".join(page.get_text() for page in doc)
+            doc.close()
+            if not text_content or len(text_content.strip()) < 100:
+                return None, source_name, "PDF text extraction yielded no usable text"
+        except Exception as e:
+            return None, source_name, f"PDF processing failed: {str(e)}"
+    
+    return text_content, source_name, None
+
+def _create_notebook_with_source(title, text_content, source_name, url=None):
+    """Create notebook and add source. Returns (notebook_id, source_added, error)."""
+    # Create notebook
+    nb_result = _notebooklm_api("POST", "/notebooks", {"title": title})
+    if "error" in nb_result:
+        return None, False, f"Failed to create notebook: {nb_result}"
+    
+    notebook_id = nb_result.get("notebookId")
+    if not notebook_id:
+        return None, False, f"No notebook ID returned: {nb_result}"
+    
+    # Add source
+    if text_content:
+        source_body = {
+            "userContents": [{
+                "textContent": {
+                    "sourceName": source_name[:200],
+                    "content": text_content[:500000]
+                }
+            }]
+        }
+    elif url:
+        source_body = {
+            "userContents": [{
+                "webContent": {
+                    "url": url,
+                    "sourceName": source_name[:200]
+                }
+            }]
+        }
+    else:
+        return notebook_id, False, "No content to add as source"
+    
+    src_result = _notebooklm_api("POST", f"/notebooks/{notebook_id}/sources:batchCreate", source_body)
+    source_added = "error" not in src_result
+    
+    if not source_added:
+        logger.warning(f"Transform: Source add failed: {src_result}")
+    
+    return notebook_id, source_added, None
+
+def _trigger_audio_overview(notebook_id, focus=None, language_code=None):
+    """Trigger audio overview generation. Returns (audio_id, error)."""
+    body = {}
+    if focus:
+        body["episodeFocus"] = focus
+    if language_code:
+        body["languageCode"] = language_code
+    
+    result = _notebooklm_api("POST", f"/notebooks/{notebook_id}/audioOverviews", body)
+    
+    audio_data = result.get("audioOverview", {})
+    if audio_data.get("status") == "AUDIO_OVERVIEW_STATUS_IN_PROGRESS":
+        return audio_data.get("audioOverviewId"), None
+    elif "error" in result:
+        return None, f"Audio overview failed: {result}"
+    else:
+        return audio_data.get("audioOverviewId"), None
+
+@app.post("/api/transform")
+async def transform_content(body: TransformRequest, user=Depends(require_auth)):
+    """Generic content transformation pipeline.
+    
+    Takes any content (text, URL, paper_id) and transforms it into:
+    - NotebookLM notebook with source
+    - Auto-generated podcast (audio overview)
+    - Links to Enterprise UI for Mind Map, Video Overview, Reports
+    
+    Works for: papers, BCM analyses, client briefings, research summaries,
+    consulting reports, or any text content.
+    """
+    logger.info(f"Transform: Starting pipeline for '{body.title}' (type={body.content_type})")
+    
+    # Step 1: Resolve content
+    text_content, source_name, error = _resolve_content(body)
+    if error:
+        raise HTTPException(400 if "not found" in error.lower() else 502, error)
+    
+    if not text_content and not body.url:
+        raise HTTPException(400, "Provide text, url, or paper_id")
+    
+    # Step 2: Create notebook + add source
+    notebook_id, source_added, error = _create_notebook_with_source(
+        body.title, text_content, source_name, body.url
+    )
+    if error:
+        raise HTTPException(502, error)
+    
+    logger.info(f"Transform: Notebook {notebook_id} created, source_added={source_added}")
+    
+    # Step 3: Generate podcast if requested and source was added
+    audio_id = None
+    audio_status = "skipped"
+    if body.podcast and source_added:
+        audio_id, audio_error = _trigger_audio_overview(
+            notebook_id, 
+            focus=body.podcast_focus,
+            language_code=body.podcast_language
+        )
+        if audio_id:
+            audio_status = "generating"
+            logger.info(f"Transform: Audio overview {audio_id} generating")
+        else:
+            audio_status = f"failed: {audio_error}"
+            logger.warning(f"Transform: Audio overview failed: {audio_error}")
+    elif not source_added:
+        audio_status = "skipped (no source)"
+    
+    # Build URLs
+    loc = GCP_NOTEBOOKLM_LOCATION
+    notebook_url = f"https://notebooklm.cloud.google.com/{loc}/?project={GCP_PROJECT_NUMBER}#notebook={notebook_id}"
+    
+    return {
+        "success": True,
+        "notebook_id": notebook_id,
+        "notebook_url": notebook_url,
+        "title": body.title,
+        "content_type": body.content_type,
+        "source": {
+            "added": source_added,
+            "name": source_name,
+            "type": "text" if text_content else "url"
+        },
+        "podcast": {
+            "status": audio_status,
+            "audio_id": audio_id,
+            "language": body.podcast_language
+        },
+        "available_outputs": {
+            "podcast": audio_status == "generating",
+            "mind_map": True,
+            "video_overview": True,
+            "reports": True,
+            "infographic": False,  # Not yet in Enterprise API
+            "slide_deck": False    # Not yet in Enterprise API
+        },
+        "message": "Content transformed! Podcast is generating. Open notebook for Mind Map, Video Overview, and Reports."
+    }
+
+@app.get("/api/transform/{notebook_id}/status")
+async def transform_status(notebook_id: str, user=Depends(require_auth)):
+    """Check the status of a transform job (especially podcast generation)."""
+    loc = GCP_NOTEBOOKLM_LOCATION
+    notebook_url = f"https://notebooklm.cloud.google.com/{loc}/?project={GCP_PROJECT_NUMBER}#notebook={notebook_id}"
+    
+    # Try to get audio overview status
+    result = _notebooklm_api("GET", f"/notebooks/{notebook_id}/audioOverviews/default")
+    
+    audio_status = "unknown"
+    if "error" in result:
+        audio_status = "not_found_or_generating"
+    else:
+        audio_data = result.get("audioOverview", result)
+        status = audio_data.get("status", "unknown")
+        if "COMPLETE" in status.upper():
+            audio_status = "ready"
+        elif "PROGRESS" in status.upper():
+            audio_status = "generating"
+        elif "FAIL" in status.upper():
+            audio_status = "failed"
+        else:
+            audio_status = status
+    
+    return {
+        "notebook_id": notebook_id,
+        "notebook_url": notebook_url,
+        "podcast_status": audio_status,
+        "message": "Open notebook link to access all outputs."
+    }
