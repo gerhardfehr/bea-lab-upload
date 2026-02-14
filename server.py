@@ -4474,13 +4474,17 @@ def build_context(results, max_chars=12000):
         total += len(chunk) + len(source_info)
     return "\n\n---\n\n".join(context_parts)
 
-def create_github_issue(question: str, user_email: str) -> dict:
-    """Create a GitHub Issue on the context repo to trigger Claude Code."""
+def create_github_issue(question: str, user_email: str, kb_context: str = "") -> dict:
+    """Create a GitHub Issue on the context repo to trigger Claude Code.
+    If kb_context is provided, includes existing KB answer as warm start."""
     import urllib.request, ssl
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    body_parts = [f"**Frage von:** {user_email}", f"@claude {question}"]
+    if kb_context:
+        body_parts.append(f"\n---\n\n<details><summary>📚 KONTEXT: Existierende KB-Antwort (als Ausgangspunkt nutzen und verbessern)</summary>\n\n{kb_context[:3000]}\n\n</details>")
     payload = json.dumps({
         "title": f"BEATRIX: {question[:100]}",
-        "body": f"**Frage von:** {user_email}\n\n@claude {question}",
+        "body": "\n\n".join(body_parts),
         "labels": ["beatrix-question"]
     }).encode()
     req = urllib.request.Request(
@@ -6185,8 +6189,18 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
         if not GH_TOKEN:
             raise HTTPException(501, "Kein ausreichendes Wissen vorhanden und GitHub-Integration nicht konfiguriert")
 
-        gh = create_github_issue(question, user["sub"])
-        logger.info(f"DEEP PATH: GitHub Issue #{gh['issue_number']} for: {question[:50]}")
+        # Collect existing KB context as warm start for Claude Code
+        _kb_context = ""
+        if results:
+            _ctx_parts = []
+            for _sc, _doc in results[:3]:
+                if _doc.content and len(_doc.content) > 50:
+                    _ctx_parts.append(f"**{_doc.title}** (Score: {_sc:.0f}):\n{_doc.content[:800]}")
+            if _ctx_parts:
+                _kb_context = "\n\n---\n\n".join(_ctx_parts)
+
+        gh = create_github_issue(question, user["sub"], kb_context=_kb_context)
+        logger.info(f"DEEP PATH: GitHub Issue #{gh['issue_number']} for: {question[:50]} (kb_context: {len(_kb_context)} chars)")
 
         return {
             "status": "processing",
