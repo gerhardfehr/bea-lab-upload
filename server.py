@@ -755,6 +755,45 @@ def get_db():
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_customer ON tasks(customer_code)"))
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_slug)"))
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_lead ON tasks(lead_id)"))
+                    # ══ FEEDBACK GOVERNANCE SYSTEM v1.0 ══
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS feedback (
+                        id VARCHAR(50) PRIMARY KEY,
+                        user_id VARCHAR(50), user_email VARCHAR(320) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        message TEXT NOT NULL, screenshot_url TEXT,
+                        tab_context VARCHAR(50), screen_size VARCHAR(20),
+                        browser_info TEXT, page_url TEXT,
+                        category VARCHAR(20), priority VARCHAR(20), affected_area VARCHAR(50),
+                        status VARCHAR(30) DEFAULT 'neu', assigned_to VARCHAR(50),
+                        tier INTEGER, tier_reason TEXT,
+                        tier_override INTEGER, tier_override_by VARCHAR(50), tier_override_reason TEXT,
+                        requires_approval_from VARCHAR(20) DEFAULT 'none',
+                        ai_category VARCHAR(20), ai_priority VARCHAR(20), ai_summary TEXT,
+                        ai_suggested_tier INTEGER, ai_solution_code TEXT,
+                        ai_solution_preview_url TEXT, ai_solution_confidence FLOAT,
+                        ai_solution_risks JSON, ai_related_feedback JSON, ai_is_duplicate_of VARCHAR(50),
+                        approved_by VARCHAR(50), approved_at TIMESTAMP, approval_note TEXT, rejected_reason TEXT,
+                        solution_options JSON, user_selected_option VARCHAR(50), user_selected_at TIMESTAMP,
+                        resolution_note TEXT, resolved_at TIMESTAMP, resolved_by VARCHAR(50),
+                        github_issue VARCHAR(200), related_commit VARCHAR(100),
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS feedback_comments (
+                        id VARCHAR(50) PRIMARY KEY, feedback_id VARCHAR(50) NOT NULL,
+                        user_id VARCHAR(50), user_email VARCHAR(320) NOT NULL,
+                        comment TEXT NOT NULL, is_internal BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS feedback_history (
+                        id VARCHAR(50) PRIMARY KEY, feedback_id VARCHAR(50) NOT NULL,
+                        changed_by VARCHAR(50), changed_by_email VARCHAR(320),
+                        changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        field_changed VARCHAR(50), old_value TEXT, new_value TEXT, action_type VARCHAR(30))"""))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_email)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_tier ON feedback(tier)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_comments_fid ON feedback_comments(feedback_id)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_history_fid ON feedback_history(feedback_id)"))
+
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -14381,3 +14420,479 @@ async def transform_status(notebook_id: str, user=Depends(require_auth)):
         "podcast_status": audio_status,
         "message": "Open notebook link to access all outputs."
     }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FEEDBACK GOVERNANCE SYSTEM v1.0 — API ROUTES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class FeedbackCreate(BaseModel):
+    message: str
+    screenshot_url: Optional[str] = None
+    tab_context: Optional[str] = None
+    screen_size: Optional[str] = None
+    browser_info: Optional[str] = None
+    page_url: Optional[str] = None
+
+class FeedbackUpdate(BaseModel):
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    category: Optional[str] = None
+    affected_area: Optional[str] = None
+    assigned_to: Optional[str] = None
+    tier_override: Optional[int] = None
+    tier_override_reason: Optional[str] = None
+    resolution_note: Optional[str] = None
+    github_issue: Optional[str] = None
+
+class FeedbackApproval(BaseModel):
+    action: str  # approve, reject, modify
+    note: Optional[str] = None
+    modified_code: Optional[str] = None
+
+class FeedbackComment(BaseModel):
+    comment: str
+    is_internal: bool = False
+
+# AI Triage System Prompt
+FEEDBACK_TRIAGE_PROMPT = """Analysiere dieses User-Feedback und klassifiziere es.
+
+Feedback: {message}
+Kontext: {context}
+
+Antworte NUR mit JSON:
+{{
+  "category": "bug|ux|feature|question|other",
+  "priority": "critical|high|medium|low",
+  "affected_area": "auth|projects|leads|crm|documents|chat|onboarding|dashboard|profile|admin|other",
+  "tier": 1-4,
+  "tier_reason": "Begründung",
+  "summary": "Kurze Zusammenfassung"
+}}
+
+Tier-Regeln:
+- Tier 1: Typos, CSS-Fixes, Icons (automatisch fixbar)
+- Tier 2: User-spezifisch, mehrere Optionen
+- Tier 3: Multi-User UI-Changes
+- Tier 4: Architektur, Security, DB-Schema"""
+
+async def _ai_triage_feedback(message: str, tab_context: str = None) -> dict:
+    """AI-gestützte Klassifizierung von Feedback."""
+    if not ANTHROPIC_API_KEY:
+        return {"category": "other", "priority": "medium", "tier": 3, "summary": message[:100]}
+    
+    import httpx
+    context = f"Tab: {tab_context}" if tab_context else "Unbekannt"
+    
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": ANTHROPIC_MODEL_LIGHT,
+                    "max_tokens": 500,
+                    "messages": [{"role": "user", "content": FEEDBACK_TRIAGE_PROMPT.format(
+                        message=message, context=context
+                    )}]
+                }
+            )
+            if resp.status_code == 200:
+                content = resp.json().get("content", [{}])[0].get("text", "{}")
+                # Extract JSON
+                if "```" in content:
+                    content = content.split("```")[1].replace("json", "").strip()
+                return json.loads(content)
+    except Exception as e:
+        logger.warning(f"AI triage failed: {e}")
+    
+    return {"category": "other", "priority": "medium", "tier": 3, "summary": message[:100]}
+
+def _log_feedback_history(db, feedback_id: str, user_email: str, field: str, old_val, new_val, action: str):
+    """Log feedback change to history."""
+    try:
+        db.execute(text("""INSERT INTO feedback_history 
+            (id, feedback_id, changed_by_email, field_changed, old_value, new_value, action_type)
+            VALUES (:id, :fid, :email, :field, :old, :new, :action)"""),
+            {"id": str(uuid.uuid4()), "fid": feedback_id, "email": user_email,
+             "field": field, "old": str(old_val) if old_val else None, 
+             "new": str(new_val) if new_val else None, "action": action})
+        db.commit()
+    except Exception as e:
+        logger.warning(f"History log failed: {e}")
+
+@app.post("/api/feedback")
+async def create_feedback(data: FeedbackCreate, user=Depends(require_auth)):
+    """Create new feedback and run AI triage."""
+    db = get_db()
+    try:
+        feedback_id = str(uuid.uuid4())[:12]
+        user_email = user.get("sub", "")
+        
+        # AI Triage
+        triage = await _ai_triage_feedback(data.message, data.tab_context)
+        
+        # Determine approval requirement based on tier
+        tier = triage.get("tier", 3)
+        approval_map = {1: "none", 2: "user", 3: "admin", 4: "owner"}
+        requires_approval = approval_map.get(tier, "admin")
+        status = "neu" if tier == 1 else f"waiting_{requires_approval}" if requires_approval != "none" else "triaged"
+        
+        db.execute(text("""INSERT INTO feedback 
+            (id, user_email, message, screenshot_url, tab_context, screen_size, browser_info, page_url,
+             category, priority, affected_area, status, tier, tier_reason, requires_approval_from,
+             ai_category, ai_priority, ai_summary, ai_suggested_tier)
+            VALUES (:id, :email, :msg, :screenshot, :tab, :screen, :browser, :url,
+                    :cat, :pri, :area, :status, :tier, :reason, :approval,
+                    :ai_cat, :ai_pri, :ai_sum, :ai_tier)"""),
+            {"id": feedback_id, "email": user_email, "msg": data.message,
+             "screenshot": data.screenshot_url, "tab": data.tab_context,
+             "screen": data.screen_size, "browser": data.browser_info, "url": data.page_url,
+             "cat": triage.get("category"), "pri": triage.get("priority"),
+             "area": triage.get("affected_area"), "status": status,
+             "tier": tier, "reason": triage.get("tier_reason"), "approval": requires_approval,
+             "ai_cat": triage.get("category"), "ai_pri": triage.get("priority"),
+             "ai_sum": triage.get("summary"), "ai_tier": tier})
+        db.commit()
+        
+        _log_feedback_history(db, feedback_id, user_email, None, None, None, "created")
+        
+        return {"id": feedback_id, "status": status, "tier": tier, "triage": triage}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Feedback konnte nicht erstellt werden: {e}")
+    finally:
+        db.close()
+
+@app.get("/api/feedback/mine")
+async def get_my_feedback(user=Depends(require_auth)):
+    """Get all feedback submitted by current user."""
+    db = get_db()
+    try:
+        result = db.execute(text("""SELECT id, message, status, tier, priority, category,
+            created_at, updated_at, resolution_note, solution_options, user_selected_option
+            FROM feedback WHERE user_email = :email ORDER BY created_at DESC"""),
+            {"email": user.get("sub", "")})
+        rows = result.fetchall()
+        return [dict(r._mapping) for r in rows]
+    finally:
+        db.close()
+
+@app.post("/api/feedback/{feedback_id}/select-option")
+async def select_feedback_option(feedback_id: str, option_id: str, user=Depends(require_auth)):
+    """User selects a solution option (Tier 2)."""
+    db = get_db()
+    try:
+        # Verify ownership
+        result = db.execute(text("SELECT user_email, tier FROM feedback WHERE id = :id"),
+            {"id": feedback_id})
+        row = result.fetchone()
+        if not row or row.user_email != user.get("sub"):
+            raise HTTPException(403, "Nicht berechtigt")
+        if row.tier != 2:
+            raise HTTPException(400, "Nur für Tier-2 Feedback möglich")
+        
+        db.execute(text("""UPDATE feedback SET user_selected_option = :opt,
+            user_selected_at = CURRENT_TIMESTAMP, status = 'in_arbeit'
+            WHERE id = :id"""), {"opt": option_id, "id": feedback_id})
+        db.commit()
+        
+        _log_feedback_history(db, feedback_id, user.get("sub"), "user_selected_option", 
+                            None, option_id, "status_changed")
+        return {"success": True}
+    finally:
+        db.close()
+
+@app.post("/api/feedback/{feedback_id}/comment")
+async def add_feedback_comment(feedback_id: str, data: FeedbackComment, user=Depends(require_auth)):
+    """Add comment to feedback."""
+    db = get_db()
+    try:
+        comment_id = str(uuid.uuid4())[:12]
+        db.execute(text("""INSERT INTO feedback_comments 
+            (id, feedback_id, user_email, comment, is_internal)
+            VALUES (:id, :fid, :email, :comment, :internal)"""),
+            {"id": comment_id, "fid": feedback_id, "email": user.get("sub"),
+             "comment": data.comment, "internal": data.is_internal})
+        db.commit()
+        
+        _log_feedback_history(db, feedback_id, user.get("sub"), None, None, None, "commented")
+        return {"id": comment_id}
+    finally:
+        db.close()
+
+# ── ADMIN ENDPOINTS ──
+
+@app.get("/api/admin/feedback")
+async def list_all_feedback(
+    status: Optional[str] = None,
+    tier: Optional[int] = None,
+    category: Optional[str] = None,
+    priority: Optional[str] = None,
+    user=Depends(require_permission("platform.admin_dashboard"))
+):
+    """List all feedback with filters (Admin only)."""
+    db = get_db()
+    try:
+        query = "SELECT * FROM feedback WHERE 1=1"
+        params = {}
+        
+        if status:
+            query += " AND status = :status"
+            params["status"] = status
+        if tier:
+            query += " AND tier = :tier"
+            params["tier"] = tier
+        if category:
+            query += " AND category = :category"
+            params["category"] = category
+        if priority:
+            query += " AND priority = :priority"
+            params["priority"] = priority
+        
+        query += " ORDER BY created_at DESC LIMIT 100"
+        
+        result = db.execute(text(query), params)
+        rows = result.fetchall()
+        return [dict(r._mapping) for r in rows]
+    finally:
+        db.close()
+
+@app.get("/api/admin/feedback/{feedback_id}")
+async def get_feedback_detail(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
+    """Get single feedback with comments and history."""
+    db = get_db()
+    try:
+        # Main feedback
+        result = db.execute(text("SELECT * FROM feedback WHERE id = :id"), {"id": feedback_id})
+        feedback = result.fetchone()
+        if not feedback:
+            raise HTTPException(404, "Feedback nicht gefunden")
+        
+        # Comments
+        comments = db.execute(text("""SELECT * FROM feedback_comments 
+            WHERE feedback_id = :id ORDER BY created_at"""), {"id": feedback_id})
+        
+        # History
+        history = db.execute(text("""SELECT * FROM feedback_history 
+            WHERE feedback_id = :id ORDER BY changed_at DESC"""), {"id": feedback_id})
+        
+        return {
+            "feedback": dict(feedback._mapping),
+            "comments": [dict(r._mapping) for r in comments.fetchall()],
+            "history": [dict(r._mapping) for r in history.fetchall()]
+        }
+    finally:
+        db.close()
+
+@app.patch("/api/admin/feedback/{feedback_id}")
+async def update_feedback(
+    feedback_id: str, 
+    data: FeedbackUpdate,
+    user=Depends(require_permission("platform.admin_dashboard"))
+):
+    """Update feedback (Admin)."""
+    db = get_db()
+    try:
+        # Get current values for history
+        current = db.execute(text("SELECT * FROM feedback WHERE id = :id"), 
+            {"id": feedback_id}).fetchone()
+        if not current:
+            raise HTTPException(404, "Feedback nicht gefunden")
+        
+        updates = []
+        params = {"id": feedback_id}
+        
+        for field in ["status", "priority", "category", "affected_area", 
+                      "assigned_to", "tier_override", "tier_override_reason",
+                      "resolution_note", "github_issue"]:
+            value = getattr(data, field, None)
+            if value is not None:
+                updates.append(f"{field} = :{field}")
+                params[field] = value
+                # Log history
+                old_val = getattr(current, field, None)
+                _log_feedback_history(db, feedback_id, user.get("sub"), 
+                    field, old_val, value, f"{field}_changed")
+        
+        if updates:
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            query = f"UPDATE feedback SET {', '.join(updates)} WHERE id = :id"
+            db.execute(text(query), params)
+            db.commit()
+        
+        return {"success": True}
+    finally:
+        db.close()
+
+@app.post("/api/admin/feedback/{feedback_id}/approve")
+async def approve_feedback(
+    feedback_id: str,
+    data: FeedbackApproval,
+    user=Depends(require_permission("platform.admin_dashboard"))
+):
+    """Approve or reject feedback (Tier 3)."""
+    db = get_db()
+    try:
+        feedback = db.execute(text("SELECT tier, status FROM feedback WHERE id = :id"),
+            {"id": feedback_id}).fetchone()
+        if not feedback:
+            raise HTTPException(404, "Feedback nicht gefunden")
+        
+        user_email = user.get("sub", "")
+        
+        if data.action == "approve":
+            new_status = "in_arbeit"
+            db.execute(text("""UPDATE feedback SET status = :status,
+                approved_by = :by, approved_at = CURRENT_TIMESTAMP, approval_note = :note
+                WHERE id = :id"""),
+                {"status": new_status, "by": user_email, "note": data.note, "id": feedback_id})
+            _log_feedback_history(db, feedback_id, user_email, "status", 
+                feedback.status, new_status, "approved")
+        
+        elif data.action == "reject":
+            new_status = "abgelehnt"
+            db.execute(text("""UPDATE feedback SET status = :status,
+                rejected_reason = :reason WHERE id = :id"""),
+                {"status": new_status, "reason": data.note, "id": feedback_id})
+            _log_feedback_history(db, feedback_id, user_email, "status",
+                feedback.status, new_status, "rejected")
+        
+        db.commit()
+        return {"success": True, "status": new_status}
+    finally:
+        db.close()
+
+@app.post("/api/admin/feedback/{feedback_id}/triage")
+async def retriage_feedback(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
+    """Re-run AI triage on feedback."""
+    db = get_db()
+    try:
+        feedback = db.execute(text("SELECT message, tab_context FROM feedback WHERE id = :id"),
+            {"id": feedback_id}).fetchone()
+        if not feedback:
+            raise HTTPException(404, "Feedback nicht gefunden")
+        
+        triage = await _ai_triage_feedback(feedback.message, feedback.tab_context)
+        
+        db.execute(text("""UPDATE feedback SET 
+            ai_category = :cat, ai_priority = :pri, ai_summary = :sum, ai_suggested_tier = :tier
+            WHERE id = :id"""),
+            {"cat": triage.get("category"), "pri": triage.get("priority"),
+             "sum": triage.get("summary"), "tier": triage.get("tier"), "id": feedback_id})
+        db.commit()
+        
+        return {"triage": triage}
+    finally:
+        db.close()
+
+@app.post("/api/admin/feedback/{feedback_id}/github")
+async def create_github_issue(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
+    """Create GitHub issue from feedback."""
+    db = get_db()
+    try:
+        feedback = db.execute(text("SELECT * FROM feedback WHERE id = :id"),
+            {"id": feedback_id}).fetchone()
+        if not feedback:
+            raise HTTPException(404, "Feedback nicht gefunden")
+        
+        if not GH_TOKEN:
+            raise HTTPException(400, "GitHub Token nicht konfiguriert")
+        
+        import urllib.request, ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        # Determine repo based on affected area
+        repo = "FehrAdvice-Partners-AG/bea-lab-frontend"
+        if feedback.affected_area in ["auth", "chat", "crm", "documents"]:
+            repo = "FehrAdvice-Partners-AG/bea-lab-upload"
+        
+        labels = ["feedback"]
+        if feedback.category:
+            labels.append(feedback.category)
+        if feedback.priority:
+            labels.append(f"priority:{feedback.priority}")
+        
+        title = f"[Feedback #{feedback_id[:8]}] {feedback.ai_summary or feedback.message[:50]}"
+        body = f"""## User Feedback
+
+**Von:** {feedback.user_email}
+**Datum:** {feedback.created_at}
+**Tab:** {feedback.tab_context or 'Unbekannt'}
+**Tier:** {feedback.tier}
+
+### Nachricht
+
+{feedback.message}
+
+### AI-Analyse
+
+- **Kategorie:** {feedback.category}
+- **Priorität:** {feedback.priority}
+- **Bereich:** {feedback.affected_area}
+
+---
+*Erstellt via BEATRIX Feedback System*
+"""
+        
+        payload = json.dumps({
+            "title": title,
+            "body": body,
+            "labels": labels
+        }).encode()
+        
+        url = f"https://api.github.com/repos/{repo}/issues"
+        req = urllib.request.Request(url, data=payload, method="POST",
+            headers={
+                "Authorization": f"token {GH_TOKEN}",
+                "Accept": "application/vnd.github.v3+json",
+                "Content-Type": "application/json"
+            })
+        
+        resp = urllib.request.urlopen(req, context=ctx, timeout=15)
+        issue_data = json.loads(resp.read())
+        issue_url = issue_data.get("html_url", "")
+        
+        # Update feedback with GitHub link
+        db.execute(text("UPDATE feedback SET github_issue = :url WHERE id = :id"),
+            {"url": issue_url, "id": feedback_id})
+        db.commit()
+        
+        _log_feedback_history(db, feedback_id, user.get("sub"), "github_issue",
+            None, issue_url, "github_linked")
+        
+        return {"github_url": issue_url}
+    except Exception as e:
+        raise HTTPException(500, f"GitHub Issue konnte nicht erstellt werden: {e}")
+    finally:
+        db.close()
+
+@app.get("/api/admin/feedback/stats")
+async def get_feedback_stats(user=Depends(require_permission("platform.admin_dashboard"))):
+    """Get feedback statistics for dashboard."""
+    db = get_db()
+    try:
+        result = db.execute(text("""SELECT
+            COUNT(*) as total,
+            COUNT(*) FILTER (WHERE status = 'neu') as neu,
+            COUNT(*) FILTER (WHERE status = 'triaged') as triaged,
+            COUNT(*) FILTER (WHERE status LIKE 'waiting_%%') as waiting,
+            COUNT(*) FILTER (WHERE status = 'in_arbeit') as in_arbeit,
+            COUNT(*) FILTER (WHERE status = 'geloest') as geloest,
+            COUNT(*) FILTER (WHERE status = 'abgelehnt') as abgelehnt,
+            COUNT(*) FILTER (WHERE tier = 1) as tier_1,
+            COUNT(*) FILTER (WHERE tier = 2) as tier_2,
+            COUNT(*) FILTER (WHERE tier = 3) as tier_3,
+            COUNT(*) FILTER (WHERE tier = 4) as tier_4
+            FROM feedback"""))
+        row = result.fetchone()
+        return dict(row._mapping) if row else {}
+    finally:
+        db.close()
+
+logger.info("✅ Feedback Governance System v1.0 loaded")
