@@ -14926,6 +14926,7 @@ async def migrate_old_feedback(user=Depends(require_permission("platform.manage_
             "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_priority VARCHAR(20)",
             "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_summary TEXT",
             "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_suggested_tier INTEGER",
+            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_solution_code TEXT",
             "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS approved_by VARCHAR(50)",
             "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP",
             "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS resolution_note TEXT",
