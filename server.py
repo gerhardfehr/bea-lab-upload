@@ -5025,15 +5025,19 @@ def format_currency(amount, currency: str = "CHF") -> str:
 
 INTENT_ROUTER_SYSTEM = """Du bist der BEATRIX Intent-Router. Analysiere die User-Nachricht und bestimme den Intent.
 
-VERFÜGBARE INTENTS:
-- "project": Projekt eröffnen, ergänzen, ändern, Status abfragen
-- "lead": Lead/Opportunity anlegen, Sales-Pipeline, Akquise
-- "company": Neue Firma/Unternehmen anlegen, Firmen-Stammdaten erfassen, "Neue Firma", "Neuer Kunde"
-- "task": Aufgabe erstellen, Todo, Reminder, "erinnere mich", "muss noch", Next Steps, Follow-up
-- "model": BCM-Modell bauen, Ψ-Dimensionen, Kontextvektor, EBF-Integration, Behavioral Analysis
-- "context": Ausgangslage erfassen, Kundensituation beschreiben, Branchenkontext, Marktumfeld
-- "knowledge": Fachfrage zu Behavioral Economics, EBF, Decision Architecture (→ nutzt KB)
-- "general": Alles andere, Smalltalk, unklar
+VERFÜGBARE INTENTS (Session-Typen):
+- "lead" (Pipeline): Neuer Kontakt, Anfrage, Angebot in Arbeit, Akquise, Neugeschäft, Pitch, Offerte, Erstgespräch
+- "project" (Mandat): Kunde hat beauftragt, Projekt läuft, Deliverables, Timeline, Workshop, Lieferung, Auftrag
+- "company": Neue Firma/Unternehmen anlegen, Firmen-Stammdaten erfassen (INTERN - nicht als Session-Typ)
+- "model" (Modell): BCM bauen, Axiome definieren, Intervention designen, Nudge, Wirkung, Behavior Change
+- "context" (Kontext Ψ): Situation analysieren, Zielgruppe verstehen, 8 Ψ-Dimensionen, Stakeholder, Umfeld, Kultur
+- "knowledge" (Literatur): Paper suchen, Studie zitieren, Theorie, Forschung, Evidenz, Quelle, Referenz (→ nutzt KB)
+- "general" (Fragen): Alles andere, schnelle Antwort, Erklärung, Hilfe, Smalltalk
+
+WICHTIGE UNTERSCHEIDUNGEN:
+- Pipeline vs Mandat: "Noch kein Auftrag" → lead, "Auftrag erteilt, Arbeit läuft" → project
+- Modell vs Kontext Ψ: "BCM/Intervention bauen" → model, "Situation verstehen" → context
+- Lead vs Company: "Neue Firma anlegen" → company, "Neuer Lead mit Budget" → lead
 
 UNTERSCHEIDUNG LEAD vs COMPANY:
 - "Neue Firma Hofer Reisen" → company (Stammdaten anlegen)
@@ -5042,10 +5046,29 @@ UNTERSCHEIDUNG LEAD vs COMPANY:
 - "Lege Kaufland als Firma an" → company
 
 Antworte NUR mit einem JSON-Objekt (keine Markdown-Backticks nötig):
-{"intent": "...", "confidence": 0.0-1.0, "entities": {"customer": "...", "project": "..."}}
+{"intent": "...", "confidence": 0.0-1.0, "entities": {"customer": "...", "project": "..."}, "session_type": "..."}
+
+session_type ist der Frontend-Key: lead, project, model, context, research (für knowledge), general
+Bei "company" setze session_type auf "lead" (ist Teil der Pipeline).
 
 Erkenne Kunden auch bei ungefährer Nennung ("UBS" → "ubs", "Luzerner KB" → "lukb", "Erste" → "erste-bank").
 Extrahiere wenn möglich: customer (code), project (name/slug), und andere Schlüssel-Entitäten."""
+
+# Intent → Session-Type Mapping (Backend-Intent → Frontend-SessionType)
+INTENT_TO_SESSION_TYPE = {
+    "lead": "lead",           # Pipeline
+    "project": "project",     # Mandat
+    "company": "lead",        # Teil der Pipeline
+    "task": "project",        # Tasks gehören zu Mandaten
+    "model": "model",         # Modell
+    "context": "context",     # Kontext Ψ
+    "knowledge": "research",  # Literatur (KB/RAG)
+    "general": "general",     # Fragen
+}
+
+def get_session_type(intent: str) -> str:
+    """Map backend intent to frontend session_type."""
+    return INTENT_TO_SESSION_TYPE.get(intent, "general")
 
 def get_domain_prompts():
     """Build domain prompts with rich customer context from GitHub."""
@@ -5398,7 +5421,7 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
     merged_entities = {**session_entities, **entities}
     db_upd = get_db()
     try:
-        update_session(db_upd, _session_id, session_type=intent, entities=merged_entities)
+        update_session(db_upd, _session_id, session_type=get_session_type(intent), entities=merged_entities)
     finally:
         db_upd.close()
     session_entities = merged_entities
@@ -5609,7 +5632,7 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
         merged_entities = {**session_entities, **entities}  # new entities override old
         db_upd = get_db()
         try:
-            update_session(db_upd, _session_id, session_type=intent, entities=merged_entities)
+            update_session(db_upd, _session_id, session_type=get_session_type(intent), entities=merged_entities)
         finally:
             db_upd.close()
         session_entities = merged_entities
@@ -5727,7 +5750,7 @@ Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
         ctx.verify_mode = _ssl.CERT_NONE
 
         # Send intent event immediately
-        yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities, 'session_id': _session_id, 'session_type': intent})}\n\n"
+        yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities, 'session_id': _session_id, 'session_type': get_session_type(intent)})}\n\n"
 
         # Stream domain specialist
         payload = json.dumps({
