@@ -4587,6 +4587,9 @@ Frage: {question}"""
 # Relevance threshold: minimum score to use fast path
 FAST_PATH_THRESHOLD = 15
 
+# Freshness: EBF answers older than this are considered stale → force deep refresh
+KB_FRESHNESS_DAYS = 90
+
 # ── BEATRIX INTENT ROUTER: Universal natural language interface ──
 
 CUSTOMERS_LIST = """ubs, erste-bank, lukb, alpla, a1-telekom, raiffeisen, zkb, gkb, valiant, julius-baer,
@@ -6126,6 +6129,14 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
         # or if there's a very strong general match AND an EBF answer exists at all
         use_fast_path = (ebf_score >= FAST_PATH_THRESHOLD) or (top_score >= FAST_PATH_THRESHOLD * 3 and ebf_score > 0)
 
+        # Freshness check: if best EBF answer is older than KB_FRESHNESS_DAYS → stale, force deep
+        if use_fast_path and ebf_results:
+            best_ebf_doc = ebf_results[0][1]
+            doc_age = (datetime.utcnow() - best_ebf_doc.updated_at).days if best_ebf_doc.updated_at else 999
+            if doc_age > KB_FRESHNESS_DAYS:
+                logger.info(f"Chat: EBF answer stale ({doc_age}d > {KB_FRESHNESS_DAYS}d) → forcing deep refresh for: {question[:50]}")
+                use_fast_path = False
+
         # User override: if analysis_mode='deep', force deep path regardless of score
         if getattr(request, 'analysis_mode', 'fast') == 'deep':
             logger.info(f"Chat: User forced DEEP mode for: {question[:50]}")
@@ -6137,7 +6148,8 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
             non_ebf = [(s, d) for s, d in results if d not in [d2 for _, d2 in ebf_results]]
             results = ebf_results + non_ebf
 
-        logger.info(f"Chat: q='{question[:50]}' | top={top_score} | ebf={ebf_score} | fast={use_fast_path}")
+        _ebf_age = (datetime.utcnow() - ebf_results[0][1].updated_at).days if ebf_results and ebf_results[0][1].updated_at else -1
+        logger.info(f"Chat: q='{question[:50]}' | top={top_score} | ebf={ebf_score} | age={_ebf_age}d | fast={use_fast_path}")
 
         # === FAST PATH: Good KB match exists → Claude API with context (3 sec) ===
         if use_fast_path and ANTHROPIC_API_KEY:
