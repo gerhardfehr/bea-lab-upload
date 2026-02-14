@@ -5397,7 +5397,7 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
         try:
             router_messages = [{"role": "user", "content": message}]
             parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
-                                           model="claude-haiku-4-5-20251001", max_tokens=500)
+                                           model=ANTHROPIC_MODEL_LIGHT, max_tokens=500)
             if parsed:
                 intent = parsed.get("intent", "general")
                 entities = parsed.get("entities", {})
@@ -5624,7 +5624,7 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
         try:
             router_messages = [{"role": "user", "content": message}]
             parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
-                                           model="claude-haiku-4-5-20251001", max_tokens=500)
+                                           model=ANTHROPIC_MODEL_LIGHT, max_tokens=500)
             if parsed:
                 intent = parsed.get("intent", "general")
                 entities = parsed.get("entities", {})
@@ -13528,7 +13528,7 @@ Be concrete about implementation barriers and opportunities."""
         "name": "Contrarian (Haiku)",
         "icon": "⚡",
         "provider": "anthropic",
-        "model": "claude-haiku-4-5-20251001",
+        "model": ANTHROPIC_MODEL_LIGHT,
         "focus": "Quick Red-Team, Overlooked Angles, Fresh Perspective",
         "system": """You are a fast, sharp contrarian reviewer. Your job is to be the voice that says what nobody else dares. Focus on:
 1. The ONE thing everyone else will miss
