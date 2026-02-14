@@ -3608,6 +3608,7 @@ class ChatRequest(BaseModel):
     project_slug: Optional[str] = None
     session_id: Optional[str] = None
     attachments: Optional[list] = None  # [{type, name, content_text, image_base64, media_type}]
+    analysis_mode: Optional[str] = "fast"  # 'fast' (default, auto-decide) or 'deep' (force deep path)
 
 
 # ── Chat File Upload: Extract text / prepare image for Claude Vision ──
@@ -5556,6 +5557,7 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
     forced_intent = body.get("intent", "")
     attachments = body.get("attachments", [])
     _session_id = body.get("session_id", "")
+    _analysis_mode = body.get("analysis_mode", "fast")  # 'fast' or 'deep'
 
     if not message and not attachments:
         return JSONResponse({"error": "message required"}, status_code=400)
@@ -5612,7 +5614,7 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
         threading.Thread(target=lambda: fact_check_user_claims(_fc_msg, _fc_user, customer_code=_fc_cust), daemon=True).start()
 
         async def _redirect_gen():
-            yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities, 'status': 'redirect_kb', 'session_id': _session_id})}\n\n"
+            yield f"data: {json.dumps({'type': 'intent', 'intent': intent, 'entities': entities, 'status': 'redirect_kb', 'session_id': _session_id, 'analysis_mode': _analysis_mode})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         return StreamingResponse(_redirect_gen(), media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
@@ -6123,6 +6125,11 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
         # Decision: Use fast path only if we have a strong EBF answer match
         # or if there's a very strong general match AND an EBF answer exists at all
         use_fast_path = (ebf_score >= FAST_PATH_THRESHOLD) or (top_score >= FAST_PATH_THRESHOLD * 3 and ebf_score > 0)
+
+        # User override: if analysis_mode='deep', force deep path regardless of score
+        if getattr(request, 'analysis_mode', 'fast') == 'deep':
+            logger.info(f"Chat: User forced DEEP mode for: {question[:50]}")
+            use_fast_path = False
 
         # If fast path uses general docs (not EBF answers), prioritize EBF answers in context
         if use_fast_path and ebf_results:
