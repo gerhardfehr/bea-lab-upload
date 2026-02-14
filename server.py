@@ -14987,3 +14987,140 @@ async def migrate_old_feedback(user=Depends(require_permission("platform.manage_
         db.close()
 
 logger.info("✅ Feedback Migration endpoint loaded")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI SOLUTION GENERATOR — BEATRIX proposes fixes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SOLUTION_PROMPT = """Du bist BEATRIX, die AI-Assistentin für die BEATRIX Strategic Intelligence Suite.
+
+Ein User hat folgendes Feedback gegeben:
+
+**Feedback:** {message}
+**Seite/Tab:** {tab_context}
+**Kategorie:** {category}
+**User:** {user_email}
+
+**BEATRIX Technologie-Stack:**
+- Frontend: Vanilla HTML/CSS/JS (KEIN Framework), deployed auf Vercel
+- Backend: FastAPI + PostgreSQL auf Railway
+- Repos: bea-lab-frontend (Vercel), bea-lab-upload (Railway)
+
+**Deine Aufgabe:**
+Analysiere das Problem und erstelle einen konkreten Lösungsvorschlag.
+
+Antworte mit JSON:
+{{
+  "problem_analysis": "Was ist das eigentliche Problem?",
+  "root_cause": "Vermutete Ursache",
+  "solution_type": "code|config|process|manual",
+  "solution_description": "Beschreibung der Lösung in 2-3 Sätzen",
+  "implementation_steps": ["Schritt 1", "Schritt 2", "..."],
+  "code_snippet": "// Falls Code nötig, hier einfügen (oder null)",
+  "affected_files": ["datei1.js", "server.py"],
+  "estimated_effort": "5min|30min|2h|1d",
+  "risk_level": "low|medium|high",
+  "requires_testing": true/false
+}}
+
+Sei konkret und praktisch. Bei UI-Problemen schlage CSS/JS vor. Bei Backend-Problemen Python-Code."""
+
+@app.post("/api/admin/feedback/{feedback_id}/solution")
+async def generate_feedback_solution(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
+    """Generate AI solution proposal for feedback using Claude Sonnet."""
+    db = get_db()
+    try:
+        feedback = db.execute(text("""SELECT message, tab_context, category, user_email, 
+            ai_solution_code, ai_summary FROM feedback WHERE id = :id"""),
+            {"id": feedback_id}).fetchone()
+        if not feedback:
+            raise HTTPException(404, "Feedback nicht gefunden")
+        
+        if not ANTHROPIC_API_KEY:
+            raise HTTPException(400, "Anthropic API Key nicht konfiguriert")
+        
+        import httpx
+        
+        prompt = SOLUTION_PROMPT.format(
+            message=feedback.message or "",
+            tab_context=feedback.tab_context or "unbekannt",
+            category=feedback.category or "other",
+            user_email=feedback.user_email or "unbekannt"
+        )
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": ANTHROPIC_MODEL_STANDARD,  # Use Sonnet for better solutions
+                    "max_tokens": 2000,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+            )
+            
+            if resp.status_code != 200:
+                raise HTTPException(500, f"Claude API Fehler: {resp.status_code}")
+            
+            content = resp.json().get("content", [{}])[0].get("text", "{}")
+            
+            # Extract JSON
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+            
+            try:
+                solution = json.loads(content.strip())
+            except:
+                solution = {
+                    "problem_analysis": content[:500],
+                    "solution_description": "AI konnte keine strukturierte Lösung generieren",
+                    "solution_type": "manual"
+                }
+            
+            # Save to database
+            db.execute(text("""UPDATE feedback SET 
+                ai_solution_code = :code,
+                ai_summary = COALESCE(ai_summary, :summary)
+                WHERE id = :id"""),
+                {"code": json.dumps(solution, ensure_ascii=False), 
+                 "summary": solution.get("problem_analysis", "")[:200],
+                 "id": feedback_id})
+            db.commit()
+            
+            return {"solution": solution}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Solution generation failed: {e}")
+        raise HTTPException(500, f"Lösungsgenerierung fehlgeschlagen: {e}")
+    finally:
+        db.close()
+
+@app.get("/api/admin/feedback/{feedback_id}/solution")
+async def get_feedback_solution(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
+    """Get existing solution for feedback."""
+    db = get_db()
+    try:
+        result = db.execute(text("SELECT ai_solution_code FROM feedback WHERE id = :id"),
+            {"id": feedback_id}).fetchone()
+        if not result:
+            raise HTTPException(404, "Feedback nicht gefunden")
+        
+        if not result.ai_solution_code:
+            return {"solution": None}
+        
+        try:
+            return {"solution": json.loads(result.ai_solution_code)}
+        except:
+            return {"solution": {"raw": result.ai_solution_code}}
+    finally:
+        db.close()
+
+logger.info("✅ AI Solution Generator loaded")
