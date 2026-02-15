@@ -15195,6 +15195,11 @@ SSOT_SEEDS = [
         "tags": ["canonical", "ssot", "10c"]
     },
     {
+        "github_path": "data/knowledge/canonical/FEPSDE-Matrix.md",
+        "title": "📚 SSOT: FEPSDE Matrix (6 Nutzendimensionen)",
+        "tags": ["canonical", "ssot", "fepsde"]
+    },
+    {
         "github_path": "data/knowledge/canonical/MECE-Taxonomy.md",
         "title": "📚 SSOT: MECE-Taxonomie (Epistemologie)",
         "tags": ["canonical", "ssot", "mece"]
