@@ -6841,6 +6841,49 @@ Antworte auf Deutsch, professionell und auf den Punkt."""
         logger.error(f"User-Challenge error: {e}")
         raise HTTPException(500, f"Fehler bei der Regenerierung: {str(e)}")
 
+class UserChallengeApplyRequest(BaseModel):
+    original_answer: str
+    corrected_answer: str
+    rejection_reason: str
+    session_id: Optional[str] = None
+
+@app.post("/api/chat/user-challenge/apply")
+async def apply_user_challenge(request: UserChallengeApplyRequest, user=Depends(require_auth)):
+    """Speichert die finale korrigierte Antwort nach User-Review."""
+    if user["sub"] not in CORE_USERS:
+        raise HTTPException(403, "User-Challenge ist nur für Core-User verfügbar")
+    
+    logger.info(f"USER-CHALLENGE APPLIED by {user['sub']}: reason='{request.rejection_reason[:50]}' | corrected_len={len(request.corrected_answer)}")
+    
+    # Save to DB for learning
+    db = get_db()
+    try:
+        db.execute(text("""
+            INSERT INTO chat_messages (user_email, session_id, role, content, sources)
+            VALUES (:email, :sid, 'user-challenge-applied', :content, :sources)
+        """), {
+            "email": user["sub"],
+            "sid": request.session_id or "challenge_" + str(int(datetime.utcnow().timestamp())),
+            "content": request.corrected_answer[:8000],
+            "sources": json.dumps({
+                "type": "user_challenge_applied",
+                "rejection_reason": request.rejection_reason[:500],
+                "original_length": len(request.original_answer),
+                "corrected_length": len(request.corrected_answer)
+            })
+        })
+        db.commit()
+        
+        # Optionally: Auto-add to Knowledge Base for future learning
+        # This could be implemented later for continuous improvement
+        
+    except Exception as e:
+        logger.warning(f"Could not save applied user-challenge to DB: {e}")
+    finally:
+        db.close()
+    
+    return {"status": "applied", "message": "Korrektur gespeichert"}
+
 @app.post("/api/chat/session/{session_id}/close")
 async def close_chat_session(session_id: str, user=Depends(require_auth)):
     """Close/archive a chat session with auto-generated summary."""
