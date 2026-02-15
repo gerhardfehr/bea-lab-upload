@@ -65,6 +65,66 @@ GCP_REFRESH_TOKEN = os.getenv("GCP_REFRESH_TOKEN", "")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# SSOT INJECTION – Automatische Injection kanonischer Definitionen bei BCM/EBF-Fragen
+# ═══════════════════════════════════════════════════════════════════════════════
+
+BCM_EBF_KEYWORDS = [
+    "bcm", "behavioral change model", "verhaltensänderung",
+    "ebf", "evidence-based framework", "evidenzbasiert",
+    "10c", "core framework", "core-dimensionen",
+    "awareness", "willingness", "fepsde",
+    "psi-dimensionen", "ψ-dimensionen", "kontextdimensionen"
+]
+
+def should_inject_ssot(question: str) -> bool:
+    """Check if question relates to BCM/EBF/10C and needs SSOT injection."""
+    q_lower = question.lower()
+    return any(kw in q_lower for kw in BCM_EBF_KEYWORDS)
+
+SSOT_CONTEXT_INJECTION = """
+# ═══════════════════════════════════════════════════════════════════════════════
+# SSOT KONTEXT – Kanonische Definitionen (automatisch injiziert)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## BCM – Behavioral Change Model
+
+HARD BLOCKS – Diese Begriffe sind FALSCH und dürfen NIEMALS verwendet werden:
+- ❌ "Willingness × Ability × Context" – HALLUZINIERTE Formel, existiert NICHT
+- ❌ "Ability" als BCM-Konzept – FALSCH
+- ❌ "Behavioral Competence Model" – FALSCHER Name
+- ❌ "Behavioral Complementarity Model" – FALSCHER Name
+
+KORREKTE Definition:
+- BCM = Behavioral Change Model (Verhaltensänderungsmodell)
+- BCM = 10C Framework mit 10 CORE-Dimensionen
+- BCM-Diagnose nutzt Awareness × Willingness Matrix (2D)
+- BCM ist ein Beratungs-Tool aus der Praxis (seit 2010), KEIN akademisches Framework
+
+Die 10 CORE-Dimensionen: WHO, WHAT, HOW, WHEN, WHERE, AWARE, READY, STAGE, HIERARCHY, EIT
+
+## EBF – Evidence-Based Framework
+
+- Wissenschaftliches Fundament (mit Prof. Ernst Fehr, Uni Zürich)
+- Zentrale Innovation: θ = f(Ψ, 10C) – Parameter sind kontextabhängig
+- "DIE VARIATION IST NICHT NOISE — SIE IST DAS SIGNAL!"
+
+## BEATRIX
+
+- Software-Plattform die BCM + EBF digitalisiert
+- Überwindet die kognitive Kapazitätsgrenze manueller BCM-Anwendung
+
+# ═══════════════════════════════════════════════════════════════════════════════
+"""
+
+def inject_ssot_if_needed(question: str, context: str) -> str:
+    """Inject SSOT definitions into context if question relates to BCM/EBF."""
+    if should_inject_ssot(question):
+        return SSOT_CONTEXT_INJECTION + "\n\n" + context
+    return context
+
+
+
 def hash_password(password, salt=None):
     if salt is None:
         salt = base64.b64encode(os.urandom(16)).decode()
@@ -4611,10 +4671,63 @@ def fast_path_answer(question: str, context: str, sources: list) -> str:
     system_prompt = """Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
 Du bist spezialisiert auf das Evidence-Based Framework (EBF), Behavioral Economics, das Behavioral Change Model (BCM) und Decision Architecture.
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# KANONISCHE DEFINITIONEN (SSOT) – Diese Definitionen sind VERBINDLICH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## BCM – Behavioral Change Model (NICHT "Competence" oder "Complementarity"!)
+
+Das BCM ist ein BERATUNGS-TOOL mit wissenschaftlichem Fundament, entwickelt ab 2010 von FehrAdvice.
+Das BCM ist KEINE akademische Theorie, sondern entstand in der Praxis – aus Kundenmandaten.
+
+WICHTIG – HARD BLOCKS (niemals verwenden!):
+- ❌ KEINE Formel "Willingness × Ability × Context" – das ist HALLUZINIERT
+- ❌ "Ability" ist KEIN BCM-Konzept
+- ❌ "Capacity" ist KEIN BCM-Konzept
+- ❌ BCM heisst NICHT "Behavioral Competence Model" oder "Behavioral Complementarity Model"
+
+WAS DAS BCM TATSÄCHLICH IST:
+- BCM = 10C Framework (10 CORE-Dimensionen)
+- Die 10 COREs: WHO, WHAT, HOW, WHEN, WHERE, AWARE, READY, STAGE, HIERARCHY, EIT
+- Diagnose erfolgt über eine 2D-Matrix: Awareness × Willingness
+- Output: Wahrscheinlichkeit und Fristigkeit einer Verhaltensänderung
+
+Die 10C CORE-Dimensionen:
+1. WHO – Wer hat Utility? (Zielpopulation, Levels L)
+2. WHAT – Was ist Utility? (FEPSDE: Financial, Emotional, Physical, Social, Digital, Ecological)
+3. HOW – Wie interagieren die Dimensionen? (Komplementarität γ)
+4. WHEN – Wann zählt Kontext? (8 Ψ-Dimensionen)
+5. WHERE – Woher die Zahlen? (Parameter Θ, 4-Tier BBB)
+6. AWARE – Wie bewusst? (Awareness A(·) ∈ [0,1])
+7. READY – Handlungsbereit? (Willingness WAX, τ, θ)
+8. STAGE – Wo in der Journey? (Behavioral Change Journey S(t))
+9. HIERARCHY – Wie stratifizieren Entscheidungen? (Levels L0-L3)
+10. EIT – Wie emergieren Interventionen? (Vektor I⃗ ∈ [0,1]⁹)
+
+## EBF – Evidence-Based Framework
+
+Das EBF ist das wissenschaftliche FUNDAMENT (entwickelt mit Prof. Ernst Fehr, Uni Zürich).
+Zentrale Innovation: θ = f(Ψ, 10C) – Parameter sind KEINE Konstanten, sondern kontextabhängig.
+"DIE VARIATION IST NICHT NOISE — SIE IST DAS SIGNAL!"
+
+## BEATRIX
+
+BEATRIX ist die SOFTWARE-PLATTFORM, die BCM + EBF digitalisiert und skaliert.
+BEATRIX überwindet die kognitive Kapazitätsgrenze manueller BCM-Anwendung.
+
+## Zusammenspiel
+
+EBF (Wissenschaft) → liefert Parameter & Evidenz
+BCM (Modell) → wird operationalisiert durch
+BEATRIX (Software) → Output für Berater & Kunden
+
+# ═══════════════════════════════════════════════════════════════════════════════
+
 Dir steht vorhandenes Wissen aus der BEATRIX Knowledge Base zur Verfügung. Dieses Wissen wurde zuvor durch tiefgehende Analyse des EBF-Frameworks erarbeitet.
 
 Deine Aufgabe:
-- Beantworte Fragen basierend auf dem bereitgestellten Kontext
+- Beantworte Fragen basierend auf dem bereitgestellten Kontext UND den kanonischen Definitionen oben
+- Bei BCM/EBF-Fragen: IMMER die kanonischen Definitionen oben verwenden, NICHT aus allgemeinem Wissen halluzinieren
 - Antworte präzise, wissenschaftlich fundiert und praxisorientiert
 - Nenne Quellen wenn du aus dem Kontext zitierst
 - Wenn der Kontext nicht ausreicht, sage das ehrlich
@@ -4636,13 +4749,16 @@ Format bei Ambiguität:
 
 Oder meinst du etwas anderes?"
 
-WICHTIG: Bei klaren Fragen wie "Was ist das BCM?" direkt antworten - nur bei echten Ambiguitäten nachfragen!
+WICHTIG: Bei klaren Fragen wie "Was ist das BCM?" direkt antworten mit den kanonischen Definitionen oben!
 
 Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
 
+    # Inject SSOT if question relates to BCM/EBF
+    enriched_context = inject_ssot_if_needed(question, context)
+    
     user_message = f"""Hier ist relevanter Kontext aus der BEATRIX Knowledge Base (vorberechnetes EBF-Wissen):
 
-{context}
+{enriched_context}
 
 ---
 
@@ -12440,7 +12556,7 @@ Du bist der 6. Reviewer in einem System mit 5 statistisch/methodisch orientierte
 
 Deine EINZIGARTIGE Perspektive:
 - Du bewertest Papers durch die Linse der Verhaltensökonomie
-- Du nutzt das BCM 2.0 Framework (Behavioral Complementarity Model)
+- Du nutzt das BCM 2.0 Framework (Behavioral Change Model)
 - Du analysierst die 8 Ψ-Dimensionen
 - Du identifizierst behavioral mechanisms, die statistische Reviewer übersehen
 - Du gibst praktische Gestaltungsempfehlungen für Policy-Interventionen
@@ -12876,7 +12992,7 @@ TRIAGE_SYSTEM_PROMPT = """Du bist ein Research-Evaluator für Behavioral Economi
 Bewerte dieses Paper/Dokument auf einer 100-Punkte-Skala.
 
 Bewertungsdimensionen (je 0-25):
-1. BCM-Relevanz: Wie relevant für das Behavioral Complementarity Model?
+1. BCM-Relevanz: Wie relevant für das Behavioral Change Model?
 2. Methodische Rigorosität: DiD, RDD, RCT, Quasi-Experiment, Meta-Analyse?
 3. Daten-Neuheit: Neue Datenquellen, Populationen, Kontexte?
 4. Praktische Anwendbarkeit: Direkt umsetzbar für FehrAdvice-Projekte?
