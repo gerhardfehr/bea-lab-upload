@@ -15173,3 +15173,128 @@ async def update_document(doc_id: str, update: dict, user=Depends(require_permis
         db.close()
 
 logger.info("✅ Document PATCH endpoint loaded")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SSOT AUTO-SEEDING — Canonical Knowledge Base Seeds
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SSOT_SEEDS = [
+    {
+        "github_path": "data/knowledge/canonical/BCM-Behavioral-Change-Model.md",
+        "title": "📚 SSOT: Behavioral Change Model (BCM)",
+        "tags": ["canonical", "ssot", "bcm"]
+    },
+    {
+        "github_path": "data/knowledge/canonical/EBF-Evidence-Based-Framework.md",
+        "title": "📚 SSOT: Evidence-Based Framework (EBF)",
+        "tags": ["canonical", "ssot", "ebf"]
+    },
+    {
+        "github_path": "docs/frameworks/10C-CORE-Framework.md",
+        "title": "📚 SSOT: 10C CORE Framework",
+        "tags": ["canonical", "ssot", "10c"]
+    },
+    {
+        "github_path": "data/knowledge/canonical/MECE-Taxonomy.md",
+        "title": "📚 SSOT: MECE-Taxonomie (Epistemologie)",
+        "tags": ["canonical", "ssot", "mece"]
+    },
+    {
+        "github_path": "data/knowledge/canonical/BCM-EBF-BEATRIX-Architecture.md",
+        "title": "📚 SSOT: BCM-EBF-BEATRIX Zusammenhang",
+        "tags": ["canonical", "ssot", "architecture"]
+    }
+]
+
+SSOT_GITHUB_REPO = "FehrAdvice-Partners-AG/complementarity-context-framework"
+SSOT_GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+
+def _fetch_ssot_from_github(path: str) -> str:
+    """Fetch SSOT content from GitHub."""
+    import urllib.request, ssl, base64
+    
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    
+    url = f"https://api.github.com/repos/{SSOT_GITHUB_REPO}/contents/{path}"
+    headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIX"}
+    if SSOT_GITHUB_TOKEN:
+        headers["Authorization"] = f"token {SSOT_GITHUB_TOKEN}"
+    
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        resp = urllib.request.urlopen(req, context=ctx, timeout=15)
+        data = json.loads(resp.read())
+        content = base64.b64decode(data.get("content", "")).decode("utf-8")
+        return content
+    except Exception as e:
+        logger.warning(f"Failed to fetch SSOT {path}: {e}")
+        return None
+
+def _ssot_exists_in_kb(db, title: str) -> bool:
+    """Check if SSOT document already exists in KB."""
+    try:
+        result = db.execute(text("SELECT COUNT(*) FROM documents WHERE title = :title"),
+            {"title": title}).scalar()
+        return result > 0
+    except:
+        return False
+
+async def seed_ssot_knowledge_base():
+    """Seed canonical SSOT definitions into KB if missing."""
+    logger.info("🌱 Checking SSOT Knowledge Base seeds...")
+    
+    db = get_db()
+    seeded = 0
+    skipped = 0
+    
+    try:
+        for seed in SSOT_SEEDS:
+            title = seed["title"]
+            
+            # Skip if already exists
+            if _ssot_exists_in_kb(db, title):
+                skipped += 1
+                continue
+            
+            # Fetch from GitHub
+            content = _fetch_ssot_from_github(seed["github_path"])
+            if not content:
+                logger.warning(f"  ⚠️ Could not fetch: {seed['github_path']}")
+                continue
+            
+            # Insert into documents
+            doc_id = str(uuid.uuid4())
+            now = datetime.utcnow()
+            
+            try:
+                db.execute(text("""
+                    INSERT INTO documents (id, title, content, status, source_type, created_at, updated_at)
+                    VALUES (:id, :title, :content, 'indexed', 'ssot', :now, :now)
+                """), {
+                    "id": doc_id,
+                    "title": title,
+                    "content": content,
+                    "now": now
+                })
+                db.commit()
+                seeded += 1
+                logger.info(f"  ✅ Seeded: {title}")
+            except Exception as e:
+                db.rollback()
+                logger.warning(f"  ❌ Failed to seed {title}: {e}")
+        
+        logger.info(f"🌱 SSOT Seeding complete: {seeded} new, {skipped} existing")
+    
+    except Exception as e:
+        logger.error(f"SSOT seeding error: {e}")
+    finally:
+        db.close()
+
+@app.on_event("startup")
+async def startup_ssot_seeding():
+    """Run SSOT seeding on startup."""
+    await seed_ssot_knowledge_base()
+
+logger.info("✅ SSOT Auto-Seeding module loaded")
