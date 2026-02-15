@@ -7340,6 +7340,245 @@ async def archive_all_sessions(user=Depends(require_auth)):
     finally:
         db.close()
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ARCHIVE MANAGEMENT v1.0 - List, Restore, Delete archived sessions
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/chat/sessions/archived")
+async def get_archived_sessions(user=Depends(require_auth)):
+    """Get all archived sessions for the current user."""
+    db = get_db()
+    try:
+        sessions = db.execute(text("""
+            SELECT id, title, summary, msg_count, duration_min, closed_at, updated_at
+            FROM chat_sessions 
+            WHERE user_email = :email AND session_type = 'archived'
+            ORDER BY closed_at DESC
+            LIMIT 100
+        """), {"email": user["sub"]}).fetchall()
+        
+        result = []
+        for s in sessions:
+            result.append({
+                "id": s[0],
+                "title": s[1] or "Archiviert",
+                "summary": s[2],
+                "msg_count": s[3] or 0,
+                "duration_min": s[4] or 0,
+                "closed_at": s[5].isoformat() if s[5] else None,
+                "updated_at": s[6].isoformat() if s[6] else None
+            })
+        
+        return {"sessions": result, "count": len(result)}
+        
+    except Exception as e:
+        logger.error(f"Get archived sessions error: {e}")
+        raise HTTPException(500, f"Fehler beim Laden des Archivs: {str(e)}")
+    finally:
+        db.close()
+
+@app.post("/api/chat/session/{session_id}/restore")
+async def restore_session(session_id: str, user=Depends(require_auth)):
+    """Restore a single archived session back to active."""
+    db = get_db()
+    try:
+        # Verify ownership
+        session = db.execute(text("""
+            SELECT id FROM chat_sessions 
+            WHERE id = :sid AND user_email = :email AND session_type = 'archived'
+        """), {"sid": session_id, "email": user["sub"]}).fetchone()
+        
+        if not session:
+            raise HTTPException(404, "Session nicht gefunden oder nicht archiviert")
+        
+        # Restore by setting session_type back to 'active'
+        db.execute(text("""
+            UPDATE chat_sessions 
+            SET session_type = 'active', updated_at = CURRENT_TIMESTAMP
+            WHERE id = :sid
+        """), {"sid": session_id})
+        
+        db.commit()
+        logger.info(f"SESSION RESTORED by {user['sub']}: {session_id}")
+        
+        return {"status": "ok", "message": "Session wiederhergestellt"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Restore session error: {e}")
+        raise HTTPException(500, f"Fehler beim Wiederherstellen: {str(e)}")
+    finally:
+        db.close()
+
+@app.post("/api/chat/sessions/restore-all")
+async def restore_all_sessions(user=Depends(require_auth)):
+    """Restore all archived sessions back to active."""
+    db = get_db()
+    try:
+        result = db.execute(text("""
+            UPDATE chat_sessions 
+            SET session_type = 'active', updated_at = CURRENT_TIMESTAMP
+            WHERE user_email = :email AND session_type = 'archived'
+        """), {"email": user["sub"]})
+        
+        restored_count = result.rowcount
+        db.commit()
+        logger.info(f"RESTORE-ALL by {user['sub']}: {restored_count} sessions restored")
+        
+        return {
+            "status": "ok",
+            "restored_count": restored_count,
+            "message": f"{restored_count} Sessions wiederhergestellt"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Restore-all error: {e}")
+        raise HTTPException(500, f"Fehler beim Wiederherstellen: {str(e)}")
+    finally:
+        db.close()
+
+@app.post("/api/chat/session/{session_id}/archive")
+async def archive_single_session(session_id: str, user=Depends(require_auth)):
+    """Archive a single session."""
+    db = get_db()
+    try:
+        # Verify ownership via messages
+        msg = db.execute(text("""
+            SELECT session_id FROM chat_messages 
+            WHERE session_id = :sid AND user_email = :email LIMIT 1
+        """), {"sid": session_id, "email": user["sub"]}).fetchone()
+        
+        if not msg:
+            raise HTTPException(404, "Session nicht gefunden")
+        
+        # Get session info
+        msg_info = db.execute(text("""
+            SELECT COUNT(*), MIN(created_at), MAX(created_at)
+            FROM chat_messages WHERE session_id = :sid
+        """), {"sid": session_id}).fetchone()
+        
+        preview = db.execute(text(
+            "SELECT content FROM chat_messages WHERE session_id = :sid AND role = 'user' ORDER BY created_at ASC LIMIT 1"
+        ), {"sid": session_id}).fetchone()
+        title = (preview[0][:80] if preview else "Archiviert")
+        dur = round((msg_info[2] - msg_info[1]).total_seconds() / 60, 1) if msg_info[1] and msg_info[2] else 0
+        
+        # Archive
+        db.execute(text("""
+            INSERT INTO chat_sessions (id, user_email, session_type, title, summary, msg_count, duration_min, closed_at, updated_at)
+            VALUES (:sid, :email, 'archived', :title, 'Manuell archiviert', :cnt, :dur, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (id) DO UPDATE SET 
+                session_type = 'archived',
+                title = COALESCE(NULLIF(chat_sessions.title,''), :title),
+                summary = 'Manuell archiviert',
+                msg_count = :cnt,
+                duration_min = :dur,
+                closed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+        """), {"sid": session_id, "email": user["sub"], "title": title, "cnt": msg_info[0] or 0, "dur": dur})
+        
+        db.commit()
+        logger.info(f"SESSION ARCHIVED by {user['sub']}: {session_id}")
+        
+        return {"status": "ok", "message": "Session archiviert"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Archive session error: {e}")
+        raise HTTPException(500, f"Fehler beim Archivieren: {str(e)}")
+    finally:
+        db.close()
+
+@app.delete("/api/chat/session/{session_id}")
+async def delete_session(session_id: str, user=Depends(require_auth)):
+    """Permanently delete a single session and all its messages."""
+    db = get_db()
+    try:
+        # Verify ownership
+        msg = db.execute(text("""
+            SELECT session_id FROM chat_messages 
+            WHERE session_id = :sid AND user_email = :email LIMIT 1
+        """), {"sid": session_id, "email": user["sub"]}).fetchone()
+        
+        if not msg:
+            raise HTTPException(404, "Session nicht gefunden")
+        
+        # Delete messages first
+        msg_result = db.execute(text("""
+            DELETE FROM chat_messages WHERE session_id = :sid AND user_email = :email
+        """), {"sid": session_id, "email": user["sub"]})
+        
+        # Delete session record
+        db.execute(text("""
+            DELETE FROM chat_sessions WHERE id = :sid AND user_email = :email
+        """), {"sid": session_id, "email": user["sub"]})
+        
+        db.commit()
+        logger.info(f"SESSION DELETED by {user['sub']}: {session_id} ({msg_result.rowcount} messages)")
+        
+        return {"status": "ok", "message": f"Session gelöscht ({msg_result.rowcount} Nachrichten)"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Delete session error: {e}")
+        raise HTTPException(500, f"Fehler beim Löschen: {str(e)}")
+    finally:
+        db.close()
+
+@app.delete("/api/chat/sessions/archived")
+async def delete_all_archived(user=Depends(require_auth)):
+    """Permanently delete all archived sessions and their messages."""
+    db = get_db()
+    try:
+        # Get all archived session IDs
+        archived = db.execute(text("""
+            SELECT id FROM chat_sessions 
+            WHERE user_email = :email AND session_type = 'archived'
+        """), {"email": user["sub"]}).fetchall()
+        
+        if not archived:
+            return {"status": "ok", "deleted_count": 0, "message": "Keine archivierten Sessions"}
+        
+        session_ids = [row[0] for row in archived]
+        
+        # Delete messages for all archived sessions
+        total_msgs = 0
+        for sid in session_ids:
+            result = db.execute(text("""
+                DELETE FROM chat_messages WHERE session_id = :sid AND user_email = :email
+            """), {"sid": sid, "email": user["sub"]})
+            total_msgs += result.rowcount
+        
+        # Delete session records
+        db.execute(text("""
+            DELETE FROM chat_sessions 
+            WHERE user_email = :email AND session_type = 'archived'
+        """), {"email": user["sub"]})
+        
+        db.commit()
+        logger.info(f"DELETE-ALL-ARCHIVED by {user['sub']}: {len(session_ids)} sessions, {total_msgs} messages")
+        
+        return {
+            "status": "ok",
+            "deleted_count": len(session_ids),
+            "deleted_messages": total_msgs,
+            "message": f"{len(session_ids)} Sessions gelöscht ({total_msgs} Nachrichten)"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Delete-all-archived error: {e}")
+        raise HTTPException(500, f"Fehler beim Löschen: {str(e)}")
+    finally:
+        db.close()
+
 @app.get("/api/admin/chat/sessions")
 async def admin_chat_sessions(limit: int = 100, email: str = None, user=Depends(require_permission("platform.view_analytics"))):
     """Admin: List all chat sessions across users with analytics."""
