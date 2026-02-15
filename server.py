@@ -14242,7 +14242,7 @@ Max 100 Wörter. Kurz, scharf, provokant."""
 
 @app.post("/api/challenge")
 async def challenge_text(request: Request, user=Depends(require_auth)):
-    """Real multi-model challenge: sends text to all 5 APIs independently."""
+    """Real multi-model challenge: sends text to all 5 APIs independently WITH paper context from KB."""
     body = await request.json()
     text = body.get("text", "")
     if not text or len(text) < 20:
@@ -14251,15 +14251,70 @@ async def challenge_text(request: Request, user=Depends(require_auth)):
     text = text[:4000]  # Limit
     challenges = {}
     errors = {}
+    
+    # ═══ NEU: Papers aus Knowledge Base suchen ═══
+    paper_context = ""
+    paper_references = []
+    try:
+        db = get_db()
+        # Suche relevante Papers basierend auf dem zu challengenden Text
+        results = search_knowledge_base(db, text[:500], limit=5)
+        
+        if results:
+            paper_parts = []
+            for score, doc in results:
+                # Nur Papers/wissenschaftliche Quellen, keine internen Dokumente
+                if doc.source_type in ["paper", "ebf_answer", "paper_evaluated", "academic"] or \
+                   (doc.category and "paper" in doc.category.lower()) or \
+                   (doc.tags and any("paper" in t.lower() or "studie" in t.lower() for t in doc.tags)):
+                    
+                    # Extrahiere Autor/Jahr wenn möglich
+                    title = doc.title or "Unbekannte Quelle"
+                    ref = {"title": title, "score": round(score, 2)}
+                    
+                    # Versuche Autor und Jahr zu extrahieren
+                    import re
+                    year_match = re.search(r'\((\d{4})\)', title) or re.search(r'(\d{4})', title)
+                    if year_match:
+                        ref["year"] = year_match.group(1)
+                    
+                    paper_references.append(ref)
+                    
+                    # Kontext für Reviewer (gekürzt)
+                    content_preview = (doc.content or "")[:600]
+                    paper_parts.append(f"📄 {title}:\n{content_preview}")
+            
+            if paper_parts:
+                paper_context = "\n\n".join(paper_parts[:3])  # Max 3 Papers für Kontext
+                logger.info(f"Challenge: Found {len(paper_references)} relevant papers for review context")
+        
+        db.close()
+    except Exception as e:
+        logger.warning(f"Could not fetch papers for challenge: {e}")
 
-    for key, prompt in CHALLENGE_PROMPTS.items():
+    # ═══ Challenge Prompts MIT Paper-Kontext ═══
+    paper_instruction = ""
+    if paper_context:
+        paper_instruction = f"""
+
+═══ RELEVANTE WISSENSCHAFTLICHE QUELLEN ═══
+{paper_context}
+
+WICHTIG: Beziehe dich in deiner Kritik auf diese Quellen wenn relevant. 
+Zitiere konkret (z.B. "Laut Kahneman (1979)...") statt nur allgemeine Kritik zu üben."""
+
+    for key, base_prompt in CHALLENGE_PROMPTS.items():
         config = REVIEWER_CONFIGS.get(key)
         if not config:
             continue
+        
+        # Füge Paper-Kontext zum Prompt hinzu
+        enhanced_prompt = base_prompt + paper_instruction
+        
         try:
             result = call_external_reviewer(
                 config["provider"], config["model"],
-                prompt,
+                enhanced_prompt,
                 text, "Challenge"
             )
             if result.get("available"):
@@ -14277,24 +14332,34 @@ async def challenge_text(request: Request, user=Depends(require_auth)):
     if not challenges:
         raise HTTPException(500, f"No reviewers available. Errors: {errors}")
 
-    # Synthesis (Claude meta-analysis)
+    # Synthesis (Claude meta-analysis) MIT Paper-Referenzen
     synthesis = ""
     if len(challenges) >= 2 and ANTHROPIC_API_KEY:
         import urllib.request as ureq, ssl
         ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
-        challenge_text = "\n\n".join([
+        challenge_text_for_synth = "\n\n".join([
             f"{v['icon']} {v['name']}:\n{v['challenge'][:400]}"
             for k, v in challenges.items()
         ])
-        synth_msg = f"""Analysiere diese {len(challenges)} unabhängigen Challenges und erstelle eine kurze Synthese (max 100 Wörter):
+        
+        # Paper-Referenzen für Synthese
+        paper_ref_text = ""
+        if paper_references:
+            paper_ref_text = "\n\n📚 Referenzierte Papers:\n" + "\n".join([
+                f"• {p['title']}" + (f" ({p['year']})" if p.get('year') else "")
+                for p in paper_references[:5]
+            ])
+        
+        synth_msg = f"""Analysiere diese {len(challenges)} unabhängigen Challenges und erstelle eine kurze Synthese (max 120 Wörter):
 - Wo stimmen mehrere überein? (= WICHTIG)
-- Was sagt nur einer? (= INTERESSANT)
+- Was sagt nur einer? (= INTERESSANT)  
+- Welche Paper-Referenzen wurden genannt?
 - Was sollte der User als erstes beachten?
 
-{challenge_text}"""
+{challenge_text_for_synth}{paper_ref_text}"""
         try:
             payload = json.dumps({
-                "model": "claude-sonnet-4-20250514", "max_tokens": 400,
+                "model": "claude-sonnet-4-20250514", "max_tokens": 500,
                 "messages": [{"role": "user", "content": synth_msg}]
             }).encode()
             req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
@@ -14308,7 +14373,8 @@ async def challenge_text(request: Request, user=Depends(require_auth)):
         "challenges": challenges,
         "errors": errors,
         "synthesis": synthesis,
-        "models_used": len(challenges)
+        "models_used": len(challenges),
+        "papers_used": paper_references[:5]  # NEU: Papers in Response
     }
 
 # ═══════════════════════════════════════════════════════════════════════════
