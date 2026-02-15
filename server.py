@@ -459,6 +459,19 @@ class Document(Base):
     uploaded_by = Column(String(320), nullable=True)
     content_hash = Column(String(64), nullable=True, index=True)
 
+class SsotSyncLog(Base):
+    """Log of SSOT seed synchronization events."""
+    __tablename__ = "ssot_sync_log"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    seed_title = Column(String(500), nullable=False)
+    seed_path = Column(String(500), nullable=True)
+    action = Column(String(20), nullable=False)
+    old_hash = Column(String(64), nullable=True)
+    new_hash = Column(String(64), nullable=True)
+    file_size = Column(Integer, nullable=True)
+    sync_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    details = Column(Text, nullable=True)
+
 def get_db():
     global _engine, _SessionLocal
     if _engine is None:
