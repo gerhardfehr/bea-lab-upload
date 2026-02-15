@@ -459,19 +459,6 @@ class Document(Base):
     uploaded_by = Column(String(320), nullable=True)
     content_hash = Column(String(64), nullable=True, index=True)
 
-class SsotSyncLog(Base):
-    """Log of SSOT seed synchronization events."""
-    __tablename__ = "ssot_sync_log"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    seed_title = Column(String(500), nullable=False)
-    seed_path = Column(String(500), nullable=True)
-    action = Column(String(20), nullable=False)  # 'insert', 'update', 'skip', 'error'
-    old_hash = Column(String(64), nullable=True)
-    new_hash = Column(String(64), nullable=True)
-    file_size = Column(Integer, nullable=True)
-    sync_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    details = Column(Text, nullable=True)  # Error message or other details
-
 def get_db():
     global _engine, _SessionLocal
     if _engine is None:
@@ -8465,94 +8452,6 @@ async def get_document(doc_id: str, user=Depends(require_auth)):
         }
     finally: db.close()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SSOT SYNC LOG API
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.get("/api/ssot/sync-history")
-async def get_ssot_sync_history(limit: int = 50, action: Optional[str] = None, user=Depends(require_auth)):
-    """Get SSOT sync history log."""
-    db = get_db()
-    try:
-        query = db.execute(text("""
-            SELECT id, seed_title, seed_path, action, old_hash, new_hash, file_size, sync_timestamp, details
-            FROM ssot_sync_log
-            ORDER BY sync_timestamp DESC
-            LIMIT :limit
-        """), {"limit": limit})
-        
-        logs = []
-        for row in query:
-            logs.append({
-                "id": row[0],
-                "seed_title": row[1],
-                "seed_path": row[2],
-                "action": row[3],
-                "old_hash": row[4][:16] if row[4] else None,
-                "new_hash": row[5][:16] if row[5] else None,
-                "file_size": row[6],
-                "sync_timestamp": row[7].isoformat() if row[7] else None,
-                "details": row[8]
-            })
-        
-        return {"logs": logs, "count": len(logs)}
-    except Exception as e:
-        # Table might not exist yet
-        logger.warning(f"Could not fetch sync history: {e}")
-        return {"logs": [], "count": 0, "error": str(e)}
-    finally:
-        db.close()
-
-@app.get("/api/ssot/status")
-async def get_ssot_status(user=Depends(require_auth)):
-    """Get current SSOT seeds status with hash comparison."""
-    db = get_db()
-    try:
-        # Get all SSOT documents
-        docs = db.execute(text("""
-            SELECT id, title, content_hash, updated_at, created_at
-            FROM documents 
-            WHERE source_type = 'ssot' OR title LIKE '%SSOT%'
-            ORDER BY title
-        """)).fetchall()
-        
-        seeds = []
-        for doc in docs:
-            seeds.append({
-                "id": doc[0],
-                "title": doc[1],
-                "content_hash": doc[2],
-                "updated_at": doc[3].isoformat() if doc[3] else None,
-                "created_at": doc[4].isoformat() if doc[4] else None,
-                "status": "synced"  # Would compare with GitHub in full implementation
-            })
-        
-        # Get last sync event
-        last_sync = db.execute(text("""
-            SELECT sync_timestamp, action FROM ssot_sync_log 
-            WHERE action IN ('insert', 'update')
-            ORDER BY sync_timestamp DESC LIMIT 1
-        """)).first()
-        
-        return {
-            "seeds": seeds,
-            "total_count": len(seeds),
-            "last_sync": last_sync[0].isoformat() if last_sync else None,
-            "last_action": last_sync[1] if last_sync else None
-        }
-    except Exception as e:
-        logger.warning(f"Could not fetch SSOT status: {e}")
-        return {"seeds": [], "total_count": 0, "error": str(e)}
-    finally:
-        db.close()
-
-@app.post("/api/ssot/trigger-sync")
-async def trigger_ssot_sync(user=Depends(require_admin)):
-    """Manually trigger SSOT sync (admin only). Note: Full sync runs on deploy."""
-    return {"status": "info", "message": "Manual sync disabled. Sync runs automatically on deploy. Use Railway redeploy to trigger."}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-
 @app.post("/api/documents/{doc_id}/classify")
 async def classify_document(doc_id: str, user=Depends(require_auth)):
     """Run EBF classification on an existing document and update its metadata."""
@@ -15392,56 +15291,35 @@ def _load_seed_registry() -> list:
 def _content_hash(content: str) -> str:
     """Generate SHA256 hash of content for comparison."""
     import hashlib
-    return hashlib.sha256(content.encode('utf-8')).hexdigest()
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
 
 def _ssot_check_status(db, title: str, new_content: str) -> tuple:
     """
-    Check SSOT status: returns (action, doc_id, old_hash, new_hash)
+    Check SSOT status: returns (action, doc_id)
     action: 'insert', 'update', or 'skip'
     """
-    new_hash = _content_hash(new_content)
     try:
         result = db.execute(text(
             "SELECT id, content FROM documents WHERE title = :title"
         ), {"title": title}).first()
         
         if not result:
-            return ('insert', None, None, new_hash)
+            return ('insert', None)
         
         doc_id, old_content = result
         old_hash = _content_hash(old_content or '')
+        new_hash = _content_hash(new_content)
         
         if old_hash != new_hash:
-            return ('update', doc_id, old_hash, new_hash)
+            return ('update', doc_id)
         
-        return ('skip', doc_id, old_hash, new_hash)
+        return ('skip', doc_id)
     except Exception as e:
         logger.warning(f"SSOT check error for {title}: {e}")
-        return ('insert', None, None, new_hash)
-
-def _log_ssot_sync(db, title: str, path: str, action: str, old_hash: str, new_hash: str, size: int, details: str = None):
-    """Log SSOT sync event to ssot_sync_log table."""
-    try:
-        db.execute(text("""
-            INSERT INTO ssot_sync_log (id, seed_title, seed_path, action, old_hash, new_hash, file_size, sync_timestamp, details)
-            VALUES (:id, :title, :path, :action, :old_hash, :new_hash, :size, :now, :details)
-        """), {
-            "id": str(uuid.uuid4()),
-            "title": title,
-            "path": path,
-            "action": action,
-            "old_hash": old_hash,
-            "new_hash": new_hash,
-            "size": size,
-            "now": datetime.utcnow(),
-            "details": details
-        })
-        db.commit()
-    except Exception as e:
-        logger.warning(f"Could not log sync event: {e}")
+        return ('insert', None)
 
 async def seed_ssot_knowledge_base():
-    """Seed canonical SSOT definitions into KB - with content hash sync and logging."""
+    """Seed canonical SSOT definitions into KB - with content hash sync."""
     logger.info("🌱 Checking SSOT Knowledge Base seeds...")
     
     # Load seed registry from GitHub (dynamic!)
@@ -15466,45 +15344,39 @@ async def seed_ssot_knowledge_base():
             if not content:
                 logger.warning(f"  ⚠️ Could not fetch: {path}")
                 stats['failed'] += 1
-                _log_ssot_sync(db, title, path, 'error', None, None, 0, f"Could not fetch from GitHub")
                 continue
             
             # Check if insert, update, or skip needed
-            action, doc_id, old_hash, new_hash = _ssot_check_status(db, title, content)
+            action, doc_id = _ssot_check_status(db, title, content)
             now = datetime.utcnow()
-            content_size = len(content)
             
             try:
                 if action == 'insert':
                     new_id = str(uuid.uuid4())
                     db.execute(text("""
-                        INSERT INTO documents (id, title, content, status, source_type, created_at, updated_at, content_hash)
-                        VALUES (:id, :title, :content, 'indexed', 'ssot', :now, :now, :hash)
-                    """), {"id": new_id, "title": title, "content": content, "now": now, "hash": new_hash[:16]})
+                        INSERT INTO documents (id, title, content, status, source_type, created_at, updated_at)
+                        VALUES (:id, :title, :content, 'indexed', 'ssot', :now, :now)
+                    """), {"id": new_id, "title": title, "content": content, "now": now})
                     db.commit()
                     stats['inserted'] += 1
                     logger.info(f"  ✅ Inserted: {title}")
-                    _log_ssot_sync(db, title, path, 'insert', None, new_hash, content_size)
                 
                 elif action == 'update':
                     db.execute(text("""
-                        UPDATE documents SET content = :content, updated_at = :now, status = 'indexed', content_hash = :hash
+                        UPDATE documents SET content = :content, updated_at = :now, status = 'indexed'
                         WHERE id = :id
-                    """), {"id": doc_id, "content": content, "now": now, "hash": new_hash[:16]})
+                    """), {"id": doc_id, "content": content, "now": now})
                     db.commit()
                     stats['updated'] += 1
                     logger.info(f"  🔄 Updated: {title}")
-                    _log_ssot_sync(db, title, path, 'update', old_hash, new_hash, content_size)
                 
                 else:  # skip
                     stats['skipped'] += 1
-                    # Only log skips occasionally to avoid spam (don't log every skip)
                     
             except Exception as e:
                 db.rollback()
                 stats['failed'] += 1
                 logger.warning(f"  ❌ Failed {action} for {title}: {e}")
-                _log_ssot_sync(db, title, path, 'error', old_hash, new_hash, content_size, str(e))
         
         logger.info(f"🌱 SSOT Seeding complete: {stats['inserted']} new, {stats['updated']} updated, {stats['skipped']} unchanged, {stats['failed']} failed")
     
