@@ -7078,13 +7078,18 @@ async def chat_sessions(user=Depends(require_auth)):
         ).filter(
             ChatMessage.user_email == user["sub"],
             ChatMessage.session_id.isnot(None)
-        ).group_by(ChatMessage.session_id).order_by(sql_func.max(ChatMessage.created_at).desc()).limit(50).all()
+        ).group_by(ChatMessage.session_id).order_by(sql_func.max(ChatMessage.created_at).desc()).limit(100).all()
         result = []
         for s in sessions:
             st_row = db.execute(text(
                 "SELECT session_type, title, summary, closed_at, updated_at FROM chat_sessions WHERE id = :sid"
             ), {"sid": s.session_id}).fetchone()
             st = st_row[0] if st_row else "general"
+            
+            # Skip archived sessions - they should not appear in the list
+            if st == "archived":
+                continue
+                
             title = (st_row[1] or "") if st_row else ""
             summary = (st_row[2] or "") if st_row else ""
             closed_at = st_row[3].isoformat() if st_row and st_row[3] else None
@@ -7114,6 +7119,67 @@ async def chat_sessions(user=Depends(require_auth)):
             })
         return result
     finally: db.close()
+
+@app.post("/api/chat/sessions/archive-all")
+async def archive_all_sessions(user=Depends(require_auth)):
+    """Archive all chat sessions for the current user. Sessions are hidden but data is preserved."""
+    db = get_db()
+    try:
+        # Get all session IDs for this user
+        sessions = db.execute(text("""
+            SELECT DISTINCT session_id FROM chat_messages 
+            WHERE user_email = :email AND session_id IS NOT NULL
+        """), {"email": user["sub"]}).fetchall()
+        
+        if not sessions:
+            return {"status": "ok", "archived_count": 0, "message": "Keine Sessions gefunden"}
+        
+        archived_count = 0
+        for row in sessions:
+            sid = row[0]
+            
+            # Get message count and info for archive record
+            msg_info = db.execute(text("""
+                SELECT COUNT(*), MIN(created_at), MAX(created_at)
+                FROM chat_messages WHERE session_id = :sid
+            """), {"sid": sid}).fetchone()
+            
+            preview = db.execute(text(
+                "SELECT content FROM chat_messages WHERE session_id = :sid AND role = 'user' ORDER BY created_at ASC LIMIT 1"
+            ), {"sid": sid}).fetchone()
+            title = (preview[0][:80] if preview else "Archiviert")
+            dur = round((msg_info[2] - msg_info[1]).total_seconds() / 60, 1) if msg_info[1] and msg_info[2] else 0
+            
+            # Mark session as archived (using 'archived' type instead of 'closed')
+            db.execute(text("""
+                INSERT INTO chat_sessions (id, user_email, session_type, title, summary, msg_count, duration_min, closed_at, updated_at)
+                VALUES (:sid, :email, 'archived', :title, 'Manuell archiviert', :cnt, :dur, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (id) DO UPDATE SET 
+                    session_type = 'archived',
+                    title = COALESCE(NULLIF(chat_sessions.title,''), :title),
+                    summary = 'Manuell archiviert',
+                    msg_count = :cnt,
+                    duration_min = :dur,
+                    closed_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+            """), {"sid": sid, "email": user["sub"], "title": title, "cnt": msg_info[0] or 0, "dur": dur})
+            archived_count += 1
+        
+        db.commit()
+        logger.info(f"ARCHIVE-ALL by {user['sub']}: {archived_count} sessions archived")
+        
+        return {
+            "status": "ok",
+            "archived_count": archived_count,
+            "message": f"{archived_count} Sessions archiviert"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Archive-all error: {e}")
+        raise HTTPException(500, f"Fehler beim Archivieren: {str(e)}")
+    finally:
+        db.close()
 
 @app.get("/api/admin/chat/sessions")
 async def admin_chat_sessions(limit: int = 100, email: str = None, user=Depends(require_permission("platform.view_analytics"))):
