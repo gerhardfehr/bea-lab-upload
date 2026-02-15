@@ -15231,17 +15231,38 @@ def _load_seed_registry() -> list:
         logger.error(f"Failed to parse seed registry: {e}")
         return []
 
-def _ssot_exists_in_kb(db, title: str) -> bool:
-    """Check if SSOT document already exists in KB."""
+def _content_hash(content: str) -> str:
+    """Generate SHA256 hash of content for comparison."""
+    import hashlib
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
+
+def _ssot_check_status(db, title: str, new_content: str) -> tuple:
+    """
+    Check SSOT status: returns (action, doc_id)
+    action: 'insert', 'update', or 'skip'
+    """
     try:
-        result = db.execute(text("SELECT COUNT(*) FROM documents WHERE title = :title"),
-            {"title": title}).scalar()
-        return result > 0
-    except:
-        return False
+        result = db.execute(text(
+            "SELECT id, content FROM documents WHERE title = :title"
+        ), {"title": title}).first()
+        
+        if not result:
+            return ('insert', None)
+        
+        doc_id, old_content = result
+        old_hash = _content_hash(old_content or '')
+        new_hash = _content_hash(new_content)
+        
+        if old_hash != new_hash:
+            return ('update', doc_id)
+        
+        return ('skip', doc_id)
+    except Exception as e:
+        logger.warning(f"SSOT check error for {title}: {e}")
+        return ('insert', None)
 
 async def seed_ssot_knowledge_base():
-    """Seed canonical SSOT definitions into KB if missing."""
+    """Seed canonical SSOT definitions into KB - with content hash sync."""
     logger.info("🌱 Checking SSOT Knowledge Base seeds...")
     
     # Load seed registry from GitHub (dynamic!)
@@ -15251,8 +15272,7 @@ async def seed_ssot_knowledge_base():
         return
     
     db = get_db()
-    seeded = 0
-    skipped = 0
+    stats = {'inserted': 0, 'updated': 0, 'skipped': 0, 'failed': 0}
     
     try:
         for seed in seeds:
@@ -15262,39 +15282,46 @@ async def seed_ssot_knowledge_base():
             if not title or not path:
                 continue
             
-            # Skip if already exists
-            if _ssot_exists_in_kb(db, title):
-                skipped += 1
-                continue
-            
             # Fetch from GitHub
             content = _fetch_ssot_from_github(path)
             if not content:
                 logger.warning(f"  ⚠️ Could not fetch: {path}")
+                stats['failed'] += 1
                 continue
             
-            # Insert into documents
-            doc_id = str(uuid.uuid4())
+            # Check if insert, update, or skip needed
+            action, doc_id = _ssot_check_status(db, title, content)
             now = datetime.utcnow()
             
             try:
-                db.execute(text("""
-                    INSERT INTO documents (id, title, content, status, source_type, created_at, updated_at)
-                    VALUES (:id, :title, :content, 'indexed', 'ssot', :now, :now)
-                """), {
-                    "id": doc_id,
-                    "title": title,
-                    "content": content,
-                    "now": now
-                })
-                db.commit()
-                seeded += 1
-                logger.info(f"  ✅ Seeded: {title}")
+                if action == 'insert':
+                    new_id = str(uuid.uuid4())
+                    db.execute(text("""
+                        INSERT INTO documents (id, title, content, status, source_type, created_at, updated_at)
+                        VALUES (:id, :title, :content, 'indexed', 'ssot', :now, :now)
+                    """), {"id": new_id, "title": title, "content": content, "now": now})
+                    db.commit()
+                    stats['inserted'] += 1
+                    logger.info(f"  ✅ Inserted: {title}")
+                
+                elif action == 'update':
+                    db.execute(text("""
+                        UPDATE documents SET content = :content, updated_at = :now, status = 'indexed'
+                        WHERE id = :id
+                    """), {"id": doc_id, "content": content, "now": now})
+                    db.commit()
+                    stats['updated'] += 1
+                    logger.info(f"  🔄 Updated: {title}")
+                
+                else:  # skip
+                    stats['skipped'] += 1
+                    
             except Exception as e:
                 db.rollback()
-                logger.warning(f"  ❌ Failed to seed {title}: {e}")
+                stats['failed'] += 1
+                logger.warning(f"  ❌ Failed {action} for {title}: {e}")
         
-        logger.info(f"🌱 SSOT Seeding complete: {seeded} new, {skipped} existing")
+        logger.info(f"🌱 SSOT Seeding complete: {stats['inserted']} new, {stats['updated']} updated, {stats['skipped']} unchanged, {stats['failed']} failed")
     
     except Exception as e:
         logger.error(f"SSOT seeding error: {e}")
