@@ -6738,6 +6738,109 @@ async def set_chat_session_type(session_id: str, request: Request, user=Depends(
     finally:
         db.close()
 
+# ── USER-CHALLENGE: Core-User kann Antworten ablehnen und neu generieren lassen ──
+CORE_USERS = ["gerhard.fehr@fehradvice.com"]
+
+class UserChallengeRequest(BaseModel):
+    original_answer: str
+    rejection_reason: str
+    correction_hint: Optional[str] = None
+    session_id: Optional[str] = None
+
+@app.post("/api/chat/user-challenge")
+async def user_challenge_answer(request: UserChallengeRequest, user=Depends(require_auth)):
+    """Core-User kann eine Antwort ablehnen und BEATRIX generiert eine verbesserte Version."""
+    if user["sub"] not in CORE_USERS:
+        raise HTTPException(403, "User-Challenge ist nur für Core-User verfügbar")
+    
+    if not request.original_answer or not request.rejection_reason:
+        raise HTTPException(400, "Original-Antwort und Ablehnungsgrund sind erforderlich")
+    
+    # System-Prompt für Regenerierung
+    system_prompt = f"""Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
+
+Ein Core-User hat eine deiner vorherigen Antworten abgelehnt und um Korrektur gebeten.
+
+ORIGINAL-ANTWORT (ABGELEHNT):
+{request.original_answer[:3000]}
+
+GRUND DER ABLEHNUNG:
+{request.rejection_reason}
+
+{f'GEWÜNSCHTE KORREKTUR: {request.correction_hint}' if request.correction_hint else ''}
+
+Deine Aufgabe:
+1. Verstehe warum die ursprüngliche Antwort abgelehnt wurde
+2. Generiere eine VERBESSERTE Antwort die das Problem behebt
+3. Sei präzise, korrekt und vollständig
+4. Wenn du unsicher bist, sage das ehrlich
+
+Antworte auf Deutsch, professionell und auf den Punkt."""
+
+    try:
+        import ssl as _ssl, http.client, json
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 3000,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": f"Bitte generiere eine korrigierte Antwort basierend auf dem Feedback."}]
+        }).encode()
+        
+        conn = http.client.HTTPSConnection("api.anthropic.com", timeout=60, context=ctx)
+        conn.request("POST", "/v1/messages", body=payload, headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            "User-Agent": "BEATRIXLab/3.22-user-challenge"
+        })
+        resp = conn.getresponse()
+        
+        if resp.status != 200:
+            error_body = resp.read().decode()
+            logger.error(f"User-Challenge API error: {resp.status} {error_body[:200]}")
+            raise HTTPException(500, "Fehler bei der Regenerierung")
+        
+        result = json.loads(resp.read().decode())
+        answer = result["content"][0]["text"]
+        
+        # Log the challenge for learning
+        logger.info(f"USER-CHALLENGE by {user['sub']}: reason='{request.rejection_reason[:50]}' → regenerated")
+        
+        # Save to DB for tracking
+        db = get_db()
+        try:
+            db.execute(text("""
+                INSERT INTO chat_messages (user_email, session_id, role, content, sources)
+                VALUES (:email, :sid, 'user-challenge', :content, :sources)
+            """), {
+                "email": user["sub"],
+                "sid": request.session_id or "challenge_" + str(int(datetime.utcnow().timestamp())),
+                "content": f"REJECTION: {request.rejection_reason}\nHINT: {request.correction_hint or '-'}",
+                "sources": json.dumps({"type": "user_challenge", "original_length": len(request.original_answer)})
+            })
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Could not save user-challenge to DB: {e}")
+        finally:
+            db.close()
+        
+        return {
+            "status": "done",
+            "answer": answer,
+            "sources": [{"title": "👤 User-Challenge Korrektur", "type": "user_challenge"}],
+            "path": "live"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"User-Challenge error: {e}")
+        raise HTTPException(500, f"Fehler bei der Regenerierung: {str(e)}")
+
 @app.post("/api/chat/session/{session_id}/close")
 async def close_chat_session(session_id: str, user=Depends(require_auth)):
     """Close/archive a chat session with auto-generated summary."""
