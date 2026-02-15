@@ -6884,6 +6884,82 @@ async def apply_user_challenge(request: UserChallengeApplyRequest, user=Depends(
     
     return {"status": "applied", "message": "Korrektur gespeichert"}
 
+# ── CHALLENGE-RESPONSE: BEATRIX antwortet auf KI-Review Kritik ──
+class ChallengeResponseRequest(BaseModel):
+    original_answer: str
+    challenge_synthesis: str
+    session_id: Optional[str] = None
+
+@app.post("/api/chat/challenge-response")
+async def challenge_response(request: ChallengeResponseRequest, user=Depends(require_auth)):
+    """BEATRIX generiert eine Antwort/Verteidigung auf die KI-Review Kritik."""
+    
+    if not request.challenge_synthesis:
+        raise HTTPException(400, "Challenge-Synthese ist erforderlich")
+    
+    system_prompt = f"""Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
+
+Ein KI-Review (APE Challenge mit 5 verschiedenen Modellen) hat Kritik an einer deiner Antworten geäußert.
+
+ORIGINAL-ANTWORT:
+{request.original_answer[:2000]}
+
+KRITIK-SYNTHESE DER 5 MODELLE:
+{request.challenge_synthesis[:2000]}
+
+Deine Aufgabe:
+1. Analysiere die Kritikpunkte sachlich
+2. Erkenne berechtigte Kritik an und sage, wie du sie adressieren würdest
+3. Widersprich höflich aber bestimmt, wo die Kritik unbegründet ist
+4. Ergänze fehlende Informationen oder Nuancen
+5. Schlage konkrete Verbesserungen vor
+
+Antworte strukturiert, professionell und konstruktiv. Sei nicht defensiv, sondern lösungsorientiert.
+Antworte auf Deutsch."""
+
+    try:
+        import ssl as _ssl, http.client, json
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 2000,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": "Bitte formuliere deine Antwort auf die Kritik."}]
+        }).encode()
+        
+        conn = http.client.HTTPSConnection("api.anthropic.com", timeout=60, context=ctx)
+        conn.request("POST", "/v1/messages", body=payload, headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            "User-Agent": "BEATRIXLab/3.22-challenge-response"
+        })
+        resp = conn.getresponse()
+        
+        if resp.status != 200:
+            error_body = resp.read().decode()
+            logger.error(f"Challenge-Response API error: {resp.status} {error_body[:200]}")
+            raise HTTPException(500, "Fehler bei der Antwort-Generierung")
+        
+        result = json.loads(resp.read().decode())
+        response_text = result["content"][0]["text"]
+        
+        logger.info(f"CHALLENGE-RESPONSE by {user['sub']}: generated response to review")
+        
+        return {
+            "status": "done",
+            "response": response_text
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Challenge-Response error: {e}")
+        raise HTTPException(500, f"Fehler bei der Antwort-Generierung: {str(e)}")
+
 @app.post("/api/chat/session/{session_id}/close")
 async def close_chat_session(session_id: str, user=Depends(require_auth)):
     """Close/archive a chat session with auto-generated summary."""
