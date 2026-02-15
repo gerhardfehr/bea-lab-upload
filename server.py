@@ -8548,12 +8548,8 @@ async def get_ssot_status(user=Depends(require_auth)):
 
 @app.post("/api/ssot/trigger-sync")
 async def trigger_ssot_sync(user=Depends(require_admin)):
-    """Manually trigger SSOT sync (admin only)."""
-    try:
-        await seed_ssot_knowledge_base()
-        return {"status": "ok", "message": "Sync completed"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    """Manually trigger SSOT sync (admin only). Note: Full sync runs on deploy."""
+    return {"status": "info", "message": "Manual sync disabled. Sync runs automatically on deploy. Use Railway redeploy to trigger."}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 
