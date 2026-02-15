@@ -15178,41 +15178,9 @@ logger.info("✅ Document PATCH endpoint loaded")
 # SSOT AUTO-SEEDING — Canonical Knowledge Base Seeds
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SSOT_SEEDS = [
-    {
-        "github_path": "data/knowledge/canonical/BCM-Behavioral-Change-Model.md",
-        "title": "📚 SSOT: Behavioral Change Model (BCM)",
-        "tags": ["canonical", "ssot", "bcm"]
-    },
-    {
-        "github_path": "data/knowledge/canonical/EBF-Evidence-Based-Framework.md",
-        "title": "📚 SSOT: Evidence-Based Framework (EBF)",
-        "tags": ["canonical", "ssot", "ebf"]
-    },
-    {
-        "github_path": "docs/frameworks/10C-CORE-Framework.md",
-        "title": "📚 SSOT: 10C CORE Framework",
-        "tags": ["canonical", "ssot", "10c"]
-    },
-    {
-        "github_path": "data/knowledge/canonical/FEPSDE-Matrix.md",
-        "title": "📚 SSOT: FEPSDE Matrix (6 Nutzendimensionen)",
-        "tags": ["canonical", "ssot", "fepsde"]
-    },
-    {
-        "github_path": "data/knowledge/canonical/MECE-Taxonomy.md",
-        "title": "📚 SSOT: MECE-Taxonomie (Epistemologie)",
-        "tags": ["canonical", "ssot", "mece"]
-    },
-    {
-        "github_path": "data/knowledge/canonical/BCM-EBF-BEATRIX-Architecture.md",
-        "title": "📚 SSOT: BCM-EBF-BEATRIX Zusammenhang",
-        "tags": ["canonical", "ssot", "architecture"]
-    }
-]
-
 SSOT_GITHUB_REPO = "FehrAdvice-Partners-AG/complementarity-context-framework"
 SSOT_GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+SSOT_REGISTRY_PATH = "data/beatrix/ssot-seed-registry.yaml"
 
 def _fetch_ssot_from_github(path: str) -> str:
     """Fetch SSOT content from GitHub."""
@@ -15237,6 +15205,32 @@ def _fetch_ssot_from_github(path: str) -> str:
         logger.warning(f"Failed to fetch SSOT {path}: {e}")
         return None
 
+def _load_seed_registry() -> list:
+    """Load seed registry from GitHub (dynamic seed list)."""
+    import yaml
+    
+    logger.info("📋 Loading SSOT seed registry from GitHub...")
+    content = _fetch_ssot_from_github(SSOT_REGISTRY_PATH)
+    
+    if not content:
+        logger.warning("Could not load seed registry, using fallback")
+        # Fallback to minimal hardcoded list
+        return [
+            {"path": "data/knowledge/canonical/BCM-Behavioral-Change-Model.md", 
+             "title": "📚 SSOT: Behavioral Change Model (BCM)"},
+            {"path": "data/knowledge/canonical/EBF-Evidence-Based-Framework.md",
+             "title": "📚 SSOT: Evidence-Based Framework (EBF)"},
+        ]
+    
+    try:
+        registry = yaml.safe_load(content)
+        seeds = registry.get("seeds", [])
+        logger.info(f"📋 Loaded {len(seeds)} seeds from registry")
+        return seeds
+    except Exception as e:
+        logger.error(f"Failed to parse seed registry: {e}")
+        return []
+
 def _ssot_exists_in_kb(db, title: str) -> bool:
     """Check if SSOT document already exists in KB."""
     try:
@@ -15250,13 +15244,23 @@ async def seed_ssot_knowledge_base():
     """Seed canonical SSOT definitions into KB if missing."""
     logger.info("🌱 Checking SSOT Knowledge Base seeds...")
     
+    # Load seed registry from GitHub (dynamic!)
+    seeds = _load_seed_registry()
+    if not seeds:
+        logger.warning("No seeds to process")
+        return
+    
     db = get_db()
     seeded = 0
     skipped = 0
     
     try:
-        for seed in SSOT_SEEDS:
-            title = seed["title"]
+        for seed in seeds:
+            title = seed.get("title", "")
+            path = seed.get("path", "")
+            
+            if not title or not path:
+                continue
             
             # Skip if already exists
             if _ssot_exists_in_kb(db, title):
@@ -15264,9 +15268,9 @@ async def seed_ssot_knowledge_base():
                 continue
             
             # Fetch from GitHub
-            content = _fetch_ssot_from_github(seed["github_path"])
+            content = _fetch_ssot_from_github(path)
             if not content:
-                logger.warning(f"  ⚠️ Could not fetch: {seed['github_path']}")
+                logger.warning(f"  ⚠️ Could not fetch: {path}")
                 continue
             
             # Insert into documents
