@@ -15139,3 +15139,37 @@ async def get_feedback_solution(feedback_id: str, user=Depends(require_permissio
         db.close()
 
 logger.info("✅ AI Solution Generator loaded")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DOCUMENT TITLE UPDATE — Admin endpoint to fix document titles
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.patch("/api/documents/{doc_id}")
+async def update_document(doc_id: str, update: dict, user=Depends(require_permission("platform.admin_dashboard"))):
+    """Update document metadata (title only for now)."""
+    db = get_db()
+    try:
+        # Check document exists
+        doc = db.execute(text("SELECT id, title FROM documents WHERE id = :id"), {"id": doc_id}).fetchone()
+        if not doc:
+            raise HTTPException(404, "Dokument nicht gefunden")
+        
+        # Update title if provided
+        if "title" in update:
+            new_title = update["title"]
+            db.execute(text("UPDATE documents SET title = :title WHERE id = :id"),
+                      {"title": new_title, "id": doc_id})
+            db.commit()
+            logger.info(f"Document {doc_id} title updated to: {new_title}")
+            return {"id": doc_id, "title": new_title, "message": "Titel aktualisiert"}
+        
+        return {"id": doc_id, "message": "Keine Änderungen"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update document failed: {e}")
+        raise HTTPException(500, str(e))
+    finally:
+        db.close()
+
+logger.info("✅ Document PATCH endpoint loaded")
