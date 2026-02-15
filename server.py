@@ -45,12 +45,6 @@ APP_URL = os.getenv("APP_URL", "https://www.bea-lab.io")
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-# 3-Tier Model Strategy for cost optimization
-ANTHROPIC_MODEL_HEAVY = os.getenv("ANTHROPIC_MODEL_HEAVY", "claude-opus-4-6")      # APE Review, Deep Research, Complex Analysis
-ANTHROPIC_MODEL_STANDARD = os.getenv("ANTHROPIC_MODEL_STANDARD", "claude-sonnet-4-5")  # RAG Chat, Fact-Check, Belief Analysis
-ANTHROPIC_MODEL_LIGHT = os.getenv("ANTHROPIC_MODEL_LIGHT", "claude-haiku-4-5")     # Intent, Triage, Metadata Extraction
-# Legacy fallback
-ANTHROPIC_MODEL = ANTHROPIC_MODEL_STANDARD
 GH_CONTEXT_REPO = os.getenv("GH_CONTEXT_REPO", "FehrAdvice-Partners-AG/complementarity-context-framework")
 VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY", "")
 VOYAGE_MODEL = "voyage-3-lite"  # 512 dimensions, fast, free tier 200M tokens/month
@@ -64,73 +58,6 @@ GCP_REFRESH_TOKEN = os.getenv("GCP_REFRESH_TOKEN", "")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SSOT INJECTION – Automatische Injection kanonischer Definitionen bei BCM/EBF-Fragen
-# ═══════════════════════════════════════════════════════════════════════════════
-
-BCM_EBF_KEYWORDS = [
-    "bcm", "behavioral change model", "verhaltensänderung",
-    "ebf", "evidence-based framework", "evidenzbasiert",
-    "10c", "core framework", "core-dimensionen",
-    "awareness", "willingness", "fepsde",
-    "psi-dimensionen", "ψ-dimensionen", "kontextdimensionen",
-    "financial", "emotional", "physical", "social", "digital", "ecological",
-    "nutzendimensionen", "utility", "nutzen"
-]
-
-def should_inject_ssot(question: str) -> bool:
-    """Check if question relates to BCM/EBF/10C and needs SSOT injection."""
-    q_lower = question.lower()
-    return any(kw in q_lower for kw in BCM_EBF_KEYWORDS)
-
-SSOT_CONTEXT_INJECTION = """
-# ═══════════════════════════════════════════════════════════════════════════════
-# SSOT KONTEXT – Kanonische Definitionen (automatisch injiziert)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-## HARD BLOCKS – Diese Begriffe sind FALSCH und dürfen NIEMALS verwendet werden:
-
-❌ "Willingness × Ability × Context" – HALLUZINIERTE Formel, existiert NICHT im BCM
-❌ "Ability" als BCM-Konzept – FALSCH
-❌ "Behavioral Competence Model" – FALSCHER Name
-❌ "Behavioral Complementarity Model" – FALSCHER Name
-❌ FEPSDE als "Psychological, Developmental, Environmental" – FALSCH!
-
-## BCM – Behavioral Change Model (KORREKTE Definition)
-
-- BCM = Behavioral CHANGE Model (nicht Competence, nicht Complementarity)
-- BCM = 10C Framework mit 10 CORE-Dimensionen
-- BCM-Diagnose nutzt Awareness × Willingness Matrix (2D)
-- BCM ist ein Beratungs-Tool aus der Praxis (seit 2010)
-
-Die 10 CORE-Dimensionen: WHO, WHAT, HOW, WHEN, WHERE, AWARE, READY, STAGE, HIERARCHY, EIT
-
-## FEPSDE Matrix – 6 Nutzendimensionen (KORREKTE Definition)
-
-F = Financial (Kosten/Nutzen, ökonomische Sicherheit)
-E = Emotional (Wohlbefinden, Zufriedenheit, Gefühle)
-P = Physical (Gesundheit, Energie, Langlebigkeit) ← NICHT "Psychological"!
-S = Social (Beziehungen, Zugehörigkeit, Status, Normen)
-D = Digital (Konnektivität, Zugang, Datenrechte) ← NICHT "Developmental"!
-E = Ecological (Umwelt, Nachhaltigkeit) ← NICHT "Environmental"!
-
-## EBF – Evidence-Based Framework
-
-- Wissenschaftliches Fundament (mit Prof. Ernst Fehr, Uni Zürich)
-- Zentrale Innovation: θ = f(Ψ, 10C) – Parameter sind kontextabhängig
-- "DIE VARIATION IST NICHT NOISE — SIE IST DAS SIGNAL!"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-"""
-
-def inject_ssot_if_needed(question: str, context: str) -> str:
-    """Inject SSOT definitions into context if question relates to BCM/EBF."""
-    if should_inject_ssot(question):
-        return SSOT_CONTEXT_INJECTION + "\n\n" + context
-    return context
-
-
 
 def hash_password(password, salt=None):
     if salt is None:
@@ -526,19 +453,6 @@ class Document(Base):
     uploaded_by = Column(String(320), nullable=True)
     content_hash = Column(String(64), nullable=True, index=True)
 
-class SsotSyncLog(Base):
-    """Log of SSOT seed synchronization events."""
-    __tablename__ = "ssot_sync_log"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    seed_title = Column(String(500), nullable=False)
-    seed_path = Column(String(500), nullable=True)
-    action = Column(String(20), nullable=False)
-    old_hash = Column(String(64), nullable=True)
-    new_hash = Column(String(64), nullable=True)
-    file_size = Column(Integer, nullable=True)
-    sync_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    details = Column(Text, nullable=True)
-
 def get_db():
     global _engine, _SessionLocal
     if _engine is None:
@@ -835,45 +749,6 @@ def get_db():
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_customer ON tasks(customer_code)"))
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_slug)"))
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_lead ON tasks(lead_id)"))
-                    # ══ FEEDBACK GOVERNANCE SYSTEM v1.0 ══
-                    conn.execute(text("""CREATE TABLE IF NOT EXISTS feedback (
-                        id VARCHAR(50) PRIMARY KEY,
-                        user_id VARCHAR(50), user_email VARCHAR(320) NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        message TEXT NOT NULL, screenshot_url TEXT,
-                        tab_context VARCHAR(50), screen_size VARCHAR(20),
-                        browser_info TEXT, page_url TEXT,
-                        category VARCHAR(20), priority VARCHAR(20), affected_area VARCHAR(50),
-                        status VARCHAR(30) DEFAULT 'neu', assigned_to VARCHAR(50),
-                        tier INTEGER, tier_reason TEXT,
-                        tier_override INTEGER, tier_override_by VARCHAR(50), tier_override_reason TEXT,
-                        requires_approval_from VARCHAR(20) DEFAULT 'none',
-                        ai_category VARCHAR(20), ai_priority VARCHAR(20), ai_summary TEXT,
-                        ai_suggested_tier INTEGER, ai_solution_code TEXT,
-                        ai_solution_preview_url TEXT, ai_solution_confidence FLOAT,
-                        ai_solution_risks JSON, ai_related_feedback JSON, ai_is_duplicate_of VARCHAR(50),
-                        approved_by VARCHAR(50), approved_at TIMESTAMP, approval_note TEXT, rejected_reason TEXT,
-                        solution_options JSON, user_selected_option VARCHAR(50), user_selected_at TIMESTAMP,
-                        resolution_note TEXT, resolved_at TIMESTAMP, resolved_by VARCHAR(50),
-                        github_issue VARCHAR(200), related_commit VARCHAR(100),
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
-                    conn.execute(text("""CREATE TABLE IF NOT EXISTS feedback_comments (
-                        id VARCHAR(50) PRIMARY KEY, feedback_id VARCHAR(50) NOT NULL,
-                        user_id VARCHAR(50), user_email VARCHAR(320) NOT NULL,
-                        comment TEXT NOT NULL, is_internal BOOLEAN DEFAULT FALSE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
-                    conn.execute(text("""CREATE TABLE IF NOT EXISTS feedback_history (
-                        id VARCHAR(50) PRIMARY KEY, feedback_id VARCHAR(50) NOT NULL,
-                        changed_by VARCHAR(50), changed_by_email VARCHAR(320),
-                        changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        field_changed VARCHAR(50), old_value TEXT, new_value TEXT, action_type VARCHAR(30))"""))
-                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status)"))
-                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_email)"))
-                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_tier ON feedback(tier)"))
-                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC)"))
-                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_comments_fid ON feedback_comments(feedback_id)"))
-                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feedback_history_fid ON feedback_history(feedback_id)"))
-
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -1251,7 +1126,7 @@ def fact_check_user_claims(user_message: str, user_email: str, chat_doc_id: str 
     # ── Step 1: Extract claims using Claude ──
     try:
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_STANDARD,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 1500,
             "system": FACT_CHECK_SYSTEM,
             "messages": [{"role": "user", "content": f"USER-NACHRICHT:\n{user_message[:3000]}"}]
@@ -1862,7 +1737,7 @@ def analyze_beliefs_and_biases(user_message: str, beatrix_response: str, user_em
     dialog = f"USER-NACHRICHT:\n{user_message.strip()[:3000]}\n\nBEATRIX-ANTWORT:\n{beatrix_response.strip()[:3000]}"
     try:
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_STANDARD,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 2000,
             "system": BIAS_DETECTION_SYSTEM,
             "messages": [{"role": "user", "content": dialog}]
@@ -2178,7 +2053,7 @@ def extract_text(file_path, file_type):
             import fitz; doc = fitz.open(file_path); text = "\n".join(page.get_text() for page in doc); doc.close(); return text.replace("\x00", "").strip()
         elif file_type == "docx":
             from docx import Document as DocxDoc; doc = DocxDoc(file_path); return "\n".join(p.text for p in doc.paragraphs if p.text.strip()).replace("\x00", "")
-        elif file_type in ("txt", "md", "csv", "json", "ics", "yaml", "yml"):
+        elif file_type in ("txt", "md", "csv", "json", "ics"):
             with open(file_path, "r", encoding="utf-8") as f: return f.read().replace("\x00", "")
     except Exception as e: return f"[Extraction error: {e}]"
     return ""
@@ -4676,103 +4551,29 @@ def fast_path_answer(question: str, context: str, sources: list) -> str:
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
 
     system_prompt = """Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
-Du bist spezialisiert auf das Evidence-Based Framework (EBF), Behavioral Economics, das Behavioral Change Model (BCM) und Decision Architecture.
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# KANONISCHE DEFINITIONEN (SSOT) – Diese Definitionen sind VERBINDLICH
-# ═══════════════════════════════════════════════════════════════════════════════
-
-## BCM – Behavioral Change Model (NICHT "Competence" oder "Complementarity"!)
-
-Das BCM ist ein BERATUNGS-TOOL mit wissenschaftlichem Fundament, entwickelt ab 2010 von FehrAdvice.
-Das BCM ist KEINE akademische Theorie, sondern entstand in der Praxis – aus Kundenmandaten.
-
-WICHTIG – HARD BLOCKS (niemals verwenden!):
-- ❌ KEINE Formel "Willingness × Ability × Context" – das ist HALLUZINIERT
-- ❌ "Ability" ist KEIN BCM-Konzept
-- ❌ "Capacity" ist KEIN BCM-Konzept
-- ❌ BCM heisst NICHT "Behavioral Competence Model" oder "Behavioral Complementarity Model"
-
-WAS DAS BCM TATSÄCHLICH IST:
-- BCM = 10C Framework (10 CORE-Dimensionen)
-- Die 10 COREs: WHO, WHAT, HOW, WHEN, WHERE, AWARE, READY, STAGE, HIERARCHY, EIT
-- Diagnose erfolgt über eine 2D-Matrix: Awareness × Willingness
-- Output: Wahrscheinlichkeit und Fristigkeit einer Verhaltensänderung
-
-Die 10C CORE-Dimensionen:
-1. WHO – Wer hat Utility? (Zielpopulation, Levels L)
-2. WHAT – Was ist Utility? (FEPSDE: Financial, Emotional, Physical, Social, Digital, Ecological)
-3. HOW – Wie interagieren die Dimensionen? (Komplementarität γ)
-4. WHEN – Wann zählt Kontext? (8 Ψ-Dimensionen)
-5. WHERE – Woher die Zahlen? (Parameter Θ, 4-Tier BBB)
-6. AWARE – Wie bewusst? (Awareness A(·) ∈ [0,1])
-7. READY – Handlungsbereit? (Willingness WAX, τ, θ)
-8. STAGE – Wo in der Journey? (Behavioral Change Journey S(t))
-9. HIERARCHY – Wie stratifizieren Entscheidungen? (Levels L0-L3)
-10. EIT – Wie emergieren Interventionen? (Vektor I⃗ ∈ [0,1]⁹)
-
-## EBF – Evidence-Based Framework
-
-Das EBF ist das wissenschaftliche FUNDAMENT (entwickelt mit Prof. Ernst Fehr, Uni Zürich).
-Zentrale Innovation: θ = f(Ψ, 10C) – Parameter sind KEINE Konstanten, sondern kontextabhängig.
-"DIE VARIATION IST NICHT NOISE — SIE IST DAS SIGNAL!"
-
-## BEATRIX
-
-BEATRIX ist die SOFTWARE-PLATTFORM, die BCM + EBF digitalisiert und skaliert.
-BEATRIX überwindet die kognitive Kapazitätsgrenze manueller BCM-Anwendung.
-
-## Zusammenspiel
-
-EBF (Wissenschaft) → liefert Parameter & Evidenz
-BCM (Modell) → wird operationalisiert durch
-BEATRIX (Software) → Output für Berater & Kunden
-
-# ═══════════════════════════════════════════════════════════════════════════════
+Du bist spezialisiert auf das Evidence-Based Framework (EBF), Behavioral Economics, das Behavioral Competence Model (BCM) und Decision Architecture.
 
 Dir steht vorhandenes Wissen aus der BEATRIX Knowledge Base zur Verfügung. Dieses Wissen wurde zuvor durch tiefgehende Analyse des EBF-Frameworks erarbeitet.
 
 Deine Aufgabe:
-- Beantworte Fragen basierend auf dem bereitgestellten Kontext UND den kanonischen Definitionen oben
-- Bei BCM/EBF-Fragen: IMMER die kanonischen Definitionen oben verwenden, NICHT aus allgemeinem Wissen halluzinieren
+- Beantworte Fragen basierend auf dem bereitgestellten Kontext
 - Antworte präzise, wissenschaftlich fundiert und praxisorientiert
 - Nenne Quellen wenn du aus dem Kontext zitierst
 - Wenn der Kontext nicht ausreicht, sage das ehrlich
 - Antworte auf Deutsch, es sei denn die Frage ist auf Englisch
 
-DEFENSIVE PROMPTING - CHOICE ARCHITECTURE:
-Wenn eine Frage mehrdeutig ist (z.B. < 5 Wörter ohne klaren Kontext, Pronomen ohne Bezug wie "das Problem?", "warum?", "und jetzt?"):
-- NICHT spekulieren oder raten was gemeint sein könnte
-- STATTDESSEN: Biete dem User exakt 3 konkrete Interpretationen zur Auswahl an
-
-Format bei Ambiguität:
-"Ich möchte sicherstellen, dass ich deine Frage richtig verstehe. Meinst du:
-
-**A)** [Konkrete Interpretation 1 - bezogen auf unmittelbar vorheriges Thema]
-
-**B)** [Konkrete Interpretation 2 - andere plausible Deutung]
-
-**C)** [Konkrete Interpretation 3 - weitere mögliche Interpretation]
-
-Oder meinst du etwas anderes?"
-
-WICHTIG: Bei klaren Fragen wie "Was ist das BCM?" direkt antworten mit den kanonischen Definitionen oben!
-
 Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
 
-    # Inject SSOT if question relates to BCM/EBF
-    enriched_context = inject_ssot_if_needed(question, context)
-    
     user_message = f"""Hier ist relevanter Kontext aus der BEATRIX Knowledge Base (vorberechnetes EBF-Wissen):
 
-{enriched_context}
+{context}
 
 ---
 
 Frage: {question}"""
 
     payload = json.dumps({
-        "model": ANTHROPIC_MODEL_STANDARD,
+        "model": "claude-sonnet-4-20250514",
         "max_tokens": 3000,
         "system": system_prompt,
         "messages": [{"role": "user", "content": user_message}]
@@ -5513,7 +5314,7 @@ REGELN:
     }
 
 
-def call_claude_json(system_prompt, messages, today, model=ANTHROPIC_MODEL_STANDARD, max_tokens=2500):
+def call_claude_json(system_prompt, messages, today, model="claude-sonnet-4-20250514", max_tokens=2500):
     """Call Claude API and extract JSON from response."""
     import urllib.request, ssl, re
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
@@ -5590,7 +5391,7 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
         try:
             router_messages = [{"role": "user", "content": message}]
             parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
-                                           model=ANTHROPIC_MODEL_LIGHT, max_tokens=500)
+                                           model="claude-haiku-4-5-20251001", max_tokens=500)
             if parsed:
                 intent = parsed.get("intent", "general")
                 entities = parsed.get("entities", {})
@@ -5817,7 +5618,7 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
         try:
             router_messages = [{"role": "user", "content": message}]
             parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
-                                           model=ANTHROPIC_MODEL_LIGHT, max_tokens=500)
+                                           model="claude-haiku-4-5-20251001", max_tokens=500)
             if parsed:
                 intent = parsed.get("intent", "general")
                 entities = parsed.get("entities", {})
@@ -5953,7 +5754,7 @@ Ich habe den Lead für Helvetia angelegt. Folgende Daten fehlen noch:
 
         # Stream domain specialist
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_STANDARD,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 2500,
             "stream": True,
             "system": domain_prompt + draft_note + f"\n\nHeute ist: {today}",
@@ -6170,60 +5971,7 @@ async def chat_stream(request: ChatRequest, user=Depends(require_auth)):
     session_rules = SESSION_RULES.get(session_type, SESSION_RULES["general"])
 
     system_prompt = f"""Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
-Du bist spezialisiert auf das Evidence-Based Framework (EBF), Behavioral Economics, das Behavioral Change Model (BCM) und Decision Architecture.
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# KANONISCHE DEFINITIONEN (SSOT) – VERBINDLICH, KEINE ABWEICHUNG ERLAUBT
-# ═══════════════════════════════════════════════════════════════════════════════
-
-## HARD BLOCKS – Diese Begriffe sind FALSCH und dürfen NIEMALS verwendet werden:
-
-❌ "Willingness × Ability × Context" – HALLUZINIERTE Formel, existiert NICHT im BCM
-❌ "Ability" als BCM-Konzept – FALSCH, existiert nicht
-❌ "Behavioral Competence Model" – FALSCHER Name
-❌ "Behavioral Complementarity Model" – FALSCHER Name
-❌ FEPSDE als "Psychological, Developmental, Environmental" – FALSCH
-
-## BCM – Behavioral Change Model (KORREKTE Definition)
-
-- BCM = Behavioral CHANGE Model (nicht Competence, nicht Complementarity)
-- BCM = 10C Framework mit 10 CORE-Dimensionen
-- BCM ist ein BERATUNGS-TOOL aus der Praxis (seit 2010), KEIN akademisches Framework
-- BCM-Diagnose nutzt Awareness × Willingness Matrix (2D)
-
-Die 10 CORE-Dimensionen:
-1. WHO – Wer hat Utility? (Zielpopulation)
-2. WHAT – Was ist Utility? (→ FEPSDE Matrix)
-3. HOW – Wie interagieren die Dimensionen? (Komplementarität γ)
-4. WHEN – Wann zählt Kontext? (8 Ψ-Dimensionen)
-5. WHERE – Woher die Zahlen? (Parameter Θ)
-6. AWARE – Wie bewusst? (Awareness)
-7. READY – Handlungsbereit? (Willingness)
-8. STAGE – Wo in der Journey? (Behavioral Change Journey)
-9. HIERARCHY – Wie stratifizieren Entscheidungen? (L0-L3)
-10. EIT – Wie emergieren Interventionen?
-
-## FEPSDE Matrix – 6 Nutzendimensionen (KORREKTE Definition)
-
-F = Financial (Kosten/Nutzen, ökonomische Sicherheit)
-E = Emotional (Wohlbefinden, Zufriedenheit, Sinn)
-P = Physical (Gesundheit, Energie, Langlebigkeit) ← NICHT "Psychological"!
-S = Social (Beziehungen, Zugehörigkeit, Status, Normen)
-D = Digital (Konnektivität, Zugang, Datenrechte) ← NICHT "Developmental"!
-E = Ecological (Umwelt, Nachhaltigkeit) ← NICHT "Environmental"!
-
-## EBF – Evidence-Based Framework
-
-- Wissenschaftliches Fundament (mit Prof. Ernst Fehr, Uni Zürich)
-- Zentrale Innovation: θ = f(Ψ, 10C) – Parameter sind kontextabhängig, KEINE Konstanten
-- "DIE VARIATION IST NICHT NOISE — SIE IST DAS SIGNAL!"
-
-## BEATRIX
-
-- Software-Plattform die BCM + EBF digitalisiert und skaliert
-- Überwindet die kognitive Kapazitätsgrenze manueller BCM-Anwendung
-
-# ═══════════════════════════════════════════════════════════════════════════════
+Du bist spezialisiert auf das Evidence-Based Framework (EBF), Behavioral Economics, das Behavioral Competence Model (BCM) und Decision Architecture.
 
 Dir steht vorhandenes Wissen aus der BEATRIX Knowledge Base zur Verfügung.
 
@@ -6237,27 +5985,6 @@ Deine Aufgabe:
 - Antworte präzise, wissenschaftlich fundiert und praxisorientiert
 - Antworte auf Deutsch, es sei denn die Frage ist auf Englisch
 - Halte dich an die Session-Regeln oben
-
-DEFENSIVE PROMPTING - CHOICE ARCHITECTURE:
-Wenn eine Frage mehrdeutig ist (z.B. < 5 Wörter ohne klaren Kontext, Pronomen ohne Bezug wie "das Problem?", "warum?", "und jetzt?", "was meinst du?"):
-- NICHT spekulieren oder raten was gemeint sein könnte
-- STATTDESSEN: Biete dem User exakt 3 konkrete Interpretationen zur Auswahl an
-
-Format bei Ambiguität:
-"Ich möchte sicherstellen, dass ich deine Frage richtig verstehe. Meinst du:
-
-**A)** [Konkrete Interpretation 1 - bezogen auf unmittelbar vorheriges Thema im Chat]
-
-**B)** [Konkrete Interpretation 2 - andere plausible Deutung aus dem Kontext]
-
-**C)** [Konkrete Interpretation 3 - weitere mögliche Interpretation]
-
-Oder meinst du etwas anderes?"
-
-WICHTIG: 
-- Interpretationen aus dem aktuellen Chat-Kontext und der bisherigen Konversation ableiten
-- Bei klaren Fragen ("Was ist das BCM?", "Erkläre Nudging") direkt antworten - NUR bei echter Mehrdeutigkeit nachfragen
-- Niemals interne Meta-Informationen über BEATRIX selbst als Interpretation anbieten
 
 Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
 
@@ -6304,7 +6031,7 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
         ctx.verify_mode = ssl.CERT_NONE
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_STANDARD,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 4000,
             "stream": True,
             "system": system_prompt,
@@ -6406,6 +6133,8 @@ Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice.
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest, user=Depends(require_auth)):
+    import time as _time
+    _start_time = _time.time()
     question = request.question.strip()
     _session_id = request.session_id
     if not question:
@@ -6476,7 +6205,8 @@ async def chat(request: ChatRequest, user=Depends(require_auth)):
                     "answer": answer,
                     "sources": sources,
                     "path": "fast",
-                    "knowledge_score": top_score
+                    "knowledge_score": top_score,
+                    "response_time_ms": int((_time.time() - _start_time) * 1000)
                 }
             except Exception as e:
                 logger.warning(f"Fast path failed, falling through to deep path: {e}")
@@ -6604,59 +6334,6 @@ def build_project_system_prompt(project_ctx: dict, slug: str) -> str:
 
     return f"""Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# KANONISCHE DEFINITIONEN (SSOT) – VERBINDLICH, KEINE ABWEICHUNG ERLAUBT
-# ═══════════════════════════════════════════════════════════════════════════════
-
-## HARD BLOCKS – Diese Begriffe sind FALSCH und dürfen NIEMALS verwendet werden:
-
-❌ "Willingness × Ability × Context" – HALLUZINIERTE Formel, existiert NICHT im BCM
-❌ "Ability" als BCM-Konzept – FALSCH, existiert nicht
-❌ "Behavioral Competence Model" – FALSCHER Name
-❌ "Behavioral Complementarity Model" – FALSCHER Name
-❌ FEPSDE als "Psychological, Developmental, Environmental" – FALSCH
-
-## BCM – Behavioral Change Model (KORREKTE Definition)
-
-- BCM = Behavioral CHANGE Model (nicht Competence, nicht Complementarity)
-- BCM = 10C Framework mit 10 CORE-Dimensionen
-- BCM ist ein BERATUNGS-TOOL aus der Praxis (seit 2010), KEIN akademisches Framework
-- BCM-Diagnose nutzt Awareness × Willingness Matrix (2D)
-
-Die 10 CORE-Dimensionen:
-1. WHO – Wer hat Utility? (Zielpopulation)
-2. WHAT – Was ist Utility? (→ FEPSDE Matrix)
-3. HOW – Wie interagieren die Dimensionen? (Komplementarität γ)
-4. WHEN – Wann zählt Kontext? (8 Ψ-Dimensionen)
-5. WHERE – Woher die Zahlen? (Parameter Θ)
-6. AWARE – Wie bewusst? (Awareness)
-7. READY – Handlungsbereit? (Willingness)
-8. STAGE – Wo in der Journey? (Behavioral Change Journey)
-9. HIERARCHY – Wie stratifizieren Entscheidungen? (L0-L3)
-10. EIT – Wie emergieren Interventionen?
-
-## FEPSDE Matrix – 6 Nutzendimensionen (KORREKTE Definition)
-
-F = Financial (Kosten/Nutzen, ökonomische Sicherheit)
-E = Emotional (Wohlbefinden, Zufriedenheit, Sinn)
-P = Physical (Gesundheit, Energie, Langlebigkeit) ← NICHT "Psychological"!
-S = Social (Beziehungen, Zugehörigkeit, Status, Normen)
-D = Digital (Konnektivität, Zugang, Datenrechte) ← NICHT "Developmental"!
-E = Ecological (Umwelt, Nachhaltigkeit) ← NICHT "Environmental"!
-
-## EBF – Evidence-Based Framework
-
-- Wissenschaftliches Fundament (mit Prof. Ernst Fehr, Uni Zürich)
-- Zentrale Innovation: θ = f(Ψ, 10C) – Parameter sind kontextabhängig, KEINE Konstanten
-- "DIE VARIATION IST NICHT NOISE — SIE IST DAS SIGNAL!"
-
-## BEATRIX
-
-- Software-Plattform die BCM + EBF digitalisiert und skaliert
-- Überwindet die kognitive Kapazitätsgrenze manueller BCM-Anwendung
-
-# ═══════════════════════════════════════════════════════════════════════════════
-
 Du arbeitest gerade im Kontext eines spezifischen Kundenprojekts. Alle deine Antworten sollen sich auf dieses Projekt beziehen.
 
 PROJEKTKONTEXT:
@@ -6669,24 +6346,6 @@ Deine Aufgabe:
 - Wenn du Kontext-Analysen, Segment-Analysen oder Modelle erstellst, strukturiere sie klar
 - Gib praxisorientierte, auf den Kunden zugeschnittene Antworten
 - Antworte auf Deutsch, es sei denn die Frage ist auf Englisch
-
-DEFENSIVE PROMPTING - CHOICE ARCHITECTURE:
-Wenn eine Frage mehrdeutig ist (z.B. < 5 Wörter ohne klaren Kontext, Pronomen ohne Bezug wie "das Problem?", "warum?", "und jetzt?"):
-- NICHT spekulieren oder raten
-- STATTDESSEN: Biete dem User exakt 3 konkrete Interpretationen zur Auswahl an, bezogen auf den Projektkontext
-
-Format bei Ambiguität:
-"Ich möchte sicherstellen, dass ich deine Frage richtig verstehe. Meinst du:
-
-**A)** [Interpretation bezogen auf das aktuelle Projekt]
-
-**B)** [Andere Interpretation im Projektkontext]
-
-**C)** [Weitere mögliche Interpretation]
-
-Oder meinst du etwas anderes?"
-
-WICHTIG: Bei klaren Fragen direkt antworten - nur bei echter Mehrdeutigkeit nachfragen!
 
 Stil: Professionell, klar, auf den Punkt. Wie ein Senior Berater bei FehrAdvice."""
 
@@ -6738,7 +6397,7 @@ async def chat_project(slug: str, request: ChatRequest, user=Depends(require_aut
 
         ctx_ssl = ssl.create_default_context(); ctx_ssl.check_hostname = False; ctx_ssl.verify_mode = ssl.CERT_NONE
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_STANDARD,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 4000,
             "system": system_prompt,
             "messages": [{"role": "user", "content": user_content}]
@@ -6869,7 +6528,7 @@ async def chat_project_stream(slug: str, request: ChatRequest, user=Depends(requ
         user_content.append({"type": "text", "text": full_question})
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_STANDARD,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 4000,
             "stream": True,
             "system": system_prompt,
@@ -8173,7 +7832,7 @@ async def _run_text_analysis(text: str, total_length: int, filename: str = "") -
 TEXT:
 {excerpt}"""
                 payload = json.dumps({
-                    "model": ANTHROPIC_MODEL_STANDARD,
+                    "model": "claude-sonnet-4-20250514",
                     "max_tokens": 400,
                     "messages": [{"role": "user", "content": prompt}]
                 }).encode()
@@ -8285,7 +7944,7 @@ TEXT:
 TEXT:
 {excerpt}"""
                 payload = json.dumps({
-                    "model": ANTHROPIC_MODEL_STANDARD,
+                    "model": "claude-sonnet-4-20250514",
                     "max_tokens": 400,
                     "messages": [{"role": "user", "content": prompt}]
                 }).encode()
@@ -8482,7 +8141,7 @@ Antworte NUR mit validem JSON:
 }}"""
 
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL_STANDARD,
+                "model": "claude-sonnet-4-20250514",
                 "max_tokens": 1200,
                 "messages": [{"role": "user", "content": prompt}]
             }).encode()
@@ -8560,7 +8219,7 @@ Antworte NUR mit validem JSON:
 TEXT:
 {excerpt}"""
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL_STANDARD,
+                "model": "claude-sonnet-4-20250514",
                 "max_tokens": 300,
                 "messages": [{"role": "user", "content": prompt}]
             }).encode()
@@ -8658,55 +8317,6 @@ TEXT:
         # Paper ID suggestion
         "paper_id": paper_id if detection["is_paper"] else None,
     }
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SSOT SYNC API
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.get("/api/ssot/sync-history")
-async def get_ssot_sync_history(limit: int = 50, user=Depends(require_auth)):
-    """Get SSOT sync history log - shows insert/update/error events."""
-    db = get_db()
-    try:
-        result = db.execute(text("""
-            SELECT seed_title, seed_path, action, old_hash, new_hash, file_size, sync_timestamp, details
-            FROM ssot_sync_log ORDER BY sync_timestamp DESC LIMIT :limit
-        """), {"limit": limit})
-        logs = []
-        for row in result:
-            logs.append({
-                "title": row[0], "path": row[1], "action": row[2],
-                "old_hash": row[3][:16] if row[3] else None,
-                "new_hash": row[4][:16] if row[4] else None,
-                "size": row[5], "timestamp": row[6].isoformat() if row[6] else None,
-                "details": row[7]
-            })
-        return {"logs": logs, "count": len(logs)}
-    except Exception as e:
-        return {"logs": [], "count": 0, "note": "Sync log table may not exist yet"}
-    finally:
-        db.close()
-
-@app.get("/api/ssot/seeds")
-async def get_ssot_seeds(user=Depends(require_auth)):
-    """Get current SSOT seeds with their sync status."""
-    db = get_db()
-    try:
-        docs = db.execute(text("""
-            SELECT id, title, content_hash, updated_at, created_at
-            FROM documents WHERE source_type = 'ssot' OR title LIKE '%SSOT%'
-            ORDER BY title
-        """)).fetchall()
-        seeds = [{"id": d[0], "title": d[1], "hash": d[2], 
-                  "updated": d[3].isoformat() if d[3] else None,
-                  "created": d[4].isoformat() if d[4] else None} for d in docs]
-        return {"seeds": seeds, "count": len(seeds)}
-    except Exception as e:
-        return {"seeds": [], "count": 0, "error": str(e)}
-    finally:
-        db.close()
-
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/documents")
 async def list_documents(database: Optional[str] = None, limit: int = 50, user=Depends(require_auth)):
@@ -8841,7 +8451,7 @@ Antworte NUR mit validem JSON:
 }}"""
 
                 payload = json.dumps({
-                    "model": ANTHROPIC_MODEL_STANDARD, "max_tokens": 1200,
+                    "model": "claude-sonnet-4-20250514", "max_tokens": 1200,
                     "messages": [{"role": "user", "content": prompt}]
                 }).encode()
                 req = ureq.Request("https://api.anthropic.com/v1/messages",
@@ -12582,7 +12192,7 @@ async def analyze_feedback(request: Request, user=Depends(require_auth)):
         ctx.verify_mode = ssl.CERT_NONE
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_STANDARD,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 600,
             "messages": [{
                 "role": "user",
@@ -12669,7 +12279,7 @@ Du bist der 6. Reviewer in einem System mit 5 statistisch/methodisch orientierte
 
 Deine EINZIGARTIGE Perspektive:
 - Du bewertest Papers durch die Linse der Verhaltensökonomie
-- Du nutzt das BCM 2.0 Framework (Behavioral Change Model)
+- Du nutzt das BCM 2.0 Framework (Behavioral Complementarity Model)
 - Du analysierst die 8 Ψ-Dimensionen
 - Du identifizierst behavioral mechanisms, die statistische Reviewer übersehen
 - Du gibst praktische Gestaltungsempfehlungen für Policy-Interventionen
@@ -12746,7 +12356,7 @@ def call_claude_review(paper_content: str, paper_id: str, title: str,
 Create the review with all 7 sections. Focus on what statistical reviewers miss."""
 
     payload = json.dumps({
-        "model": ANTHROPIC_MODEL_HEAVY,
+        "model": "claude-sonnet-4-20250514",
         "max_tokens": 4096,
         "system": BEATRIX_REVIEW_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_prompt}]
@@ -13105,7 +12715,7 @@ TRIAGE_SYSTEM_PROMPT = """Du bist ein Research-Evaluator für Behavioral Economi
 Bewerte dieses Paper/Dokument auf einer 100-Punkte-Skala.
 
 Bewertungsdimensionen (je 0-25):
-1. BCM-Relevanz: Wie relevant für das Behavioral Change Model?
+1. BCM-Relevanz: Wie relevant für das Behavioral Complementarity Model?
 2. Methodische Rigorosität: DiD, RDD, RCT, Quasi-Experiment, Meta-Analyse?
 3. Daten-Neuheit: Neue Datenquellen, Populationen, Kontexte?
 4. Praktische Anwendbarkeit: Direkt umsetzbar für FehrAdvice-Projekte?
@@ -13157,7 +12767,7 @@ async def triage_document(doc_id: str, user=Depends(require_auth)):
         user_msg = f"Titel: {doc.title}\n\nInhalt:\n{content}"
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_LIGHT,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 1500,
             "system": TRIAGE_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_msg}]
@@ -13300,7 +12910,7 @@ Author: {user.get('sub', 'unknown')}
 Timestamp: {datetime.utcnow().isoformat()}Z"""
 
     payload = json.dumps({
-        "model": ANTHROPIC_MODEL_STANDARD,
+        "model": "claude-sonnet-4-20250514",
         "max_tokens": 2500,
         "system": PRECOMMIT_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_msg}]
@@ -13430,7 +13040,7 @@ async def multi_review_document(doc_id: str, user=Depends(require_auth)):
         # Generate 3 independent reviews
         for perspective_key, perspective in MULTI_REVIEW_PERSPECTIVES.items():
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL_HEAVY,
+                "model": "claude-sonnet-4-20250514",
                 "max_tokens": 1200,
                 "system": perspective["system"],
                 "messages": [{"role": "user", "content": f"Review dieses Dokument:\n\nTitel: {doc.title}\n\n{content}"}]
@@ -13480,7 +13090,7 @@ Erstelle eine Synthese:
 Antworte in 200-400 Wörtern."""
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_HEAVY,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 1000,
             "messages": [{"role": "user", "content": synthesis_prompt}]
         }).encode()
@@ -13604,7 +13214,7 @@ async def integrity_check_document(doc_id: str, user=Depends(require_auth)):
         content = (doc.content or "")[:30000]
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_HEAVY,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 2000,
             "system": INTEGRITY_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": f"Prüfe dieses Dokument:\n\nTitel: {doc.title}\n\n{content}"}]
@@ -13740,7 +13350,7 @@ Feedback das beantwortet werden muss:
 {feedback}"""
 
         payload = json.dumps({
-            "model": ANTHROPIC_MODEL_HEAVY,
+            "model": "claude-sonnet-4-20250514",
             "max_tokens": 2500,
             "system": REPLY_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_msg}]
@@ -13857,7 +13467,7 @@ REVIEWER_CONFIGS = {
         "name": "BEATRIX (Claude)",
         "icon": "🧠",
         "provider": "anthropic",
-        "model": ANTHROPIC_MODEL_HEAVY,
+        "model": "claude-sonnet-4-20250514",
         "focus": "Behavioral Economics, BCM, Ψ-Dimensions",
         "system": """You are BEATRIX, a Behavioral Economics reviewer. Focus EXCLUSIVELY on:
 1. Missing behavioral mechanisms (present bias, loss aversion, social norms, default effects, etc.)
@@ -13915,7 +13525,7 @@ Be concrete about implementation barriers and opportunities."""
         "name": "Contrarian (Haiku)",
         "icon": "⚡",
         "provider": "anthropic",
-        "model": ANTHROPIC_MODEL_LIGHT,
+        "model": "claude-haiku-4-5-20251001",
         "focus": "Quick Red-Team, Overlooked Angles, Fresh Perspective",
         "system": """You are a fast, sharp contrarian reviewer. Your job is to be the voice that says what nobody else dares. Focus on:
 1. The ONE thing everyone else will miss
@@ -14119,7 +13729,7 @@ Erstelle eine Synthese (300 Wörter max):
 5. Top 3 Verbesserungsvorschläge"""
 
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL_HEAVY, "max_tokens": 1000,
+                "model": "claude-sonnet-4-20250514", "max_tokens": 1000,
                 "messages": [{"role": "user", "content": synth_prompt}]
             }).encode()
             try:
@@ -14313,7 +13923,7 @@ async def challenge_text(request: Request, user=Depends(require_auth)):
 {challenge_text}"""
         try:
             payload = json.dumps({
-                "model": ANTHROPIC_MODEL_HEAVY, "max_tokens": 400,
+                "model": "claude-sonnet-4-20250514", "max_tokens": 400,
                 "messages": [{"role": "user", "content": synth_msg}]
             }).encode()
             req = ureq.Request("https://api.anthropic.com/v1/messages", data=payload, method="POST",
@@ -14768,937 +14378,3 @@ async def transform_status(notebook_id: str, user=Depends(require_auth)):
         "podcast_status": audio_status,
         "message": "Open notebook link to access all outputs."
     }
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# FEEDBACK GOVERNANCE SYSTEM v1.0 — API ROUTES
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class FeedbackCreate(BaseModel):
-    message: str
-    screenshot_url: Optional[str] = None
-    tab_context: Optional[str] = None
-    screen_size: Optional[str] = None
-    browser_info: Optional[str] = None
-    page_url: Optional[str] = None
-
-class FeedbackUpdate(BaseModel):
-    status: Optional[str] = None
-    priority: Optional[str] = None
-    category: Optional[str] = None
-    affected_area: Optional[str] = None
-    assigned_to: Optional[str] = None
-    tier_override: Optional[int] = None
-    tier_override_reason: Optional[str] = None
-    resolution_note: Optional[str] = None
-    github_issue: Optional[str] = None
-
-class FeedbackApproval(BaseModel):
-    action: str  # approve, reject, modify
-    note: Optional[str] = None
-    modified_code: Optional[str] = None
-
-class FeedbackComment(BaseModel):
-    comment: str
-    is_internal: bool = False
-
-# AI Triage System Prompt
-FEEDBACK_TRIAGE_PROMPT = """Analysiere dieses User-Feedback und klassifiziere es.
-
-Feedback: {message}
-Kontext: {context}
-
-Antworte NUR mit JSON:
-{{
-  "category": "bug|ux|feature|question|other",
-  "priority": "critical|high|medium|low",
-  "affected_area": "auth|projects|leads|crm|documents|chat|onboarding|dashboard|profile|admin|other",
-  "tier": 1-4,
-  "tier_reason": "Begründung",
-  "summary": "Kurze Zusammenfassung"
-}}
-
-Tier-Regeln:
-- Tier 1: Typos, CSS-Fixes, Icons (automatisch fixbar)
-- Tier 2: User-spezifisch, mehrere Optionen
-- Tier 3: Multi-User UI-Changes
-- Tier 4: Architektur, Security, DB-Schema"""
-
-async def _ai_triage_feedback(message: str, tab_context: str = None) -> dict:
-    """AI-gestützte Klassifizierung von Feedback."""
-    if not ANTHROPIC_API_KEY:
-        return {"category": "other", "priority": "medium", "tier": 3, "summary": message[:100]}
-    
-    import urllib.request, ssl
-    context = f"Tab: {tab_context}" if tab_context else "Unbekannt"
-    
-    try:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
-        payload = json.dumps({
-            "model": ANTHROPIC_MODEL_LIGHT,
-            "max_tokens": 500,
-            "messages": [{"role": "user", "content": FEEDBACK_TRIAGE_PROMPT.format(
-                message=message, context=context
-            )}]
-        }).encode()
-        
-        req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=payload,
-            method="POST",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            }
-        )
-        
-        resp = urllib.request.urlopen(req, context=ctx, timeout=20)
-        resp_data = json.loads(resp.read().decode())
-        content = resp_data.get("content", [{}])[0].get("text", "{}")
-        
-        # Extract JSON
-        if "```" in content:
-            content = content.split("```")[1].replace("json", "").strip()
-        return json.loads(content)
-    except Exception as e:
-        logger.warning(f"AI triage failed: {e}")
-    
-    return {"category": "other", "priority": "medium", "tier": 3, "summary": message[:100]}
-
-def _log_feedback_history(db, feedback_id: str, user_email: str, field: str, old_val, new_val, action: str):
-    """Log feedback change to history."""
-    try:
-        db.execute(text("""INSERT INTO feedback_history 
-            (id, feedback_id, changed_by_email, field_changed, old_value, new_value, action_type)
-            VALUES (:id, :fid, :email, :field, :old, :new, :action)"""),
-            {"id": str(uuid.uuid4()), "fid": feedback_id, "email": user_email,
-             "field": field, "old": str(old_val) if old_val else None, 
-             "new": str(new_val) if new_val else None, "action": action})
-        db.commit()
-    except Exception as e:
-        logger.warning(f"History log failed: {e}")
-
-@app.post("/api/feedback")
-async def create_feedback(data: FeedbackCreate, user=Depends(require_auth)):
-    """Create new feedback and run AI triage."""
-    db = get_db()
-    try:
-        feedback_id = str(uuid.uuid4())[:12]
-        user_email = user.get("sub", "")
-        
-        # AI Triage
-        triage = await _ai_triage_feedback(data.message, data.tab_context)
-        
-        # Determine approval requirement based on tier
-        tier = triage.get("tier", 3)
-        approval_map = {1: "none", 2: "user", 3: "admin", 4: "owner"}
-        requires_approval = approval_map.get(tier, "admin")
-        status = "neu" if tier == 1 else f"waiting_{requires_approval}" if requires_approval != "none" else "triaged"
-        
-        db.execute(text("""INSERT INTO feedback 
-            (id, user_email, message, screenshot_url, tab_context, screen_size, browser_info, page_url,
-             category, priority, affected_area, status, tier, tier_reason, requires_approval_from,
-             ai_category, ai_priority, ai_summary, ai_suggested_tier)
-            VALUES (:id, :email, :msg, :screenshot, :tab, :screen, :browser, :url,
-                    :cat, :pri, :area, :status, :tier, :reason, :approval,
-                    :ai_cat, :ai_pri, :ai_sum, :ai_tier)"""),
-            {"id": feedback_id, "email": user_email, "msg": data.message,
-             "screenshot": data.screenshot_url, "tab": data.tab_context,
-             "screen": data.screen_size, "browser": data.browser_info, "url": data.page_url,
-             "cat": triage.get("category"), "pri": triage.get("priority"),
-             "area": triage.get("affected_area"), "status": status,
-             "tier": tier, "reason": triage.get("tier_reason"), "approval": requires_approval,
-             "ai_cat": triage.get("category"), "ai_pri": triage.get("priority"),
-             "ai_sum": triage.get("summary"), "ai_tier": tier})
-        db.commit()
-        
-        _log_feedback_history(db, feedback_id, user_email, None, None, None, "created")
-        
-        return {"id": feedback_id, "status": status, "tier": tier, "triage": triage}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(500, f"Feedback konnte nicht erstellt werden: {e}")
-    finally:
-        db.close()
-
-@app.get("/api/feedback/mine")
-async def get_my_feedback(user=Depends(require_auth)):
-    """Get all feedback submitted by current user."""
-    db = get_db()
-    try:
-        result = db.execute(text("""SELECT id, message, status, tier, priority, category,
-            created_at, updated_at, resolution_note, solution_options, user_selected_option
-            FROM feedback WHERE user_email = :email ORDER BY created_at DESC"""),
-            {"email": user.get("sub", "")})
-        rows = result.fetchall()
-        return [dict(r._mapping) for r in rows]
-    finally:
-        db.close()
-
-@app.post("/api/feedback/{feedback_id}/select-option")
-async def select_feedback_option(feedback_id: str, option_id: str, user=Depends(require_auth)):
-    """User selects a solution option (Tier 2)."""
-    db = get_db()
-    try:
-        # Verify ownership
-        result = db.execute(text("SELECT user_email, tier FROM feedback WHERE id = :id"),
-            {"id": feedback_id})
-        row = result.fetchone()
-        if not row or row.user_email != user.get("sub"):
-            raise HTTPException(403, "Nicht berechtigt")
-        if row.tier != 2:
-            raise HTTPException(400, "Nur für Tier-2 Feedback möglich")
-        
-        db.execute(text("""UPDATE feedback SET user_selected_option = :opt,
-            user_selected_at = CURRENT_TIMESTAMP, status = 'in_arbeit'
-            WHERE id = :id"""), {"opt": option_id, "id": feedback_id})
-        db.commit()
-        
-        _log_feedback_history(db, feedback_id, user.get("sub"), "user_selected_option", 
-                            None, option_id, "status_changed")
-        return {"success": True}
-    finally:
-        db.close()
-
-@app.post("/api/feedback/{feedback_id}/comment")
-async def add_feedback_comment(feedback_id: str, data: FeedbackComment, user=Depends(require_auth)):
-    """Add comment to feedback."""
-    db = get_db()
-    try:
-        comment_id = str(uuid.uuid4())[:12]
-        db.execute(text("""INSERT INTO feedback_comments 
-            (id, feedback_id, user_email, comment, is_internal)
-            VALUES (:id, :fid, :email, :comment, :internal)"""),
-            {"id": comment_id, "fid": feedback_id, "email": user.get("sub"),
-             "comment": data.comment, "internal": data.is_internal})
-        db.commit()
-        
-        _log_feedback_history(db, feedback_id, user.get("sub"), None, None, None, "commented")
-        return {"id": comment_id}
-    finally:
-        db.close()
-
-# ── ADMIN ENDPOINTS ──
-
-@app.get("/api/admin/feedback")
-async def list_all_feedback(
-    status: Optional[str] = None,
-    tier: Optional[int] = None,
-    category: Optional[str] = None,
-    priority: Optional[str] = None,
-    user=Depends(require_permission("platform.admin_dashboard"))
-):
-    """List all feedback with filters (Admin only)."""
-    db = get_db()
-    try:
-        query = "SELECT * FROM feedback WHERE 1=1"
-        params = {}
-        
-        if status:
-            query += " AND status = :status"
-            params["status"] = status
-        if tier:
-            query += " AND tier = :tier"
-            params["tier"] = tier
-        if category:
-            query += " AND category = :category"
-            params["category"] = category
-        if priority:
-            query += " AND priority = :priority"
-            params["priority"] = priority
-        
-        query += " ORDER BY created_at DESC LIMIT 100"
-        
-        result = db.execute(text(query), params)
-        rows = result.fetchall()
-        return [dict(r._mapping) for r in rows]
-    finally:
-        db.close()
-
-@app.get("/api/admin/feedback/{feedback_id}")
-async def get_feedback_detail(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
-    """Get single feedback with comments and history."""
-    db = get_db()
-    try:
-        # Main feedback
-        result = db.execute(text("SELECT * FROM feedback WHERE id = :id"), {"id": feedback_id})
-        feedback = result.fetchone()
-        if not feedback:
-            raise HTTPException(404, "Feedback nicht gefunden")
-        
-        # Comments
-        comments = db.execute(text("""SELECT * FROM feedback_comments 
-            WHERE feedback_id = :id ORDER BY created_at"""), {"id": feedback_id})
-        
-        # History
-        history = db.execute(text("""SELECT * FROM feedback_history 
-            WHERE feedback_id = :id ORDER BY changed_at DESC"""), {"id": feedback_id})
-        
-        return {
-            "feedback": dict(feedback._mapping),
-            "comments": [dict(r._mapping) for r in comments.fetchall()],
-            "history": [dict(r._mapping) for r in history.fetchall()]
-        }
-    finally:
-        db.close()
-
-@app.patch("/api/admin/feedback/{feedback_id}")
-async def update_feedback(
-    feedback_id: str, 
-    data: FeedbackUpdate,
-    user=Depends(require_permission("platform.admin_dashboard"))
-):
-    """Update feedback (Admin)."""
-    db = get_db()
-    try:
-        # Get current values for history
-        current = db.execute(text("SELECT * FROM feedback WHERE id = :id"), 
-            {"id": feedback_id}).fetchone()
-        if not current:
-            raise HTTPException(404, "Feedback nicht gefunden")
-        
-        updates = []
-        params = {"id": feedback_id}
-        
-        for field in ["status", "priority", "category", "affected_area", 
-                      "assigned_to", "tier_override", "tier_override_reason",
-                      "resolution_note", "github_issue"]:
-            value = getattr(data, field, None)
-            if value is not None:
-                updates.append(f"{field} = :{field}")
-                params[field] = value
-                # Log history
-                old_val = getattr(current, field, None)
-                _log_feedback_history(db, feedback_id, user.get("sub"), 
-                    field, old_val, value, f"{field}_changed")
-        
-        if updates:
-            updates.append("updated_at = CURRENT_TIMESTAMP")
-            query = f"UPDATE feedback SET {', '.join(updates)} WHERE id = :id"
-            db.execute(text(query), params)
-            db.commit()
-        
-        return {"success": True}
-    finally:
-        db.close()
-
-@app.post("/api/admin/feedback/{feedback_id}/approve")
-async def approve_feedback(
-    feedback_id: str,
-    data: FeedbackApproval,
-    user=Depends(require_permission("platform.admin_dashboard"))
-):
-    """Approve or reject feedback (Tier 3)."""
-    db = get_db()
-    try:
-        feedback = db.execute(text("SELECT tier, status FROM feedback WHERE id = :id"),
-            {"id": feedback_id}).fetchone()
-        if not feedback:
-            raise HTTPException(404, "Feedback nicht gefunden")
-        
-        user_email = user.get("sub", "")
-        
-        if data.action == "approve":
-            new_status = "in_arbeit"
-            db.execute(text("""UPDATE feedback SET status = :status,
-                approved_by = :by, approved_at = CURRENT_TIMESTAMP, approval_note = :note
-                WHERE id = :id"""),
-                {"status": new_status, "by": user_email, "note": data.note, "id": feedback_id})
-            _log_feedback_history(db, feedback_id, user_email, "status", 
-                feedback.status, new_status, "approved")
-        
-        elif data.action == "reject":
-            new_status = "abgelehnt"
-            db.execute(text("""UPDATE feedback SET status = :status,
-                rejected_reason = :reason WHERE id = :id"""),
-                {"status": new_status, "reason": data.note, "id": feedback_id})
-            _log_feedback_history(db, feedback_id, user_email, "status",
-                feedback.status, new_status, "rejected")
-        
-        db.commit()
-        return {"success": True, "status": new_status}
-    finally:
-        db.close()
-
-@app.post("/api/admin/feedback/{feedback_id}/triage")
-async def retriage_feedback(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
-    """Re-run AI triage on feedback."""
-    db = get_db()
-    try:
-        feedback = db.execute(text("SELECT message, tab_context FROM feedback WHERE id = :id"),
-            {"id": feedback_id}).fetchone()
-        if not feedback:
-            raise HTTPException(404, "Feedback nicht gefunden")
-        
-        triage = await _ai_triage_feedback(feedback.message, feedback.tab_context)
-        
-        db.execute(text("""UPDATE feedback SET 
-            ai_category = :cat, ai_priority = :pri, ai_summary = :sum, ai_suggested_tier = :tier
-            WHERE id = :id"""),
-            {"cat": triage.get("category"), "pri": triage.get("priority"),
-             "sum": triage.get("summary"), "tier": triage.get("tier"), "id": feedback_id})
-        db.commit()
-        
-        return {"triage": triage}
-    finally:
-        db.close()
-
-@app.post("/api/admin/feedback/{feedback_id}/github")
-async def create_feedback_github_issue(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
-    """Create GitHub issue from feedback."""
-    db = get_db()
-    try:
-        feedback = db.execute(text("SELECT * FROM feedback WHERE id = :id"),
-            {"id": feedback_id}).fetchone()
-        if not feedback:
-            raise HTTPException(404, "Feedback nicht gefunden")
-        
-        if not GH_TOKEN:
-            raise HTTPException(400, "GitHub Token nicht konfiguriert")
-        
-        import urllib.request, ssl
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
-        # Determine repo based on affected area
-        repo = "FehrAdvice-Partners-AG/bea-lab-frontend"
-        if feedback.affected_area in ["auth", "chat", "crm", "documents"]:
-            repo = "FehrAdvice-Partners-AG/bea-lab-upload"
-        
-        labels = ["feedback"]
-        if feedback.category:
-            labels.append(feedback.category)
-        if feedback.priority:
-            labels.append(f"priority:{feedback.priority}")
-        
-        title = f"[Feedback #{feedback_id[:8]}] {feedback.ai_summary or feedback.message[:50]}"
-        body = f"""## User Feedback
-
-**Von:** {feedback.user_email}
-**Datum:** {feedback.created_at}
-**Tab:** {feedback.tab_context or 'Unbekannt'}
-**Tier:** {feedback.tier}
-
-### Nachricht
-
-{feedback.message}
-
-### AI-Analyse
-
-- **Kategorie:** {feedback.category}
-- **Priorität:** {feedback.priority}
-- **Bereich:** {feedback.affected_area}
-
----
-*Erstellt via BEATRIX Feedback System*
-"""
-        
-        payload = json.dumps({
-            "title": title,
-            "body": body,
-            "labels": labels
-        }).encode()
-        
-        url = f"https://api.github.com/repos/{repo}/issues"
-        req = urllib.request.Request(url, data=payload, method="POST",
-            headers={
-                "Authorization": f"token {GH_TOKEN}",
-                "Accept": "application/vnd.github.v3+json",
-                "Content-Type": "application/json"
-            })
-        
-        resp = urllib.request.urlopen(req, context=ctx, timeout=15)
-        issue_data = json.loads(resp.read())
-        issue_url = issue_data.get("html_url", "")
-        
-        # Update feedback with GitHub link
-        db.execute(text("UPDATE feedback SET github_issue = :url WHERE id = :id"),
-            {"url": issue_url, "id": feedback_id})
-        db.commit()
-        
-        _log_feedback_history(db, feedback_id, user.get("sub"), "github_issue",
-            None, issue_url, "github_linked")
-        
-        return {"github_url": issue_url}
-    except Exception as e:
-        raise HTTPException(500, f"GitHub Issue konnte nicht erstellt werden: {e}")
-    finally:
-        db.close()
-
-@app.get("/api/admin/feedback/stats")
-async def get_feedback_stats(user=Depends(require_permission("platform.admin_dashboard"))):
-    """Get feedback statistics for dashboard."""
-    db = get_db()
-    try:
-        result = db.execute(text("""SELECT
-            COUNT(*) as total,
-            COUNT(*) FILTER (WHERE status = 'neu') as neu,
-            COUNT(*) FILTER (WHERE status = 'triaged') as triaged,
-            COUNT(*) FILTER (WHERE status LIKE 'waiting_%%') as waiting,
-            COUNT(*) FILTER (WHERE status = 'in_arbeit') as in_arbeit,
-            COUNT(*) FILTER (WHERE status = 'geloest') as geloest,
-            COUNT(*) FILTER (WHERE status = 'abgelehnt') as abgelehnt,
-            COUNT(*) FILTER (WHERE tier = 1) as tier_1,
-            COUNT(*) FILTER (WHERE tier = 2) as tier_2,
-            COUNT(*) FILTER (WHERE tier = 3) as tier_3,
-            COUNT(*) FILTER (WHERE tier = 4) as tier_4
-            FROM feedback"""))
-        row = result.fetchone()
-        return dict(row._mapping) if row else {}
-    finally:
-        db.close()
-
-logger.info("✅ Feedback Governance System v1.0 loaded")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# FEEDBACK MIGRATION: Old → New Schema
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.post("/api/admin/feedback/migrate")
-async def migrate_old_feedback(user=Depends(require_permission("platform.manage_settings"))):
-    """Migrate old feedback to new governance schema. One-time operation."""
-    db = get_db()
-    try:
-        # First, add new columns to existing feedback table if they don't exist
-        migrations = [
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS user_email VARCHAR(320)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS message TEXT",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS screenshot_url TEXT",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS tab_context VARCHAR(50)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS screen_size VARCHAR(20)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS browser_info TEXT",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS page_url TEXT",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS category VARCHAR(20)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS priority VARCHAR(20)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS affected_area VARCHAR(50)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(50)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS tier INTEGER",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS tier_reason TEXT",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS requires_approval_from VARCHAR(20) DEFAULT 'none'",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_category VARCHAR(20)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_priority VARCHAR(20)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_summary TEXT",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_suggested_tier INTEGER",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS ai_solution_code TEXT",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS approved_by VARCHAR(50)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS resolution_note TEXT",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS github_issue VARCHAR(200)",
-            "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-        ]
-        
-        for sql in migrations:
-            try:
-                db.execute(text(sql))
-            except Exception as e:
-                logger.warning(f"Migration SQL warning: {e}")
-        db.commit()
-        
-        # Now migrate old data: map old columns to new columns
-        # Old: comment → message, type → category, screenshot → screenshot_url
-        # Old: page → tab_context, viewport → screen_size, user_agent → browser_info
-        # Old: url → page_url, created_by → user_email
-        
-        result = db.execute(text("""
-            UPDATE feedback SET
-                user_email = COALESCE(user_email, created_by),
-                message = COALESCE(message, comment),
-                screenshot_url = COALESCE(screenshot_url, screenshot),
-                tab_context = COALESCE(tab_context, page),
-                screen_size = COALESCE(screen_size, viewport),
-                browser_info = COALESCE(browser_info, user_agent),
-                page_url = COALESCE(page_url, url),
-                category = COALESCE(category, type),
-                tier = COALESCE(tier, 3),
-                priority = COALESCE(priority, 'medium'),
-                requires_approval_from = COALESCE(requires_approval_from, 'admin')
-            WHERE message IS NULL OR user_email IS NULL
-        """))
-        
-        migrated_count = result.rowcount
-        db.commit()
-        
-        # Create indexes
-        for idx in [
-            "CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status)",
-            "CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_email)",
-            "CREATE INDEX IF NOT EXISTS idx_feedback_tier ON feedback(tier)",
-        ]:
-            try:
-                db.execute(text(idx))
-            except:
-                pass
-        db.commit()
-        
-        logger.info(f"✅ Migrated {migrated_count} old feedbacks to new schema")
-        return {"success": True, "migrated": migrated_count}
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Migration failed: {e}")
-        raise HTTPException(500, f"Migration fehlgeschlagen: {e}")
-    finally:
-        db.close()
-
-logger.info("✅ Feedback Migration endpoint loaded")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# AI SOLUTION GENERATOR — BEATRIX proposes fixes
-# ═══════════════════════════════════════════════════════════════════════════════
-
-SOLUTION_PROMPT = """Du bist BEATRIX, die AI-Assistentin für die BEATRIX Strategic Intelligence Suite.
-
-Ein User hat folgendes Feedback gegeben:
-
-**Feedback:** {message}
-**Seite/Tab:** {tab_context}
-**Kategorie:** {category}
-**User:** {user_email}
-
-**BEATRIX Technologie-Stack:**
-- Frontend: Vanilla HTML/CSS/JS (KEIN Framework), deployed auf Vercel
-- Backend: FastAPI + PostgreSQL auf Railway
-- Repos: bea-lab-frontend (Vercel), bea-lab-upload (Railway)
-
-**Deine Aufgabe:**
-Analysiere das Problem und erstelle einen konkreten Lösungsvorschlag.
-
-Antworte mit JSON:
-{{
-  "problem_analysis": "Was ist das eigentliche Problem?",
-  "root_cause": "Vermutete Ursache",
-  "solution_type": "code|config|process|manual",
-  "solution_description": "Beschreibung der Lösung in 2-3 Sätzen",
-  "implementation_steps": ["Schritt 1", "Schritt 2", "..."],
-  "code_snippet": "// Falls Code nötig, hier einfügen (oder null)",
-  "affected_files": ["datei1.js", "server.py"],
-  "estimated_effort": "5min|30min|2h|1d",
-  "risk_level": "low|medium|high",
-  "requires_testing": true/false
-}}
-
-Sei konkret und praktisch. Bei UI-Problemen schlage CSS/JS vor. Bei Backend-Problemen Python-Code."""
-
-@app.post("/api/admin/feedback/{feedback_id}/solution")
-async def generate_feedback_solution(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
-    """Generate AI solution proposal for feedback using Claude Sonnet."""
-    db = get_db()
-    try:
-        feedback = db.execute(text("""SELECT message, tab_context, category, user_email, 
-            ai_solution_code, ai_summary FROM feedback WHERE id = :id"""),
-            {"id": feedback_id}).fetchone()
-        if not feedback:
-            raise HTTPException(404, "Feedback nicht gefunden")
-        
-        if not ANTHROPIC_API_KEY:
-            raise HTTPException(400, "Anthropic API Key nicht konfiguriert")
-        
-        import urllib.request, ssl
-        
-        prompt = SOLUTION_PROMPT.format(
-            message=feedback.message or "",
-            tab_context=feedback.tab_context or "unbekannt",
-            category=feedback.category or "other",
-            user_email=feedback.user_email or "unbekannt"
-        )
-        
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
-        payload = json.dumps({
-            "model": ANTHROPIC_MODEL_STANDARD,
-            "max_tokens": 2000,
-            "messages": [{"role": "user", "content": prompt}]
-        }).encode()
-        
-        req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=payload,
-            method="POST",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            }
-        )
-        
-        resp = urllib.request.urlopen(req, context=ctx, timeout=60)
-        resp_data = json.loads(resp.read().decode())
-        content = resp_data.get("content", [{}])[0].get("text", "{}")
-        
-        # Extract JSON
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0]
-        
-        try:
-            solution = json.loads(content.strip())
-        except:
-            solution = {
-                "problem_analysis": content[:500],
-                "solution_description": "AI konnte keine strukturierte Lösung generieren",
-                "solution_type": "manual"
-            }
-        
-        # Save to database
-        db.execute(text("""UPDATE feedback SET 
-            ai_solution_code = :code,
-            ai_summary = COALESCE(ai_summary, :summary)
-            WHERE id = :id"""),
-            {"code": json.dumps(solution, ensure_ascii=False), 
-             "summary": solution.get("problem_analysis", "")[:200],
-             "id": feedback_id})
-        db.commit()
-        
-        return {"solution": solution}
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Solution generation failed: {e}")
-        raise HTTPException(500, f"Lösungsgenerierung fehlgeschlagen: {e}")
-    finally:
-        db.close()
-
-@app.get("/api/admin/feedback/{feedback_id}/solution")
-async def get_feedback_solution(feedback_id: str, user=Depends(require_permission("platform.admin_dashboard"))):
-    """Get existing solution for feedback."""
-    db = get_db()
-    try:
-        result = db.execute(text("SELECT ai_solution_code FROM feedback WHERE id = :id"),
-            {"id": feedback_id}).fetchone()
-        if not result:
-            raise HTTPException(404, "Feedback nicht gefunden")
-        
-        if not result.ai_solution_code:
-            return {"solution": None}
-        
-        try:
-            return {"solution": json.loads(result.ai_solution_code)}
-        except:
-            return {"solution": {"raw": result.ai_solution_code}}
-    finally:
-        db.close()
-
-logger.info("✅ AI Solution Generator loaded")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# DOCUMENT TITLE UPDATE — Admin endpoint to fix document titles
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.patch("/api/documents/{doc_id}")
-async def update_document(doc_id: str, update: dict, user=Depends(require_permission("platform.admin_dashboard"))):
-    """Update document metadata (title only for now)."""
-    db = get_db()
-    try:
-        # Check document exists
-        doc = db.execute(text("SELECT id, title FROM documents WHERE id = :id"), {"id": doc_id}).fetchone()
-        if not doc:
-            raise HTTPException(404, "Dokument nicht gefunden")
-        
-        # Update title if provided
-        if "title" in update:
-            new_title = update["title"]
-            db.execute(text("UPDATE documents SET title = :title WHERE id = :id"),
-                      {"title": new_title, "id": doc_id})
-            db.commit()
-            logger.info(f"Document {doc_id} title updated to: {new_title}")
-            return {"id": doc_id, "title": new_title, "message": "Titel aktualisiert"}
-        
-        return {"id": doc_id, "message": "Keine Änderungen"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Update document failed: {e}")
-        raise HTTPException(500, str(e))
-    finally:
-        db.close()
-
-logger.info("✅ Document PATCH endpoint loaded")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SSOT AUTO-SEEDING — Canonical Knowledge Base Seeds
-# ═══════════════════════════════════════════════════════════════════════════════
-
-SSOT_GITHUB_REPO = "FehrAdvice-Partners-AG/complementarity-context-framework"
-SSOT_GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
-SSOT_REGISTRY_PATH = "data/beatrix/ssot-seed-registry.yaml"
-
-def _fetch_ssot_from_github(path: str) -> str:
-    """Fetch SSOT content from GitHub."""
-    import urllib.request, ssl, base64
-    
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    
-    url = f"https://api.github.com/repos/{SSOT_GITHUB_REPO}/contents/{path}"
-    headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIX"}
-    if SSOT_GITHUB_TOKEN:
-        headers["Authorization"] = f"token {SSOT_GITHUB_TOKEN}"
-    
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        resp = urllib.request.urlopen(req, context=ctx, timeout=15)
-        data = json.loads(resp.read())
-        content = base64.b64decode(data.get("content", "")).decode("utf-8")
-        return content
-    except Exception as e:
-        logger.warning(f"Failed to fetch SSOT {path}: {e}")
-        return None
-
-def _load_seed_registry() -> list:
-    """Load seed registry from GitHub (dynamic seed list)."""
-    import yaml
-    
-    logger.info("📋 Loading SSOT seed registry from GitHub...")
-    content = _fetch_ssot_from_github(SSOT_REGISTRY_PATH)
-    
-    if not content:
-        logger.warning("Could not load seed registry, using fallback")
-        # Fallback to minimal hardcoded list
-        return [
-            {"path": "data/knowledge/canonical/BCM-Behavioral-Change-Model.md", 
-             "title": "📚 SSOT: Behavioral Change Model (BCM)"},
-            {"path": "data/knowledge/canonical/EBF-Evidence-Based-Framework.md",
-             "title": "📚 SSOT: Evidence-Based Framework (EBF)"},
-        ]
-    
-    try:
-        registry = yaml.safe_load(content)
-        seeds = registry.get("seeds", [])
-        logger.info(f"📋 Loaded {len(seeds)} seeds from registry")
-        return seeds
-    except Exception as e:
-        logger.error(f"Failed to parse seed registry: {e}")
-        return []
-
-def _content_hash(content: str) -> str:
-    """Generate SHA256 hash of content for comparison."""
-    import hashlib
-    return hashlib.sha256(content.encode('utf-8')).hexdigest()
-
-def _ssot_check_status(db, title: str, new_content: str) -> tuple:
-    """
-    Check SSOT status: returns (action, doc_id, old_hash, new_hash)
-    action: 'insert', 'update', or 'skip'
-    """
-    new_hash = _content_hash(new_content)
-    try:
-        result = db.execute(text(
-            "SELECT id, content FROM documents WHERE title = :title"
-        ), {"title": title}).first()
-        
-        if not result:
-            return ('insert', None, None, new_hash)
-        
-        doc_id, old_content = result
-        old_hash = _content_hash(old_content or '')
-        
-        if old_hash[:16] != new_hash[:16]:
-            return ('update', doc_id, old_hash, new_hash)
-        
-        return ('skip', doc_id, old_hash, new_hash)
-    except Exception as e:
-        logger.warning(f"SSOT check error for {title}: {e}")
-        return ('insert', None, None, new_hash)
-
-def _log_sync_event(db, title: str, path: str, action: str, old_hash: str, new_hash: str, size: int, details: str = None):
-    """Log sync event to ssot_sync_log table."""
-    try:
-        db.execute(text("""
-            INSERT INTO ssot_sync_log (id, seed_title, seed_path, action, old_hash, new_hash, file_size, sync_timestamp, details)
-            VALUES (:id, :title, :path, :action, :old_hash, :new_hash, :size, :ts, :details)
-        """), {
-            "id": str(uuid.uuid4()), "title": title, "path": path, "action": action,
-            "old_hash": old_hash, "new_hash": new_hash, "size": size,
-            "ts": datetime.utcnow(), "details": details
-        })
-        db.commit()
-    except Exception as e:
-        logger.debug(f"Could not log sync event: {e}")
-
-async def seed_ssot_knowledge_base():
-    """Seed canonical SSOT definitions into KB - with content hash sync and logging."""
-    logger.info("🌱 Checking SSOT Knowledge Base seeds...")
-    
-    # Load seed registry from GitHub (dynamic!)
-    seeds = _load_seed_registry()
-    if not seeds:
-        logger.warning("No seeds to process")
-        return
-    
-    db = get_db()
-    stats = {'inserted': 0, 'updated': 0, 'skipped': 0, 'failed': 0}
-    
-    try:
-        for seed in seeds:
-            title = seed.get("title", "")
-            path = seed.get("path", "")
-            
-            if not title or not path:
-                continue
-            
-            # Fetch from GitHub
-            content = _fetch_ssot_from_github(path)
-            if not content:
-                logger.warning(f"  ⚠️ Could not fetch: {path}")
-                stats['failed'] += 1
-                _log_sync_event(db, title, path, 'error', None, None, 0, "Could not fetch from GitHub")
-                continue
-            
-            # Check if insert, update, or skip needed
-            action, doc_id, old_hash, new_hash = _ssot_check_status(db, title, content)
-            now = datetime.utcnow()
-            size = len(content)
-            
-            try:
-                if action == 'insert':
-                    new_id = str(uuid.uuid4())
-                    db.execute(text("""
-                        INSERT INTO documents (id, title, content, status, source_type, created_at, updated_at, content_hash)
-                        VALUES (:id, :title, :content, 'indexed', 'ssot', :now, :now, :hash)
-                    """), {"id": new_id, "title": title, "content": content, "now": now, "hash": new_hash[:16]})
-                    db.commit()
-                    stats['inserted'] += 1
-                    logger.info(f"  ✅ Inserted: {title}")
-                    _log_sync_event(db, title, path, 'insert', None, new_hash, size)
-                
-                elif action == 'update':
-                    db.execute(text("""
-                        UPDATE documents SET content = :content, updated_at = :now, status = 'indexed', content_hash = :hash
-                        WHERE id = :id
-                    """), {"id": doc_id, "content": content, "now": now, "hash": new_hash[:16]})
-                    db.commit()
-                    stats['updated'] += 1
-                    logger.info(f"  🔄 Updated: {title}")
-                    _log_sync_event(db, title, path, 'update', old_hash, new_hash, size)
-                
-                else:  # skip
-                    stats['skipped'] += 1
-                    
-            except Exception as e:
-                db.rollback()
-                stats['failed'] += 1
-                logger.warning(f"  ❌ Failed {action} for {title}: {e}")
-                _log_sync_event(db, title, path, 'error', old_hash, new_hash, size, str(e))
-        
-        logger.info(f"🌱 SSOT Seeding complete: {stats['inserted']} new, {stats['updated']} updated, {stats['skipped']} unchanged, {stats['failed']} failed")
-    
-    except Exception as e:
-        logger.error(f"SSOT seeding error: {e}")
-    finally:
-        db.close()
-
-@app.on_event("startup")
-async def startup_ssot_seeding():
-    """Run SSOT seeding on startup."""
-    await seed_ssot_knowledge_base()
-
-logger.info("✅ SSOT Auto-Seeding module loaded")
