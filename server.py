@@ -6960,6 +6960,89 @@ Antworte auf Deutsch."""
         logger.error(f"Challenge-Response error: {e}")
         raise HTTPException(500, f"Fehler bei der Antwort-Generierung: {str(e)}")
 
+# ── IMPROVE-WITH-REVIEW: Verbesserte Antwort basierend auf KI-Review ──
+class ImproveWithReviewRequest(BaseModel):
+    original_answer: str
+    challenge_synthesis: str
+    beatrix_response: str
+    session_id: Optional[str] = None
+
+@app.post("/api/chat/improve-with-review")
+async def improve_with_review(request: ImproveWithReviewRequest, user=Depends(require_auth)):
+    """Generiert eine verbesserte Version der ursprünglichen Antwort basierend auf KI-Review und BEATRIX Antwort."""
+    
+    if not request.original_answer or not request.challenge_synthesis:
+        raise HTTPException(400, "Original-Antwort und Challenge-Synthese sind erforderlich")
+    
+    system_prompt = f"""Du bist BEATRIX, die Strategic Intelligence Suite von FehrAdvice & Partners AG.
+
+Deine Aufgabe: Erstelle eine VERBESSERTE VERSION einer Antwort, die alle Erkenntnisse aus einem KI-Review integriert.
+
+═══ URSPRÜNGLICHE ANTWORT ═══
+{request.original_answer[:2500]}
+
+═══ KRITIK-SYNTHESE DER KI-REVIEWER ═══
+{request.challenge_synthesis[:1500]}
+
+═══ DEINE VORHERIGE ANALYSE DER KRITIK ═══
+{request.beatrix_response[:1500]}
+
+═══ DEINE AUFGABE ═══
+Erstelle jetzt eine VERBESSERTE VERSION der ursprünglichen Antwort, die:
+1. Die berechtigte Kritik adressiert und einarbeitet
+2. Die Stärken der ursprünglichen Antwort beibehält
+3. Nuancen und Details ergänzt, die gefehlt haben
+4. Klarer und präziser formuliert ist
+5. Wissenschaftlich fundiert bleibt
+
+WICHTIG: Schreibe die verbesserte Antwort direkt, ohne Meta-Kommentare wie "Hier ist die verbesserte Version". 
+Der Text soll so klingen, als wäre es deine erste, beste Antwort gewesen.
+
+Antworte auf Deutsch, professionell und strukturiert."""
+
+    try:
+        import ssl as _ssl, http.client, json
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        
+        payload = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 3000,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": "Bitte erstelle die verbesserte Antwort."}]
+        }).encode()
+        
+        conn = http.client.HTTPSConnection("api.anthropic.com", timeout=90, context=ctx)
+        conn.request("POST", "/v1/messages", body=payload, headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            "User-Agent": "BEATRIXLab/3.23-improve-with-review"
+        })
+        resp = conn.getresponse()
+        
+        if resp.status != 200:
+            error_body = resp.read().decode()
+            logger.error(f"Improve-with-review API error: {resp.status} {error_body[:200]}")
+            raise HTTPException(500, "Fehler bei der Verbesserung")
+        
+        result = json.loads(resp.read().decode())
+        improved_answer = result["content"][0]["text"]
+        
+        logger.info(f"IMPROVE-WITH-REVIEW by {user['sub']}: generated improved answer (orig_len={len(request.original_answer)}, improved_len={len(improved_answer)})")
+        
+        return {
+            "status": "done",
+            "improved_answer": improved_answer
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Improve-with-review error: {e}")
+        raise HTTPException(500, f"Fehler bei der Verbesserung: {str(e)}")
+
 @app.post("/api/chat/session/{session_id}/close")
 async def close_chat_session(session_id: str, user=Depends(require_auth)):
     """Close/archive a chat session with auto-generated summary."""
