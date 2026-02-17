@@ -55,6 +55,11 @@ GCP_NOTEBOOKLM_LOCATION = os.getenv("GCP_NOTEBOOKLM_LOCATION", "eu")
 GCP_OAUTH_CLIENT_ID = os.getenv("GCP_OAUTH_CLIENT_ID", "")
 GCP_OAUTH_CLIENT_SECRET = os.getenv("GCP_OAUTH_CLIENT_SECRET", "")
 GCP_REFRESH_TOKEN = os.getenv("GCP_REFRESH_TOKEN", "")
+# Email Ingest config
+RESEND_WEBHOOK_SECRET = os.getenv("RESEND_WEBHOOK_SECRET", "")
+INGEST_WHITELIST = [d.strip().lower() for d in os.getenv("INGEST_WHITELIST", "fehradvice.com,bgs.at,apa.at").split(",") if d.strip()]
+INGEST_ENABLED = os.getenv("INGEST_ENABLED", "true").lower() in ("true", "1", "yes")
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bea-lab")
@@ -749,6 +754,29 @@ def get_db():
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_customer ON tasks(customer_code)"))
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_slug)"))
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_lead ON tasks(lead_id)"))
+                    # ── Research Feeds ──
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS research_feeds (
+                        id VARCHAR PRIMARY KEY,
+                        feed_type VARCHAR(50) NOT NULL DEFAULT 'news',
+                        source VARCHAR(200) NOT NULL,
+                        source_email VARCHAR(320),
+                        title VARCHAR(1000) NOT NULL,
+                        date DATE,
+                        content TEXT,
+                        sections JSON DEFAULT '{}',
+                        tags JSON DEFAULT '[]',
+                        be_relevance REAL DEFAULT 0.0,
+                        raw_subject VARCHAR(1000),
+                        raw_from VARCHAR(320),
+                        processed BOOLEAN DEFAULT FALSE,
+                        embedding_json TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    try:
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feeds_date ON research_feeds (date DESC)"))
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feeds_type ON research_feeds (feed_type)"))
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_feeds_source ON research_feeds (source)"))
+                    except Exception:
+                        pass
                     conn.commit()
             except: pass
             logger.info(f"DB connected: {DATABASE_URL[:50]}...")
@@ -1960,7 +1988,7 @@ def fulltext_search(db, query: str, limit: int = 8) -> list:
 
 # ========== END VECTOR EMBEDDING ==========
 
-app = FastAPI(title="BEA Lab Upload API", version="3.7.0")
+app = FastAPI(title="BEA Lab Upload API", version="3.8.0")
 
 def send_verification_email(email, name, token):
     """Send verification email via Resend API"""
@@ -15054,3 +15082,328 @@ async def transform_status(notebook_id: str, user=Depends(require_auth)):
         "podcast_status": audio_status,
         "message": "Open notebook link to access all outputs."
     }
+
+
+# ============================================================
+# Research Feed: Email Ingest Pipeline (v3.8.0)
+# ============================================================
+
+import re as _re_mod
+
+def parse_apa_morgenlage(subject: str, body: str) -> dict:
+    """Parse BGS SK APA Morgenlage email into structured sections."""
+    from datetime import date as _date
+
+    result = {
+        "feed_type": "apa_morgenlage",
+        "source": "BGS SK APA",
+        "title": subject or "APA Morgenlage",
+        "date": None,
+        "sections": {},
+        "tags": [],
+        "be_relevance": 0.0
+    }
+
+    month_map = {
+        "jänner": 1, "januar": 1, "februar": 2, "märz": 3, "april": 4,
+        "mai": 5, "juni": 6, "juli": 7, "august": 8, "september": 9,
+        "oktober": 10, "november": 11, "dezember": 12
+    }
+
+    text_combined = f"{subject} {body}"
+    m = _re_mod.search(
+        r"(\d{1,2})\.\s*(Jänner|Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s*(\d{4})",
+        text_combined, _re_mod.IGNORECASE
+    )
+    if m:
+        day, month_str, year = int(m.group(1)), m.group(2).lower(), int(m.group(3))
+        if month_str in month_map:
+            try:
+                result["date"] = _date(year, month_map[month_str], day).isoformat()
+            except ValueError:
+                pass
+
+    section_headers = [
+        ("bestimmende_themen", r"(?:BESTIMMENDE THEMEN|Bestimmende Themen)"),
+        ("termine", r"TERMINE"),
+        ("zib2", r"ZIB2"),
+        ("oe1_morgenjournal", r"Ö1[- ]Morgenjournal"),
+        ("cover", r"COVER"),
+        ("innenpolitik", r"INNENPOLITIK"),
+        ("wirtschaft", r"WIRTSCHAFT"),
+        ("international", r"INTERNATIONAL"),
+        ("chronik", r"CHRONIK"),
+        ("kultur", r"KULTUR"),
+        ("sport", r"SPORT"),
+    ]
+
+    lines = body.split("\n")
+    current_section = "_header"
+    sections = {}
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped == "-":
+            continue
+        matched = False
+        for key, pattern in section_headers:
+            if _re_mod.match(pattern, stripped, _re_mod.IGNORECASE):
+                current_section = key
+                sections[current_section] = []
+                matched = True
+                break
+        if not matched and current_section != "_header":
+            if current_section not in sections:
+                sections[current_section] = []
+            clean = _re_mod.sub(r"^[•\-\*]\s*", "", stripped)
+            if clean and len(clean) > 2:
+                sections[current_section].append(clean)
+
+    result["sections"] = sections
+    if "bestimmende_themen" in sections:
+        result["tags"] = sections["bestimmende_themen"][:10]
+
+    be_keywords = [
+        "verhalten", "nudg", "behavioral", "entscheidung", "psycholog",
+        "anreiz", "incentiv", "compliance", "reform", "steuer",
+        "pension", "gesundheit", "health", "klima", "climate",
+        "digital", "ki ", " ai ", "regulier", "wettbewerb",
+        "bildung", "arbeit", "consumer", "verbraucher", "wahl",
+        "fairness", "transparenz", "bias", "heuristik"
+    ]
+    full_lower = body.lower()
+    score = sum(1 for kw in be_keywords if kw in full_lower)
+    result["be_relevance"] = min(1.0, round(score / 5.0, 2))
+
+    return result
+
+
+def parse_generic_email(subject: str, body: str, from_addr: str) -> dict:
+    """Parse a generic forwarded email into a research feed entry."""
+    return {
+        "feed_type": "email",
+        "source": from_addr.split("@")[-1] if "@" in from_addr else "unknown",
+        "title": subject or "Untitled Email",
+        "date": None,
+        "sections": {"content": [l.strip() for l in body.split("\n") if l.strip()][:200]},
+        "tags": [],
+        "be_relevance": 0.0
+    }
+
+
+def _embed_feed(db, feed_id: str, embed_text: str):
+    """Embed a research feed entry for RAG search."""
+    if not VOYAGE_API_KEY:
+        return
+    import urllib.request as _ur, ssl as _ssl
+    payload = json.dumps({"input": [embed_text[:8000]], "model": VOYAGE_MODEL}).encode()
+    req = _ur.Request("https://api.voyageai.com/v1/embeddings", data=payload, method="POST",
+        headers={"Authorization": f"Bearer {VOYAGE_API_KEY}", "Content-Type": "application/json"})
+    _ctx = _ssl.create_default_context()
+    _ctx.check_hostname = False
+    _ctx.verify_mode = _ssl.CERT_NONE
+    resp = json.loads(_ur.urlopen(req, context=_ctx, timeout=30).read())
+    vec = resp["data"][0]["embedding"]
+    db.execute(text("UPDATE research_feeds SET embedding_json = :vec WHERE id = :id"),
+               {"vec": json.dumps(vec), "id": feed_id})
+    db.commit()
+
+
+@app.post("/api/ingest/email")
+async def ingest_email(request: Request):
+    """Resend Inbound Webhook - receives forwarded emails, stores as research feed."""
+    if not INGEST_ENABLED:
+        raise HTTPException(status_code=503, detail="Email ingest disabled")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    if RESEND_WEBHOOK_SECRET:
+        sig = request.headers.get("resend-signature", "")
+        logger.info(f"Ingest webhook signature present: {bool(sig)}")
+
+    event_type = payload.get("type", "")
+    if event_type != "email.received":
+        logger.info(f"Ingest webhook: ignoring event type {event_type}")
+        return {"status": "ignored", "reason": f"event type {event_type}"}
+
+    data = payload.get("data", {})
+    from_addr = data.get("from", "")
+    to_addrs = data.get("to", [])
+    subject = data.get("subject", "")
+    text_body = data.get("text", "")
+    html_body = data.get("html", "")
+
+    body = text_body
+    if not body and html_body:
+        body = _re_mod.sub(r"<[^>]+>", "", html_body)
+        body = _re_mod.sub(r"\s+", " ", body).strip()
+
+    logger.info(f"Ingest email: from={from_addr}, subject={subject[:80]}")
+
+    sender_domain = from_addr.split("@")[-1].lower() if "@" in from_addr else ""
+    is_whitelisted = any(sender_domain.endswith(d) for d in INGEST_WHITELIST)
+
+    target_is_news = any("news@bea-lab.io" in str(a).lower() for a in to_addrs)
+    known_sources = ["bgs.at", "apa.at", "ots.at"]
+    is_known = any(sender_domain.endswith(s) for s in known_sources)
+
+    if not is_whitelisted and not (target_is_news and is_known):
+        logger.warning(f"Ingest rejected: {from_addr} not whitelisted")
+        return {"status": "rejected", "reason": "sender not whitelisted"}
+
+    is_morgenlage = bool(_re_mod.search(r"morgenlage", subject, _re_mod.IGNORECASE))
+
+    if is_morgenlage:
+        parsed = parse_apa_morgenlage(subject, body)
+    else:
+        parsed = parse_generic_email(subject, body, from_addr)
+
+    feed_id = str(uuid.uuid4())
+    today = datetime.utcnow().date().isoformat()
+
+    db = next(get_db())
+    try:
+        db.execute(text("""
+            INSERT INTO research_feeds
+            (id, feed_type, source, source_email, title, date, content, sections, tags, be_relevance, raw_subject, raw_from, processed)
+            VALUES (:id, :ft, :src, :se, :title, :date, :content, :sections, :tags, :rel, :rs, :rf, TRUE)
+        """), {
+            "id": feed_id, "ft": parsed["feed_type"], "src": parsed["source"],
+            "se": from_addr, "title": parsed["title"],
+            "date": parsed.get("date") or today,
+            "content": body[:50000],
+            "sections": json.dumps(parsed["sections"], ensure_ascii=False),
+            "tags": json.dumps(parsed["tags"], ensure_ascii=False),
+            "rel": parsed["be_relevance"],
+            "rs": subject[:1000], "rf": from_addr
+        })
+        db.commit()
+        logger.info(f"Feed stored: {feed_id} type={parsed['feed_type']} date={parsed.get('date', today)}")
+
+        try:
+            embed_text = f"{parsed['title']}. {' '.join(parsed.get('tags', []))}. {body[:2000]}"
+            _embed_feed(db, feed_id, embed_text)
+        except Exception as e:
+            logger.warning(f"Feed embedding skipped: {e}")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Feed storage failed: {e}")
+        raise HTTPException(status_code=500, detail="Storage failed")
+    finally:
+        db.close()
+
+    return {
+        "status": "stored", "feed_id": feed_id,
+        "feed_type": parsed["feed_type"],
+        "date": parsed.get("date") or today,
+        "tags_count": len(parsed.get("tags", [])),
+        "sections_count": len(parsed.get("sections", {})),
+        "be_relevance": parsed["be_relevance"]
+    }
+
+
+@app.get("/api/feeds")
+async def list_feeds(
+    feed_type: Optional[str] = None,
+    days: int = 30,
+    limit: int = 50,
+    user=Depends(require_auth)
+):
+    """List research feeds."""
+    db = next(get_db())
+    try:
+        conditions = ["1=1"]
+        params = {"limit": limit}
+        if feed_type:
+            conditions.append("feed_type = :feed_type")
+            params["feed_type"] = feed_type
+        if days and days < 365:
+            conditions.append(f"date >= CURRENT_DATE - INTERVAL '{days} days'")
+        where = " AND ".join(conditions)
+        result = db.execute(text(f"""
+            SELECT id, feed_type, source, title, date, tags, be_relevance, created_at
+            FROM research_feeds WHERE {where}
+            ORDER BY date DESC, created_at DESC LIMIT :limit
+        """), params)
+        feeds = []
+        for row in result:
+            feeds.append({
+                "id": row[0], "feed_type": row[1], "source": row[2],
+                "title": row[3], "date": str(row[4]) if row[4] else None,
+                "tags": json.loads(row[5]) if isinstance(row[5], str) else (row[5] or []),
+                "be_relevance": row[6], "created_at": str(row[7]) if row[7] else None
+            })
+        return {"feeds": feeds, "count": len(feeds)}
+    finally:
+        db.close()
+
+
+@app.get("/api/feeds/{feed_id}")
+async def get_feed(feed_id: str, user=Depends(require_auth)):
+    """Get full research feed entry."""
+    db = next(get_db())
+    try:
+        result = db.execute(text(
+            "SELECT id, feed_type, source, source_email, title, date, content, sections, tags, be_relevance, raw_subject, raw_from, created_at FROM research_feeds WHERE id = :id"
+        ), {"id": feed_id})
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Feed not found")
+        return {
+            "id": row[0], "feed_type": row[1], "source": row[2], "source_email": row[3],
+            "title": row[4], "date": str(row[5]) if row[5] else None, "content": row[6],
+            "sections": json.loads(row[7]) if isinstance(row[7], str) else (row[7] or {}),
+            "tags": json.loads(row[8]) if isinstance(row[8], str) else (row[8] or []),
+            "be_relevance": row[9], "raw_subject": row[10], "raw_from": row[11],
+            "created_at": str(row[12]) if row[12] else None
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/feeds/search/{q}")
+async def search_feeds(q: str, limit: int = 20, user=Depends(require_auth)):
+    """Full-text search across research feeds."""
+    db = next(get_db())
+    try:
+        result = db.execute(text("""
+            SELECT id, feed_type, source, title, date, tags, be_relevance, LEFT(content, 300) as preview
+            FROM research_feeds
+            WHERE content ILIKE :q OR title ILIKE :q OR raw_subject ILIKE :q
+            ORDER BY date DESC LIMIT :limit
+        """), {"q": f"%{q}%", "limit": limit})
+        feeds = [{"id": r[0], "feed_type": r[1], "source": r[2], "title": r[3],
+                  "date": str(r[4]) if r[4] else None,
+                  "tags": json.loads(r[5]) if isinstance(r[5], str) else (r[5] or []),
+                  "be_relevance": r[6], "preview": r[7]} for r in result]
+        return {"feeds": feeds, "count": len(feeds), "query": q}
+    finally:
+        db.close()
+
+
+@app.get("/api/admin/feeds/stats")
+async def feed_stats(user=Depends(require_auth)):
+    """Admin stats for research feeds."""
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin only")
+    db = next(get_db())
+    try:
+        result = db.execute(text("""
+            SELECT feed_type, COUNT(*) as cnt, MIN(date) as earliest, MAX(date) as latest, AVG(be_relevance) as avg_rel
+            FROM research_feeds GROUP BY feed_type ORDER BY cnt DESC
+        """))
+        stats = []
+        total = 0
+        for row in result:
+            total += row[1]
+            stats.append({"feed_type": row[0], "count": row[1],
+                         "earliest": str(row[2]) if row[2] else None,
+                         "latest": str(row[3]) if row[3] else None,
+                         "avg_relevance": round(row[4], 2) if row[4] else 0})
+        return {"total_feeds": total, "by_type": stats}
+    finally:
+        db.close()
