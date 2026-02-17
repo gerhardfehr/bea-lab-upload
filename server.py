@@ -15433,3 +15433,299 @@ async def feed_stats(user=Depends(require_auth)):
         return {"total_feeds": total, "by_type": stats}
     finally:
         db.close()
+
+
+
+# ── AUTO-PRESENTATION PIPELINE ─────────────────────────────────────────────
+class PresentationRequest(BaseModel):
+    title: str
+    template: str = "client_pitch"       # client_pitch | research_report | workshop | internal
+    content: Optional[str] = None        # Free text content to include
+    doc_ids: Optional[List[str]] = None  # Document IDs from BEATRIX to include
+    language: str = "de"                 # "de" or "en"
+    max_slides: int = 8
+
+# ── Endpoint ───────────────────────────────────────────────────────────────
+@app.post("/api/presentations/generate")
+async def generate_presentation(
+    request: PresentationRequest,
+    user=Depends(require_auth),
+    db=Depends(get_db)
+):
+    """
+    Generate a .pptx presentation in FehrAdvice CI from BEATRIX content.
+    Returns the file as a download.
+    """
+    import io
+    import tempfile
+    import subprocess
+    import sys
+
+    # ── 1. Collect content ──────────────────────────────────────────────────
+    collected_content = []
+
+    if request.content:
+        collected_content.append(request.content)
+
+    if request.doc_ids:
+        for doc_id in request.doc_ids[:5]:  # max 5 docs
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc and doc.uploaded_by == user["email"]:
+                collected_content.append(f"## {doc.title}\n{doc.content or ''}")
+
+    raw_content = "\n\n".join(collected_content) if collected_content else request.title
+
+    # ── 2. Use Claude to structure slides ──────────────────────────────────
+    import anthropic
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    lang_instruction = "auf Deutsch" if request.language == "de" else "in English"
+    template_descriptions = {
+        "client_pitch": "Kundenorientierte Pitch-Präsentation mit Executive Summary und Business Value",
+        "research_report": "Wissenschaftlicher Report basierend auf akademischen Papers und BCM-Framework",
+        "workshop": "Interaktive Workshop-Präsentation mit Übungen und BCM/EBF-Framework",
+        "internal": "Interner Team-Report mit Projektfortschritt und nächsten Schritten"
+    }
+    template_desc = template_descriptions.get(request.template, "Professionelle Präsentation")
+
+    structure_prompt = f"""Du bist ein Experte für Behavioral Economics Präsentationen bei FehrAdvice & Partners AG.
+
+Erstelle eine Slide-Struktur {lang_instruction} für eine {template_desc}.
+Titel: {request.title}
+Max. Slides: {request.max_slides}
+
+Inhalt/Kontext:
+{raw_content[:3000]}
+
+Antworte NUR mit einem JSON-Array dieser Struktur:
+[
+  {{
+    "slide_type": "title|section|content|two_col|stats|closing",
+    "title": "Slide-Titel",
+    "subtitle": "Optional Untertitel",
+    "body": "Haupttext (max 150 Zeichen)",
+    "points": ["Punkt 1", "Punkt 2", "Punkt 3"],
+    "left_title": "Linke Spalte Titel (nur bei two_col)",
+    "left_points": ["Punkt 1", "Punkt 2"],
+    "right_title": "Rechte Spalte Titel (nur bei two_col)",
+    "right_points": ["Punkt 1", "Punkt 2"],
+    "stats": [{{"value": "73%", "label": "Beschreibung"}}]
+  }}
+]
+
+Halte dich strikt an das JSON-Format. Keine anderen Texte."""
+
+    try:
+        msg = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": structure_prompt}]
+        )
+        raw_json = msg.content[0].text.strip()
+        # Clean JSON fences if present
+        if raw_json.startswith("```"):
+            raw_json = raw_json.split("```")[1]
+            if raw_json.startswith("json"):
+                raw_json = raw_json[4:]
+        slides_data = json.loads(raw_json.strip())
+    except Exception as e:
+        logger.error(f"Claude slide structuring failed: {e}")
+        # Fallback: simple structure
+        slides_data = [
+            {"slide_type": "title", "title": request.title, "subtitle": "FehrAdvice & Partners AG", "body": ""},
+            {"slide_type": "content", "title": "Inhalt", "body": raw_content[:200], "points": []},
+            {"slide_type": "closing", "title": "Vielen Dank", "body": ""}
+        ]
+
+    # ── 3. Generate .pptx with python-pptx ────────────────────────────────
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches, Pt, Emu
+        from pptx.dml.color import RGBColor
+        from pptx.enum.text import PP_ALIGN
+
+        # CI Colors
+        DARK_BLUE = RGBColor(0x02, 0x40, 0x79)
+        LIGHT_BLUE = RGBColor(0x54, 0x9E, 0xDE)
+        GRAY_TEXT = RGBColor(0x25, 0x21, 0x2A)
+        LIGHT_GRAY = RGBColor(0xF3, 0xF5, 0xF7)
+        WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+        MINT = RGBColor(0x7E, 0xBD, 0xAC)
+
+        prs = Presentation()
+        prs.slide_width = Inches(13.333)
+        prs.slide_height = Inches(7.5)
+
+        blank_layout = prs.slide_layouts[6]  # blank
+
+        def add_rect(slide, x, y, w, h, color, alpha=None):
+            shape = slide.shapes.add_shape(1, Inches(x), Inches(y), Inches(w), Inches(h))
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = color
+            shape.line.fill.background()
+            return shape
+
+        def add_text(slide, text, x, y, w, h, size=14, bold=False, color=None,
+                     align=PP_ALIGN.LEFT, italic=False, word_wrap=True):
+            txBox = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+            tf = txBox.text_frame
+            tf.word_wrap = word_wrap
+            p = tf.paragraphs[0]
+            p.alignment = align
+            run = p.add_run()
+            run.text = text
+            run.font.size = Pt(size)
+            run.font.bold = bold
+            run.font.italic = italic
+            run.font.color.rgb = color or GRAY_TEXT
+            return txBox
+
+        def add_header_bar(slide, title, subtitle=None):
+            # Top bar
+            add_rect(slide, 0, 0, 13.333, 0.7, DARK_BLUE)
+            # Logo
+            add_text(slide, "FEHR ADVICE", 11.5, 0.1, 1.7, 0.5,
+                     size=9, bold=True, color=WHITE, align=PP_ALIGN.RIGHT)
+            # Title
+            add_text(slide, title, 0.5, 0.85, 12.3, 0.65,
+                     size=24, bold=True, color=DARK_BLUE, align=PP_ALIGN.LEFT)
+            # Separator line
+            sep = slide.shapes.add_shape(1, Inches(0.5), Inches(1.55), Inches(12.3), Inches(0.02))
+            sep.fill.solid()
+            sep.fill.fore_color.rgb = LIGHT_BLUE
+            sep.line.fill.background()
+            # Subtitle
+            if subtitle:
+                add_text(slide, subtitle, 0.5, 1.6, 12.3, 0.4,
+                         size=11, color=LIGHT_BLUE, italic=True)
+
+        def add_footer(slide):
+            add_rect(slide, 0, 7.1, 13.333, 0.4, LIGHT_GRAY)
+            add_text(slide, "FehrAdvice & Partners AG  |  BEATRIX Platform  |  www.bea-lab.io",
+                     0.5, 7.12, 12.3, 0.36, size=8, color=RGBColor(0x88, 0x88, 0x88))
+
+        for s in slides_data:
+            stype = s.get("slide_type", "content")
+            slide = prs.slides.add_slide(blank_layout)
+
+            if stype == "title":
+                slide.background.fill.solid()
+                slide.background.fill.fore_color.rgb = DARK_BLUE
+                # Accent shape right
+                add_rect(slide, 8, 0, 5.333, 7.5, LIGHT_BLUE)
+                # Title
+                add_text(slide, s.get("title", ""), 0.7, 1.5, 7.5, 1.5,
+                         size=48, bold=True, color=WHITE)
+                # Subtitle
+                if s.get("subtitle"):
+                    add_text(slide, s["subtitle"], 0.7, 3.2, 7, 0.8,
+                             size=18, color=RGBColor(0x8B, 0xB8, 0xE0))
+                # Tagline
+                add_text(slide, "FehrAdvice & Partners AG  |  2026", 0.7, 4.5, 7, 0.5,
+                         size=11, color=RGBColor(0x7E, 0xAB, 0xD4))
+                # Logo
+                add_text(slide, "FEHR ADVICE", 11.0, 0.2, 2.1, 0.6,
+                         size=10, bold=True, color=WHITE, align=PP_ALIGN.RIGHT)
+
+            elif stype == "section":
+                slide.background.fill.solid()
+                slide.background.fill.fore_color.rgb = LIGHT_BLUE
+                add_rect(slide, 0, 0, 13.333, 0.6, DARK_BLUE)
+                add_text(slide, "FEHR ADVICE", 11.5, 0.05, 1.7, 0.5,
+                         size=9, bold=True, color=WHITE, align=PP_ALIGN.RIGHT)
+                add_text(slide, s.get("title", ""), 2, 2.5, 9.333, 1.5,
+                         size=40, bold=True, color=DARK_BLUE, align=PP_ALIGN.CENTER)
+                if s.get("subtitle"):
+                    add_text(slide, s["subtitle"], 2, 4.2, 9.333, 0.7,
+                             size=16, color=DARK_BLUE, align=PP_ALIGN.CENTER)
+
+            elif stype == "two_col":
+                add_header_bar(slide, s.get("title", ""), s.get("subtitle"))
+                add_footer(slide)
+                y_start = 2.1 if s.get("subtitle") else 1.9
+                # Left column
+                add_rect(slide, 0.5, y_start, 5.9, 0.45, DARK_BLUE)
+                add_text(slide, s.get("left_title", ""), 0.6, y_start + 0.05, 5.7, 0.38,
+                         size=12, bold=True, color=WHITE)
+                for i, pt in enumerate(s.get("left_points", [])[:6]):
+                    add_rect(slide, 0.5, y_start + 0.55 + i*0.68, 0.07, 0.55, LIGHT_BLUE)
+                    add_text(slide, pt, 0.7, y_start + 0.58 + i*0.68, 5.5, 0.5,
+                             size=10, color=GRAY_TEXT)
+                # Right column
+                add_rect(slide, 6.9, y_start, 5.9, 0.45, LIGHT_BLUE)
+                add_text(slide, s.get("right_title", ""), 7.0, y_start + 0.05, 5.7, 0.38,
+                         size=12, bold=True, color=WHITE)
+                for i, pt in enumerate(s.get("right_points", [])[:6]):
+                    add_rect(slide, 6.9, y_start + 0.55 + i*0.68, 0.07, 0.55, DARK_BLUE)
+                    add_text(slide, pt, 7.1, y_start + 0.58 + i*0.68, 5.5, 0.5,
+                             size=10, color=GRAY_TEXT)
+
+            elif stype == "stats":
+                add_header_bar(slide, s.get("title", ""), s.get("subtitle"))
+                add_footer(slide)
+                stats = s.get("stats", [])[:4]
+                col_w = 12.333 / max(len(stats), 1)
+                y_start = 2.5
+                for i, stat in enumerate(stats):
+                    x = 0.5 + i * col_w
+                    add_rect(slide, x, y_start, col_w - 0.3, 2.8, LIGHT_GRAY)
+                    add_rect(slide, x, y_start, col_w - 0.3, 0.08, LIGHT_BLUE)
+                    add_text(slide, stat.get("value", ""), x + 0.2, y_start + 0.3,
+                             col_w - 0.7, 1.2, size=44, bold=True, color=DARK_BLUE,
+                             align=PP_ALIGN.CENTER)
+                    add_text(slide, stat.get("label", ""), x + 0.2, y_start + 1.7,
+                             col_w - 0.7, 0.9, size=11, color=GRAY_TEXT,
+                             align=PP_ALIGN.CENTER)
+
+            elif stype == "closing":
+                slide.background.fill.solid()
+                slide.background.fill.fore_color.rgb = DARK_BLUE
+                add_rect(slide, 0, 5.8, 13.333, 1.7, RGBColor(0x01, 0x30, 0x5A))
+                add_rect(slide, 0, 5.8, 13.333, 0.06, LIGHT_BLUE)
+                add_text(slide, s.get("title", "Vielen Dank"), 0.7, 1.5, 11, 1.5,
+                         size=36, bold=True, color=WHITE)
+                if s.get("body"):
+                    add_text(slide, s["body"], 0.7, 3.3, 9, 0.9,
+                             size=16, color=RGBColor(0x8B, 0xB8, 0xE0))
+                add_text(slide, "www.bea-lab.io  |  gerhard.fehr@fehradvice.com  |  +41 44 256 7900",
+                         0.7, 6.05, 12, 0.5, size=10, color=RGBColor(0x7E, 0xAB, 0xD4))
+                add_text(slide, "FEHR ADVICE", 10.5, 6.55, 2.6, 0.6,
+                         size=13, bold=True, color=WHITE, align=PP_ALIGN.RIGHT)
+
+            else:  # content (default)
+                add_header_bar(slide, s.get("title", ""), s.get("subtitle"))
+                add_footer(slide)
+                y_start = 2.1 if s.get("subtitle") else 1.9
+
+                if s.get("body"):
+                    add_text(slide, s["body"], 0.5, y_start, 12.3, 0.7,
+                             size=12, color=GRAY_TEXT)
+                    y_start += 0.85
+
+                points = s.get("points", [])
+                for i, pt in enumerate(points[:6]):
+                    bg_color = LIGHT_GRAY if i % 2 == 0 else WHITE
+                    add_rect(slide, 0.5, y_start + i * 0.72, 12.3, 0.62, bg_color)
+                    add_rect(slide, 0.5, y_start + i * 0.72, 0.07, 0.62, LIGHT_BLUE)
+                    add_text(slide, pt, 0.75, y_start + i * 0.72 + 0.05, 11.9, 0.55,
+                             size=11, color=GRAY_TEXT)
+
+        # ── 4. Save to bytes and return ─────────────────────────────────────
+        pptx_buffer = io.BytesIO()
+        prs.save(pptx_buffer)
+        pptx_buffer.seek(0)
+
+        safe_title = "".join(c for c in request.title if c.isalnum() or c in " -_")[:50]
+        filename = f"BEATRIX_{safe_title}_{datetime.now().strftime('%Y%m%d')}.pptx"
+
+        return StreamingResponse(
+            pptx_buffer,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except ImportError:
+        raise HTTPException(500, "python-pptx not installed. Run: pip install python-pptx")
+    except Exception as e:
+        logger.error(f"Presentation generation failed: {e}")
+        raise HTTPException(500, f"Presentation generation failed: {str(e)}")
