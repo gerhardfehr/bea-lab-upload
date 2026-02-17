@@ -15289,7 +15289,7 @@ async def ingest_email(request: Request):
     feed_id = str(uuid.uuid4())
     today = datetime.utcnow().date().isoformat()
 
-    db = next(get_db())
+    db = get_db()
     _ensure_feeds_table(db)
     try:
         db.execute(text("""
@@ -15340,7 +15340,7 @@ async def list_feeds(
     user=Depends(require_auth)
 ):
     """List research feeds."""
-    db = next(get_db())
+    db = get_db()
     try:
         conditions = ["1=1"]
         params = {"limit": limit}
@@ -15371,7 +15371,7 @@ async def list_feeds(
 @app.get("/api/feeds/{feed_id}")
 async def get_feed(feed_id: str, user=Depends(require_auth)):
     """Get full research feed entry."""
-    db = next(get_db())
+    db = get_db()
     try:
         result = db.execute(text(
             "SELECT id, feed_type, source, source_email, title, date, content, sections, tags, be_relevance, raw_subject, raw_from, created_at FROM research_feeds WHERE id = :id"
@@ -15394,7 +15394,7 @@ async def get_feed(feed_id: str, user=Depends(require_auth)):
 @app.get("/api/feeds/search/{q}")
 async def search_feeds(q: str, limit: int = 20, user=Depends(require_auth)):
     """Full-text search across research feeds."""
-    db = next(get_db())
+    db = get_db()
     try:
         result = db.execute(text("""
             SELECT id, feed_type, source, title, date, tags, be_relevance, LEFT(content, 300) as preview
@@ -15416,7 +15416,7 @@ async def feed_stats(user=Depends(require_auth)):
     """Admin stats for research feeds."""
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin only")
-    db = next(get_db())
+    db = get_db()
     try:
         result = db.execute(text("""
             SELECT feed_type, COUNT(*) as cnt, MIN(date) as earliest, MAX(date) as latest, AVG(be_relevance) as avg_rel
