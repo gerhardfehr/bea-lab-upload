@@ -15209,6 +15209,37 @@ def _embed_feed(db, feed_id: str, embed_text: str):
     db.commit()
 
 
+
+_feeds_table_ready = False
+
+def _ensure_feeds_table(db):
+    """Ensure research_feeds table exists (handles first-run after deploy)."""
+    global _feeds_table_ready
+    if _feeds_table_ready:
+        return
+    try:
+        db.execute(text("""CREATE TABLE IF NOT EXISTS research_feeds (
+            id VARCHAR PRIMARY KEY,
+            feed_type VARCHAR(50) NOT NULL DEFAULT 'news',
+            source VARCHAR(200) NOT NULL,
+            source_email VARCHAR(320),
+            title VARCHAR(1000) NOT NULL,
+            date DATE, content TEXT,
+            sections JSON DEFAULT '{}', tags JSON DEFAULT '[]',
+            be_relevance REAL DEFAULT 0.0,
+            raw_subject VARCHAR(1000), raw_from VARCHAR(320),
+            processed BOOLEAN DEFAULT FALSE, embedding_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_feeds_date ON research_feeds (date DESC)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_feeds_type ON research_feeds (feed_type)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_feeds_source ON research_feeds (source)"))
+        db.commit()
+        _feeds_table_ready = True
+        logger.info("research_feeds table ensured")
+    except Exception as e:
+        logger.warning(f"feeds table check: {e}")
+        _feeds_table_ready = True
+
 @app.post("/api/ingest/email")
 async def ingest_email(request: Request):
     """Resend Inbound Webhook - receives forwarded emails, stores as research feed."""
@@ -15265,6 +15296,7 @@ async def ingest_email(request: Request):
     today = datetime.utcnow().date().isoformat()
 
     db = next(get_db())
+    _ensure_feeds_table(db)
     try:
         db.execute(text("""
             INSERT INTO research_feeds
