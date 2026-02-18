@@ -2348,20 +2348,17 @@ async def lab_upload_github(request: Request):
         message = body.get("message", f"upload by {payload.get('sub', 'unknown')}")
         if not path or not file_content:
             raise HTTPException(400, "path and content required")
-        import httpx
+        import urllib.request as urlreq
         gh_token = os.getenv("GH_TOKEN", "")
-        async with httpx.AsyncClient() as client:
-            resp = await client.put(
-                f"https://api.github.com/repos/FehrAdvice-Partners-AG/experimental-economics-lab/contents/{path}",
-                headers={"Authorization": f"Bearer {gh_token}", "Content-Type": "application/json"},
-                json={"message": message, "content": file_content},
-                timeout=30
-            )
-        if resp.status_code in (200, 201):
-            data = resp.json()
-            return {"status": "uploaded", "path": data.get("content", {}).get("path"), "sha": data.get("content", {}).get("sha")}
-        else:
-            raise HTTPException(resp.status_code, f"GitHub error: {resp.text[:200]}")
+        gh_payload = json.dumps({"message": message, "content": file_content}).encode()
+        gh_req = urlreq.Request(
+            f"https://api.github.com/repos/FehrAdvice-Partners-AG/experimental-economics-lab/contents/{path}",
+            data=gh_payload, method="PUT",
+            headers={"Authorization": f"Bearer {gh_token}", "Content-Type": "application/json"}
+        )
+        gh_resp = urlreq.urlopen(gh_req, timeout=30)
+        data = json.loads(gh_resp.read().decode())
+        return {"status": "uploaded", "path": data.get("content", {}).get("path"), "sha": data.get("content", {}).get("sha")}
     except HTTPException:
         raise
     except Exception as e:
@@ -2369,112 +2366,78 @@ async def lab_upload_github(request: Request):
 
 
 
+
 # ── Experimental Economics Lab: AI Analysis ─────────────────────────
 class LabAnalyzeRequest(BaseModel):
     experiment_text: str
-    tier: str = "fast"  # fast, medium, deep
+    tier: str = "fast"
 
 FIELD_EXPERIMENT_RULES = [
-    "Clear Causal Question: Does the experiment test a specific, falsifiable causal hypothesis?",
-    "Proper Randomization: Is assignment to treatment and control groups truly random?",
-    "Adequate Sample Size & Power: Is the sample large enough? Were power calculations done?",
-    "Valid Control Group: Is the control group a genuine counterfactual?",
-    "Pre-Registration & Pre-Analysis Plan: Was the experiment pre-registered before data collection?",
-    "Ethical Design & IRB Approval: Does the design meet ethical standards with IRB approval?",
-    "Measurement Quality & Data Integrity: Are outcome measures reliable, valid, and consistent?",
-    "Treatment Fidelity & Compliance: Is the treatment actually implemented as designed?",
-    "External Validity & Generalizability: Can results be generalized beyond the study population?",
-    "Transparent Reporting & Replicability: Are all results reported transparently including null findings?"
+    "Clear Causal Question", "Proper Randomization", "Adequate Sample Size & Power",
+    "Valid Control Group", "Pre-Registration & Pre-Analysis Plan", "Ethical Design & IRB Approval",
+    "Measurement Quality & Data Integrity", "Treatment Fidelity & Compliance",
+    "External Validity & Generalizability", "Transparent Reporting & Replicability"
 ]
 
 TIER_INSTRUCTIONS = {
-    "fast": "Give a FAST assessment. For each rule, provide a score (1-10) and ONE sentence. Then give an overall score and 3 key recommendations. Be concise.",
-    "medium": "Give a DETAILED assessment. For each rule, provide a score (1-10), 2-3 sentences of specific feedback, and one concrete improvement suggestion. Include an overall score with a paragraph of methodology feedback.",
-    "deep": "Give a COMPREHENSIVE methodological review. For each rule, provide a score (1-10), detailed analysis (3-5 sentences), specific improvement actions, and reference relevant literature (Banerjee, Duflo, Kremer, J-PAL, List, etc.). Include an overall score, a full methodology critique, a suggested redesign section, and specific next steps."
+    "fast": "FAST: For each rule, score 1-10 and ONE sentence. Overall score + 3 recommendations.",
+    "medium": "DETAILED: For each rule, score 1-10, 2-3 sentences, one improvement. Overall score + methodology paragraph.",
+    "deep": "COMPREHENSIVE: For each rule, score 1-10, 3-5 sentences, actions, literature refs (Banerjee, Duflo, J-PAL). Overall score + critique + redesign."
 }
 
 @app.post("/api/lab/analyze")
 async def lab_analyze(request: LabAnalyzeRequest, req: Request):
-    """Analyze a field experiment against 10 fundamental rules. Requires lab token."""
     auth = req.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(401, "Missing token")
     payload = verify_jwt(auth.split(" ")[1])
     if not payload or payload.get("scope") != "lab":
         raise HTTPException(401, "Invalid or non-lab token")
-
-    if not request.experiment_text or len(request.experiment_text.strip()) < 20:
-        raise HTTPException(400, "Please provide a more detailed experiment description (at least 20 characters)")
-
+    if len(request.experiment_text.strip()) < 20:
+        raise HTTPException(400, "Please provide more detail (min 20 chars)")
     tier = request.tier if request.tier in TIER_INSTRUCTIONS else "fast"
-    max_tokens = {"fast": 1500, "medium": 2500, "deep": 4000}.get(tier, 1500)
-
-    rules_text = "\n".join(f"{i+1}. {r}" for i, r in enumerate(FIELD_EXPERIMENT_RULES))
-
-    system_prompt = f"""You are an expert field experiment methodologist trained in the tradition of Banerjee, Duflo, and Kremer (Nobel 2019). You evaluate student field experiments against 10 fundamental rules.
+    max_tok = {"fast": 1500, "medium": 2500, "deep": 4000}.get(tier, 1500)
+    rules_text = chr(10).join(f"{i+1}. {r}" for i, r in enumerate(FIELD_EXPERIMENT_RULES))
+    sys_prompt = f"""You are an expert field experiment methodologist (Banerjee/Duflo/Kremer tradition, Nobel 2019). Evaluate the student experiment against 10 rules.
 
 THE 10 RULES:
 {rules_text}
 
-RESPONSE FORMAT (strict JSON only):
-{{"overall_score": <1-10>, "overall_feedback": "<text>", "rules": [{{"id": 1, "score": <1-10>, "feedback": "<text>"}}, ...for all 10 rules], "recommendations": ["<text>", ...], "redesign": "<text or null>"}}
+RESPOND ONLY IN VALID JSON:
+{{"overall_score":<1-10>,"overall_feedback":"<text>","rules":[{{"id":1,"score":<1-10>,"feedback":"<text>"}},...all 10],"recommendations":["<text>",...],"redesign":"<text or null>"}}
 
-Scoring guide: 1-3 = major issues/not addressed, 4-6 = needs significant improvement, 7-8 = good with minor issues, 9-10 = excellent.
+Scoring: 1-3=major issues, 4-6=needs work, 7-8=good, 9-10=excellent.
 {TIER_INSTRUCTIONS[tier]}
-
-RESPOND ONLY WITH VALID JSON. No markdown, no backticks, no text outside the JSON object."""
-
+NO markdown, NO backticks, ONLY the JSON object."""
     try:
-        import httpx
+        import urllib.request as urlreq
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
         if not api_key:
-            raise HTTPException(500, "Anthropic API key not configured")
-
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": max_tokens,
-                    "system": system_prompt,
-                    "messages": [{"role": "user", "content": request.experiment_text}]
-                }
-            )
-
-        if resp.status_code != 200:
-            logger.error(f"Anthropic API error: {resp.status_code} {resp.text[:200]}")
-            raise HTTPException(502, f"AI service error: {resp.status_code}")
-
-        data = resp.json()
-        ai_text = ""
-        for block in data.get("content", []):
-            if block.get("type") == "text":
-                ai_text += block["text"]
-
-        # Try to parse JSON response
+            raise HTTPException(500, "API key not configured")
+        api_data = json.dumps({
+            "model": "claude-sonnet-4-20250514", "max_tokens": max_tok,
+            "system": sys_prompt,
+            "messages": [{"role": "user", "content": request.experiment_text}]
+        }).encode()
+        api_req = urlreq.Request("https://api.anthropic.com/v1/messages", data=api_data, method="POST",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+        api_resp = urlreq.urlopen(api_req, timeout=120)
+        data = json.loads(api_resp.read().decode())
+        ai_text = "".join(b["text"] for b in data.get("content", []) if b.get("type") == "text")
         import re
         clean = re.sub(r'^```json\s*', '', ai_text.strip())
         clean = re.sub(r'```\s*$', '', clean).strip()
-
         try:
             result = json.loads(clean)
             logger.info(f"Lab analysis: tier={tier}, score={result.get('overall_score')}, user={payload.get('sub')}")
             return JSONResponse(result)
         except json.JSONDecodeError:
-            # Return raw text if JSON parse fails
             return JSONResponse({"raw_response": ai_text, "parse_error": True})
-
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Lab analyze error: {e}")
         raise HTTPException(500, f"Analysis error: {str(e)}")
-
 
 @app.post("/api/change-password")
 async def change_password(request: ChangePasswordRequest, user=Depends(require_auth)):
