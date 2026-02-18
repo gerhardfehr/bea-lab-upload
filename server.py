@@ -412,6 +412,20 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
+
+
+# ── Experimental Economics Lab (separate auth) ──────────────────────
+class LabUser(Base):
+    __tablename__ = "lab_users"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String(320), unique=True, nullable=False, index=True)
+    name = Column(String(200), nullable=True)
+    password_hash = Column(String(500), nullable=False)
+    password_salt = Column(String(100), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+
 class UserInsight(Base):
     __tablename__ = "user_insights"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -2226,6 +2240,133 @@ async def admin_verify_user(user_id: str, user=Depends(require_permission("platf
         target.email_verified = True; target.verification_token = None; db.commit()
         return {"email": target.email, "email_verified": True}
     finally: db.close()
+
+
+
+# ── Experimental Economics Lab Auth ─────────────────────────────────
+class LabLoginRequest(BaseModel):
+    email: str
+    password: str
+
+class LabRegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: Optional[str] = None
+
+@app.post("/api/lab/login")
+async def lab_login(request: LabLoginRequest):
+    email = request.email.strip().lower()
+    db = get_db()
+    try:
+        lab_user = db.query(LabUser).filter(LabUser.email == email).first()
+        if not lab_user or not verify_password(request.password, lab_user.password_hash, lab_user.password_salt):
+            raise HTTPException(401, "Email or password incorrect")
+        if not lab_user.is_active:
+            raise HTTPException(403, "Account deactivated")
+        lab_user.last_login = datetime.utcnow()
+        db.commit()
+        token = create_jwt({
+            "sub": lab_user.email,
+            "name": lab_user.name,
+            "uid": lab_user.id,
+            "scope": "lab",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + JWT_EXPIRY
+        })
+        logger.info(f"Lab login: {email}")
+        return JSONResponse({
+            "token": token,
+            "expires_in": JWT_EXPIRY,
+            "user": {"email": lab_user.email, "name": lab_user.name}
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Login error: {e}")
+    finally:
+        db.close()
+
+@app.post("/api/lab/register")
+async def lab_register(request: LabRegisterRequest, user=Depends(require_auth)):
+    """Admin-only: register a new lab user."""
+    if not user.get("admin"):
+        raise HTTPException(403, "Only admins can register lab users")
+    email = request.email.strip().lower()
+    if not email or '@' not in email:
+        raise HTTPException(400, "Invalid email")
+    if len(request.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    db = get_db()
+    try:
+        if db.query(LabUser).filter(LabUser.email == email).first():
+            raise HTTPException(409, "Email already registered in lab")
+        pw_hash, pw_salt = hash_password(request.password)
+        lab_user = LabUser(
+            email=email,
+            name=request.name or email.split('@')[0],
+            password_hash=pw_hash,
+            password_salt=pw_salt
+        )
+        db.add(lab_user)
+        db.commit()
+        db.refresh(lab_user)
+        logger.info(f"Lab user registered: {email}")
+        return {"status": "created", "email": lab_user.email, "name": lab_user.name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
+@app.get("/api/lab/users")
+async def lab_list_users(user=Depends(require_auth)):
+    """Admin-only: list all lab users."""
+    if not user.get("admin"):
+        raise HTTPException(403, "Only admins can list lab users")
+    db = get_db()
+    try:
+        users = db.query(LabUser).all()
+        return [{"id": u.id, "email": u.email, "name": u.name, "is_active": u.is_active, "last_login": str(u.last_login) if u.last_login else None} for u in users]
+    finally:
+        db.close()
+
+@app.post("/api/lab/upload-to-github")
+async def lab_upload_github(request: Request):
+    """Upload file to experimental-economics-lab GitHub repo. Requires lab token."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Missing token")
+    payload = verify_jwt(auth.split(" ")[1])
+    if not payload or payload.get("scope") != "lab":
+        raise HTTPException(401, "Invalid or non-lab token")
+    try:
+        body = await request.json()
+        path = body.get("path")
+        file_content = body.get("content")
+        message = body.get("message", f"upload by {payload.get('sub', 'unknown')}")
+        if not path or not file_content:
+            raise HTTPException(400, "path and content required")
+        import httpx
+        gh_token = os.getenv("GH_TOKEN", "")
+        async with httpx.AsyncClient() as client:
+            resp = await client.put(
+                f"https://api.github.com/repos/FehrAdvice-Partners-AG/experimental-economics-lab/contents/{path}",
+                headers={"Authorization": f"Bearer {gh_token}", "Content-Type": "application/json"},
+                json={"message": message, "content": file_content},
+                timeout=30
+            )
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            return {"status": "uploaded", "path": data.get("content", {}).get("path"), "sha": data.get("content", {}).get("sha")}
+        else:
+            raise HTTPException(resp.status_code, f"GitHub error: {resp.text[:200]}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Upload error: {e}")
+
 
 @app.post("/api/change-password")
 async def change_password(request: ChangePasswordRequest, user=Depends(require_auth)):
