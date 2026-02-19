@@ -482,19 +482,18 @@ def get_db():
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
         try:
             Base.metadata.create_all(bind=_engine)
-    # Migrate: add role column to lab_users if missing
-    try:
-        with _engine.connect() as conn:
-            conn.execute(text("ALTER TABLE lab_users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'student'"))
-            conn.commit()
-            # Set admin roles
-            for admin_email in LAB_ADMIN_EMAILS:
-                role = "admin" if admin_email == "gerhard.fehr@fehradvice.com" else "subadmin"
-                conn.execute(text(f"UPDATE lab_users SET role = '{role}' WHERE email = '{admin_email}'"))
-            conn.commit()
-            logger.info("Lab roles migration OK")
-    except Exception as e:
-        logger.warning(f"Lab roles migration: {e}")
+            # Migrate: add role column to lab_users if missing
+            try:
+                with _engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE lab_users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'student'"))
+                    conn.commit()
+                    for admin_email in LAB_ADMIN_EMAILS:
+                        role = "admin" if admin_email == "gerhard.fehr@fehradvice.com" else "subadmin"
+                        conn.execute(text(f"UPDATE lab_users SET role = '{role}' WHERE email = '{admin_email}'"))
+                    conn.commit()
+                    logger.info("Lab roles migration OK")
+            except Exception as e:
+                logger.warning(f"Lab roles migration: {e}")
             try:
                 from sqlalchemy import text
                 with _engine.connect() as conn:
