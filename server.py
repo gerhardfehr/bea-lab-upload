@@ -2320,6 +2320,55 @@ async def lab_register(request: LabRegisterRequest, user=Depends(require_auth)):
     finally:
         db.close()
 
+
+@app.post("/api/lab/self-register")
+async def lab_self_register(request: Request):
+    """Public self-registration for lab students."""
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password", "")
+    first_name = body.get("firstName", "")
+    last_name = body.get("lastName", "")
+    affiliation = body.get("affiliation", "")
+    
+    if not email or '@' not in email:
+        raise HTTPException(400, "Invalid email address")
+    if len(password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    if not first_name or not last_name:
+        raise HTTPException(400, "First and last name required")
+    
+    name = f"{first_name} {last_name}"
+    if affiliation:
+        name = f"{first_name} {last_name} ({affiliation})"
+    
+    db = get_db()
+    try:
+        if db.query(LabUser).filter(LabUser.email == email).first():
+            raise HTTPException(409, "An account with this email already exists")
+        pw_hash, pw_salt = hash_password(password)
+        lab_user = LabUser(email=email, name=name, password_hash=pw_hash, password_salt=pw_salt)
+        db.add(lab_user)
+        db.commit()
+        db.refresh(lab_user)
+        token = create_jwt({
+            "sub": lab_user.email, "name": lab_user.name, "uid": lab_user.id,
+            "scope": "lab", "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY
+        })
+        logger.info(f"Lab self-register: {email}")
+        return JSONResponse(status_code=201, content={
+            "token": token, "expires_in": JWT_EXPIRY,
+            "user": {"email": lab_user.email, "name": lab_user.name, "firstName": first_name, "lastName": last_name, "affiliation": affiliation}
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Registration error: {e}")
+    finally:
+        db.close()
+
+
 @app.get("/api/lab/users")
 async def lab_list_users(user=Depends(require_auth)):
     """Admin-only: list all lab users."""
