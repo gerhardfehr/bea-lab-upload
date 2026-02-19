@@ -2431,6 +2431,168 @@ async def lab_list_users(user=Depends(require_auth)):
     finally:
         db.close()
 
+
+# ─── Lab Auth Helper ───
+def require_lab_auth(request):
+    """Verify lab JWT and return payload with role info."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Missing token")
+    payload = verify_jwt(auth.split(" ")[1])
+    if not payload or payload.get("scope") != "lab":
+        raise HTTPException(401, "Invalid lab token")
+    email = payload.get("sub", "")
+    role = "admin" if email == "gerhard.fehr@fehradvice.com" else "subadmin" if email in LAB_ADMIN_EMAILS else "student"
+    payload["role"] = role
+    payload["is_admin"] = role in ("admin", "subadmin")
+    return payload
+
+# ─── Lab Profile ───
+@app.get("/api/lab/profile")
+async def lab_get_profile(request: Request):
+    """Get own lab profile."""
+    auth_payload = require_lab_auth(request)
+    db = get_db()
+    try:
+        user = db.query(LabUser).filter(LabUser.email == auth_payload["sub"]).first()
+        if not user:
+            raise HTTPException(404, "User not found")
+        return {
+            "email": user.email, "name": user.name, "is_active": user.is_active,
+            "created_at": str(user.created_at) if user.created_at else None,
+            "last_login": str(user.last_login) if user.last_login else None,
+            "role": auth_payload["role"]
+        }
+    finally:
+        db.close()
+
+@app.put("/api/lab/profile")
+async def lab_update_profile(request: Request):
+    """Update own lab profile (name, affiliation)."""
+    auth_payload = require_lab_auth(request)
+    body = await request.json()
+    first_name = body.get("firstName", "").strip()
+    last_name = body.get("lastName", "").strip()
+    affiliation = body.get("affiliation", "").strip()
+    if not first_name or not last_name:
+        raise HTTPException(400, "First and last name required")
+    name = f"{first_name} {last_name}"
+    if affiliation:
+        name = f"{first_name} {last_name} ({affiliation})"
+    db = get_db()
+    try:
+        user = db.query(LabUser).filter(LabUser.email == auth_payload["sub"]).first()
+        if not user:
+            raise HTTPException(404, "User not found")
+        user.name = name
+        db.commit()
+        return {"status": "updated", "name": name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
+@app.put("/api/lab/profile/password")
+async def lab_change_password(request: Request):
+    """Change own password."""
+    auth_payload = require_lab_auth(request)
+    body = await request.json()
+    old_pw = body.get("oldPassword", "")
+    new_pw = body.get("newPassword", "")
+    if len(new_pw) < 6:
+        raise HTTPException(400, "New password must be at least 6 characters")
+    db = get_db()
+    try:
+        user = db.query(LabUser).filter(LabUser.email == auth_payload["sub"]).first()
+        if not user:
+            raise HTTPException(404, "User not found")
+        if not verify_password(old_pw, user.password_hash, user.password_salt):
+            raise HTTPException(401, "Current password is incorrect")
+        pw_hash, pw_salt = hash_password(new_pw)
+        user.password_hash = pw_hash
+        user.password_salt = pw_salt
+        db.commit()
+        return {"status": "password_changed"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
+# ─── Lab Admin: User Management ───
+@app.get("/api/lab/admin/users")
+async def lab_admin_list_users(request: Request):
+    """Admin/SubAdmin: list all lab users with roles."""
+    auth_payload = require_lab_auth(request)
+    if not auth_payload.get("is_admin"):
+        raise HTTPException(403, "Admin access required")
+    db = get_db()
+    try:
+        users = db.query(LabUser).all()
+        result = []
+        for u in users:
+            role = "admin" if u.email == "gerhard.fehr@fehradvice.com" else "subadmin" if u.email in LAB_ADMIN_EMAILS else "student"
+            result.append({
+                "id": u.id, "email": u.email, "name": u.name, "role": role,
+                "is_active": u.is_active,
+                "created_at": str(u.created_at) if u.created_at else None,
+                "last_login": str(u.last_login) if u.last_login else None
+            })
+        return result
+    finally:
+        db.close()
+
+@app.put("/api/lab/admin/users/{email}/toggle")
+async def lab_admin_toggle_user(email: str, request: Request):
+    """Admin: activate/deactivate a lab user."""
+    auth_payload = require_lab_auth(request)
+    if auth_payload.get("role") != "admin":
+        raise HTTPException(403, "Only admin can toggle users")
+    db = get_db()
+    try:
+        user = db.query(LabUser).filter(LabUser.email == email).first()
+        if not user:
+            raise HTTPException(404, "User not found")
+        user.is_active = not user.is_active
+        db.commit()
+        return {"email": email, "is_active": user.is_active}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
+@app.delete("/api/lab/admin/users/{email}")
+async def lab_admin_delete_user(email: str, request: Request):
+    """Admin: delete a lab user."""
+    auth_payload = require_lab_auth(request)
+    if auth_payload.get("role") != "admin":
+        raise HTTPException(403, "Only admin can delete users")
+    if email in LAB_ADMIN_EMAILS:
+        raise HTTPException(400, "Cannot delete admin users")
+    db = get_db()
+    try:
+        user = db.query(LabUser).filter(LabUser.email == email).first()
+        if not user:
+            raise HTTPException(404, "User not found")
+        db.delete(user)
+        db.commit()
+        return {"status": "deleted", "email": email}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
 @app.post("/api/lab/upload-to-github")
 async def lab_upload_github(request: Request):
     """Upload file to experimental-economics-lab GitHub repo. Requires lab token."""
