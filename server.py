@@ -2371,15 +2371,15 @@ async def lab_self_register(request: Request):
             db.execute(text("UPDATE lab_users SET role = :r WHERE email = :e"), {"r": role, "e": email})
         except: pass
         db.commit()
-        db.refresh(lab_user)
+        uid = lab_user.id
         token = create_jwt({
-            "sub": lab_user.email, "name": lab_user.name, "uid": lab_user.id,
+            "sub": email, "name": name, "uid": uid,
             "scope": "lab", "role": role, "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY
         })
         logger.info(f"Lab self-register: {email} (role={role})")
         return JSONResponse(status_code=201, content={
             "token": token, "expires_in": JWT_EXPIRY,
-            "user": {"email": lab_user.email, "name": lab_user.name, "firstName": first_name, "lastName": last_name, "affiliation": affiliation, "role": role}
+            "user": {"email": email, "name": name, "firstName": first_name, "lastName": last_name, "affiliation": affiliation, "role": role}
         })
     except HTTPException:
         raise
