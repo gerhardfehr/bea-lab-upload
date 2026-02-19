@@ -428,6 +428,37 @@ class LabUser(Base):
 
 LAB_ADMIN_EMAILS = ["gerhard.fehr@fehradvice.com", "nils.handler@uzh.ch"]
 
+class LabEvaluation(Base):
+    __tablename__ = "lab_evaluations"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_email = Column(String(320), nullable=False, index=True)
+    user_name = Column(String(200), nullable=True)
+    design_text = Column(Text, nullable=False)
+    scores_json = Column(JSON, nullable=True)
+    overall_score = Column(Integer, nullable=True)
+    feedback_text = Column(Text, nullable=True)
+    path_used = Column(String(10), default="A")  # A or B
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class LabAnnouncement(Base):
+    __tablename__ = "lab_announcements"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    title = Column(String(500), nullable=False)
+    content = Column(Text, nullable=False)
+    author_email = Column(String(320), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class LabCourseInfo(Base):
+    __tablename__ = "lab_course_info"
+    id = Column(String, primary_key=True, default="main")
+    title = Column(String(500), default="Field Experiments in Economics")
+    semester = Column(String(100), default="FS 2026")
+    description = Column(Text, default="")
+    syllabus = Column(Text, default="")
+    schedule_json = Column(JSON, default=list)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class UserInsight(Base):
     __tablename__ = "user_insights"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -481,6 +512,27 @@ def get_db():
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
         try:
             Base.metadata.create_all(bind=_engine)
+            # Migrate v3: create lab_evaluations, lab_announcements, lab_course_info tables
+            try:
+                with _engine.connect() as conn:
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS lab_evaluations (
+                        id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL,
+                        user_name VARCHAR(200), design_text TEXT NOT NULL,
+                        scores_json JSON, overall_score INTEGER, feedback_text TEXT,
+                        path_used VARCHAR(10) DEFAULT 'A', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS lab_announcements (
+                        id VARCHAR PRIMARY KEY, title VARCHAR(500) NOT NULL,
+                        content TEXT NOT NULL, author_email VARCHAR(320) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("""CREATE TABLE IF NOT EXISTS lab_course_info (
+                        id VARCHAR PRIMARY KEY DEFAULT 'main', title VARCHAR(500),
+                        semester VARCHAR(100), description TEXT, syllabus TEXT,
+                        schedule_json JSON, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+                    conn.execute(text("""INSERT INTO lab_course_info (id, title, semester) VALUES ('main', 'Field Experiments in Economics', 'FS 2026') ON CONFLICT (id) DO NOTHING"""))
+                    conn.commit()
+                    logger.info("Lab tables v3 migration OK")
+            except Exception as e:
+                logger.warning(f"Lab tables v3 migration: {e}")
             # Migrate v2: add role column to lab_users if missing
             try:
                 with _engine.connect() as conn:
@@ -2585,6 +2637,172 @@ async def lab_admin_delete_user(email: str, request: Request):
         db.delete(user)
         db.commit()
         return {"status": "deleted", "email": email}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
+
+# ─── Lab Evaluations ───
+@app.post("/api/lab/evaluations")
+async def lab_save_evaluation(request: Request):
+    """Save an evaluation result."""
+    auth_payload = require_lab_auth(request)
+    body = await request.json()
+    db = get_db()
+    try:
+        ev = LabEvaluation(
+            user_email=auth_payload["sub"],
+            user_name=auth_payload.get("name", ""),
+            design_text=body.get("design", "")[:50000],
+            scores_json=body.get("scores"),
+            overall_score=body.get("overall"),
+            feedback_text=body.get("feedback", "")[:50000],
+            path_used=body.get("path", "A")
+        )
+        db.add(ev)
+        db.commit()
+        return {"id": ev.id, "status": "saved"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
+@app.get("/api/lab/evaluations/my")
+async def lab_my_evaluations(request: Request):
+    """Get own evaluations."""
+    auth_payload = require_lab_auth(request)
+    db = get_db()
+    try:
+        evs = db.query(LabEvaluation).filter(LabEvaluation.user_email == auth_payload["sub"]).order_by(LabEvaluation.created_at.desc()).limit(50).all()
+        return [{"id": e.id, "overall_score": e.overall_score, "scores_json": e.scores_json, "path_used": e.path_used, "created_at": str(e.created_at) if e.created_at else None, "design_preview": (e.design_text or "")[:200]} for e in evs]
+    finally:
+        db.close()
+
+@app.get("/api/lab/evaluations/all")
+async def lab_all_evaluations(request: Request):
+    """Admin: get all evaluations."""
+    auth_payload = require_lab_auth(request)
+    if not auth_payload.get("is_admin"):
+        raise HTTPException(403, "Admin access required")
+    db = get_db()
+    try:
+        evs = db.query(LabEvaluation).order_by(LabEvaluation.created_at.desc()).limit(200).all()
+        return [{"id": e.id, "user_email": e.user_email, "user_name": e.user_name, "overall_score": e.overall_score, "scores_json": e.scores_json, "path_used": e.path_used, "created_at": str(e.created_at) if e.created_at else None, "design_preview": (e.design_text or "")[:200]} for e in evs]
+    finally:
+        db.close()
+
+@app.get("/api/lab/evaluations/{eval_id}")
+async def lab_get_evaluation(eval_id: str, request: Request):
+    """Get a specific evaluation (own or admin)."""
+    auth_payload = require_lab_auth(request)
+    db = get_db()
+    try:
+        ev = db.query(LabEvaluation).filter(LabEvaluation.id == eval_id).first()
+        if not ev:
+            raise HTTPException(404, "Evaluation not found")
+        if ev.user_email != auth_payload["sub"] and not auth_payload.get("is_admin"):
+            raise HTTPException(403, "Access denied")
+        return {"id": ev.id, "user_email": ev.user_email, "user_name": ev.user_name, "design_text": ev.design_text, "scores_json": ev.scores_json, "overall_score": ev.overall_score, "feedback_text": ev.feedback_text, "path_used": ev.path_used, "created_at": str(ev.created_at) if ev.created_at else None}
+    finally:
+        db.close()
+
+# ─── Lab Course ───
+@app.get("/api/lab/course")
+async def lab_get_course(request: Request):
+    """Get course info (public for authenticated lab users)."""
+    require_lab_auth(request)
+    db = get_db()
+    try:
+        info = db.query(LabCourseInfo).filter(LabCourseInfo.id == "main").first()
+        if not info:
+            return {"title": "Field Experiments in Economics", "semester": "FS 2026", "description": "", "syllabus": "", "schedule": []}
+        return {"title": info.title, "semester": info.semester, "description": info.description or "", "syllabus": info.syllabus or "", "schedule": info.schedule_json or []}
+    finally:
+        db.close()
+
+@app.put("/api/lab/course")
+async def lab_update_course(request: Request):
+    """Admin: update course info."""
+    auth_payload = require_lab_auth(request)
+    if not auth_payload.get("is_admin"):
+        raise HTTPException(403, "Admin access required")
+    body = await request.json()
+    db = get_db()
+    try:
+        info = db.query(LabCourseInfo).filter(LabCourseInfo.id == "main").first()
+        if not info:
+            info = LabCourseInfo(id="main")
+            db.add(info)
+        if "title" in body: info.title = body["title"]
+        if "semester" in body: info.semester = body["semester"]
+        if "description" in body: info.description = body["description"]
+        if "syllabus" in body: info.syllabus = body["syllabus"]
+        if "schedule" in body: info.schedule_json = body["schedule"]
+        info.updated_at = datetime.utcnow()
+        db.commit()
+        return {"status": "updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
+# ─── Lab Announcements ───
+@app.get("/api/lab/announcements")
+async def lab_get_announcements(request: Request):
+    """Get announcements."""
+    require_lab_auth(request)
+    db = get_db()
+    try:
+        anns = db.query(LabAnnouncement).order_by(LabAnnouncement.created_at.desc()).limit(20).all()
+        return [{"id": a.id, "title": a.title, "content": a.content, "author_email": a.author_email, "created_at": str(a.created_at) if a.created_at else None} for a in anns]
+    finally:
+        db.close()
+
+@app.post("/api/lab/announcements")
+async def lab_post_announcement(request: Request):
+    """Admin: post announcement."""
+    auth_payload = require_lab_auth(request)
+    if not auth_payload.get("is_admin"):
+        raise HTTPException(403, "Admin access required")
+    body = await request.json()
+    title = body.get("title", "").strip()
+    content_text = body.get("content", "").strip()
+    if not title or not content_text:
+        raise HTTPException(400, "Title and content required")
+    db = get_db()
+    try:
+        ann = LabAnnouncement(title=title, content=content_text, author_email=auth_payload["sub"])
+        db.add(ann)
+        db.commit()
+        return {"id": ann.id, "status": "posted"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
+@app.delete("/api/lab/announcements/{ann_id}")
+async def lab_delete_announcement(ann_id: str, request: Request):
+    """Admin: delete announcement."""
+    auth_payload = require_lab_auth(request)
+    if not auth_payload.get("is_admin"):
+        raise HTTPException(403, "Admin access required")
+    db = get_db()
+    try:
+        ann = db.query(LabAnnouncement).filter(LabAnnouncement.id == ann_id).first()
+        if not ann:
+            raise HTTPException(404, "Not found")
+        db.delete(ann)
+        db.commit()
+        return {"status": "deleted"}
     except HTTPException:
         raise
     except Exception as e:
