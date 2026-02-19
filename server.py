@@ -425,7 +425,7 @@ class LabUser(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
-    role = Column(String(20), default="student")  # admin, subadmin, student
+    role = Column(String(20), default="student", server_default="student", nullable=True)  # admin, subadmin, student
 
 LAB_ADMIN_EMAILS = ["gerhard.fehr@fehradvice.com", "nils.handler@uzh.ch"]
 
@@ -482,7 +482,7 @@ def get_db():
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
         try:
             Base.metadata.create_all(bind=_engine)
-            # Migrate: add role column to lab_users if missing
+            # Migrate v2: add role column to lab_users if missing
             try:
                 with _engine.connect() as conn:
                     conn.execute(text("ALTER TABLE lab_users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'student'"))
