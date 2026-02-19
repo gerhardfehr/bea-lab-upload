@@ -2390,6 +2390,35 @@ async def lab_self_register(request: Request):
         db.close()
 
 
+
+@app.post("/api/lab/reset-password")
+async def lab_reset_password(request: Request, user=Depends(require_auth)):
+    """Admin-only: reset a lab user's password."""
+    if not user.get("admin"):
+        raise HTTPException(403, "Only admins can reset lab passwords")
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    new_password = body.get("password", "")
+    if not email or len(new_password) < 6:
+        raise HTTPException(400, "Email and password (min 6 chars) required")
+    db = get_db()
+    try:
+        lab_user = db.query(LabUser).filter(LabUser.email == email).first()
+        if not lab_user:
+            raise HTTPException(404, "Lab user not found")
+        pw_hash, pw_salt = hash_password(new_password)
+        lab_user.password_hash = pw_hash
+        lab_user.password_salt = pw_salt
+        db.commit()
+        return {"status": "password_reset", "email": email}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Error: {e}")
+    finally:
+        db.close()
+
 @app.get("/api/lab/users")
 async def lab_list_users(user=Depends(require_auth)):
     """Admin-only: list all lab users."""
