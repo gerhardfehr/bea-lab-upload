@@ -425,6 +425,9 @@ class LabUser(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
+    role = Column(String(20), default="student")  # admin, subadmin, student
+
+LAB_ADMIN_EMAILS = ["gerhard.fehr@fehradvice.com", "nils.handler@uzh.ch"]
 
 class UserInsight(Base):
     __tablename__ = "user_insights"
@@ -479,6 +482,19 @@ def get_db():
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
         try:
             Base.metadata.create_all(bind=_engine)
+    # Migrate: add role column to lab_users if missing
+    try:
+        with _engine.connect() as conn:
+            conn.execute(text("ALTER TABLE lab_users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'student'"))
+            conn.commit()
+            # Set admin roles
+            for admin_email in LAB_ADMIN_EMAILS:
+                role = "admin" if admin_email == "gerhard.fehr@fehradvice.com" else "subadmin"
+                conn.execute(text(f"UPDATE lab_users SET role = '{role}' WHERE email = '{admin_email}'"))
+            conn.commit()
+            logger.info("Lab roles migration OK")
+    except Exception as e:
+        logger.warning(f"Lab roles migration: {e}")
             try:
                 from sqlalchemy import text
                 with _engine.connect() as conn:
@@ -2270,14 +2286,20 @@ async def lab_login(request: LabLoginRequest):
             "name": lab_user.name,
             "uid": lab_user.id,
             "scope": "lab",
+            "role": getattr(lab_user, "role", "student"),
             "iat": int(time.time()),
             "exp": int(time.time()) + JWT_EXPIRY
         })
-        logger.info(f"Lab login: {email}")
+        # Auto-upgrade role on login if in admin list
+        expected_role = "admin" if email == "gerhard.fehr@fehradvice.com" else "subadmin" if email in LAB_ADMIN_EMAILS else None
+        if expected_role and getattr(lab_user, "role", "student") != expected_role:
+            try: lab_user.role = expected_role; db.commit()
+            except: pass
+        logger.info(f"Lab login: {email} (role={getattr(lab_user, 'role', 'student')})")
         return JSONResponse({
             "token": token,
             "expires_in": JWT_EXPIRY,
-            "user": {"email": lab_user.email, "name": lab_user.name}
+            "user": {"email": lab_user.email, "name": lab_user.name, "role": getattr(lab_user, "role", "student")}
         })
     except HTTPException:
         raise
@@ -2347,18 +2369,19 @@ async def lab_self_register(request: Request):
         if db.query(LabUser).filter(LabUser.email == email).first():
             raise HTTPException(409, "An account with this email already exists")
         pw_hash, pw_salt = hash_password(password)
-        lab_user = LabUser(email=email, name=name, password_hash=pw_hash, password_salt=pw_salt)
+        role = "admin" if email == "gerhard.fehr@fehradvice.com" else "subadmin" if email in LAB_ADMIN_EMAILS else "student"
+        lab_user = LabUser(email=email, name=name, password_hash=pw_hash, password_salt=pw_salt, role=role)
         db.add(lab_user)
         db.commit()
         db.refresh(lab_user)
         token = create_jwt({
             "sub": lab_user.email, "name": lab_user.name, "uid": lab_user.id,
-            "scope": "lab", "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY
+            "scope": "lab", "role": lab_user.role, "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY
         })
-        logger.info(f"Lab self-register: {email}")
+        logger.info(f"Lab self-register: {email} (role={lab_user.role})")
         return JSONResponse(status_code=201, content={
             "token": token, "expires_in": JWT_EXPIRY,
-            "user": {"email": lab_user.email, "name": lab_user.name, "firstName": first_name, "lastName": last_name, "affiliation": affiliation}
+            "user": {"email": lab_user.email, "name": lab_user.name, "firstName": first_name, "lastName": last_name, "affiliation": affiliation, "role": lab_user.role}
         })
     except HTTPException:
         raise
