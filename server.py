@@ -425,7 +425,6 @@ class LabUser(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
-    role = Column(String(20), default="student", server_default="student", nullable=True)  # admin, subadmin, student
 
 LAB_ADMIN_EMAILS = ["gerhard.fehr@fehradvice.com", "nils.handler@uzh.ch"]
 
@@ -2285,20 +2284,15 @@ async def lab_login(request: LabLoginRequest):
             "name": lab_user.name,
             "uid": lab_user.id,
             "scope": "lab",
-            "role": getattr(lab_user, "role", "student"),
+            "role": "admin" if email == "gerhard.fehr@fehradvice.com" else "subadmin" if email in LAB_ADMIN_EMAILS else "student",
             "iat": int(time.time()),
             "exp": int(time.time()) + JWT_EXPIRY
         })
-        # Auto-upgrade role on login if in admin list
-        expected_role = "admin" if email == "gerhard.fehr@fehradvice.com" else "subadmin" if email in LAB_ADMIN_EMAILS else None
-        if expected_role and getattr(lab_user, "role", "student") != expected_role:
-            try: lab_user.role = expected_role; db.commit()
-            except: pass
-        logger.info(f"Lab login: {email} (role={getattr(lab_user, 'role', 'student')})")
+        logger.info(f"Lab login: {email}")
         return JSONResponse({
             "token": token,
             "expires_in": JWT_EXPIRY,
-            "user": {"email": lab_user.email, "name": lab_user.name, "role": getattr(lab_user, "role", "student")}
+            "user": {"email": lab_user.email, "name": lab_user.name, "role": "admin" if lab_user.email == "gerhard.fehr@fehradvice.com" else "subadmin" if lab_user.email in LAB_ADMIN_EMAILS else "student"}
         })
     except HTTPException:
         raise
@@ -2369,18 +2363,23 @@ async def lab_self_register(request: Request):
             raise HTTPException(409, "An account with this email already exists")
         pw_hash, pw_salt = hash_password(password)
         role = "admin" if email == "gerhard.fehr@fehradvice.com" else "subadmin" if email in LAB_ADMIN_EMAILS else "student"
-        lab_user = LabUser(email=email, name=name, password_hash=pw_hash, password_salt=pw_salt, role=role)
+        lab_user = LabUser(email=email, name=name, password_hash=pw_hash, password_salt=pw_salt)
         db.add(lab_user)
+        db.flush()
+        # Set role via raw SQL
+        try:
+            db.execute(text("UPDATE lab_users SET role = :r WHERE email = :e"), {"r": role, "e": email})
+        except: pass
         db.commit()
         db.refresh(lab_user)
         token = create_jwt({
             "sub": lab_user.email, "name": lab_user.name, "uid": lab_user.id,
-            "scope": "lab", "role": lab_user.role, "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY
+            "scope": "lab", "role": role, "iat": int(time.time()), "exp": int(time.time()) + JWT_EXPIRY
         })
-        logger.info(f"Lab self-register: {email} (role={lab_user.role})")
+        logger.info(f"Lab self-register: {email} (role={role})")
         return JSONResponse(status_code=201, content={
             "token": token, "expires_in": JWT_EXPIRY,
-            "user": {"email": lab_user.email, "name": lab_user.name, "firstName": first_name, "lastName": last_name, "affiliation": affiliation, "role": lab_user.role}
+            "user": {"email": lab_user.email, "name": lab_user.name, "firstName": first_name, "lastName": last_name, "affiliation": affiliation, "role": role}
         })
     except HTTPException:
         raise
