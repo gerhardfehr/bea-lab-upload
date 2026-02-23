@@ -3626,6 +3626,33 @@ async def health():
     except: pass
     return {"status": "ok" if db_ok else "degraded", "database": "connected" if db_ok else "unavailable", "github": "configured" if GH_TOKEN else "not configured", "github_repo": GH_REPO, "timestamp": datetime.utcnow().isoformat()}
 
+
+@app.post("/api/internal/init-db")
+async def init_db_endpoint(request: Request):
+    """Emergency DB init - creates all tables. Secured by X-Init-Secret header."""
+    secret = request.headers.get("X-Init-Secret", "")
+    expected = os.getenv("ADMIN_SECRET", "beatrix-init-2026")
+    if secret != expected:
+        raise HTTPException(403, "Invalid secret")
+    global _engine, _SessionLocal
+    try:
+        if _engine is None:
+            _engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+            _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
+        Base.metadata.create_all(bind=_engine)
+        with _engine.connect() as conn:
+            conn.execute(text("""CREATE TABLE IF NOT EXISTS lab_evaluations (id VARCHAR PRIMARY KEY, user_email VARCHAR(320) NOT NULL, user_name VARCHAR(200), design_text TEXT NOT NULL, scores_json JSON, overall_score INTEGER, feedback_text TEXT, path_used VARCHAR(10) DEFAULT 'A', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+            conn.execute(text("""CREATE TABLE IF NOT EXISTS lab_announcements (id VARCHAR PRIMARY KEY, title VARCHAR(500) NOT NULL, content TEXT NOT NULL, author_email VARCHAR(320) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+            conn.execute(text("""CREATE TABLE IF NOT EXISTS lab_course_info (id VARCHAR PRIMARY KEY DEFAULT 'main', title VARCHAR(500), semester VARCHAR(100), description TEXT, syllabus TEXT, schedule_json JSON, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""))
+            conn.execute(text("""INSERT INTO lab_course_info (id, title, semester) VALUES ('main', 'Field Experiments in Economics', 'FS 2026') ON CONFLICT (id) DO NOTHING"""))
+            conn.commit()
+        tables = sorted(Base.metadata.tables.keys())
+        logger.info(f"init-db: created {len(tables)} tables: {tables}")
+        return {"status": "ok", "message": "All tables created", "tables": tables}
+    except Exception as e:
+        logger.error(f"init-db error: {e}")
+        raise HTTPException(500, f"DB init failed: {str(e)}")
+
 @app.get("/api/admin/settings")
 async def admin_settings(user=Depends(require_permission("platform.admin_dashboard"))):
     return {"allowed_email_domains": ALLOWED_EMAIL_DOMAINS or ["*"], "registration": "restricted" if ALLOWED_EMAIL_DOMAINS else "open", "jwt_expiry_hours": JWT_EXPIRY // 3600, "email_verification": REQUIRE_EMAIL_VERIFICATION, "smtp_configured": bool(RESEND_API_KEY)}
