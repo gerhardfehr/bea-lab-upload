@@ -3647,7 +3647,7 @@ async def init_db_endpoint(request: Request):
         tables = sorted(inspector.get_table_names())
         # Auto-verify all fehradvice.com users
         with _engine.connect() as conn:
-            conn.execute(text("UPDATE users SET email_verified = TRUE, is_active = TRUE WHERE email LIKE '%@fehradvice.com'"))
+            conn.execute(text("UPDATE users SET email_verified = TRUE, is_active = TRUE WHERE email LIKE '%@fehradvice.com' OR email LIKE '%@zindelgruppe.ch' OR email LIKE '%@bea-lab.io'"))
             conn.commit()
         logger.info(f"init-db: {len(tables)} tables exist: {tables}")
         return {"status": "ok", "message": "DB initialized via get_db()", "tables": tables}
