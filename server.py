@@ -16449,3 +16449,471 @@ Halte dich strikt an das JSON-Format. Keine anderen Texte."""
     except Exception as e:
         logger.error(f"Presentation generation failed: {e}")
         raise HTTPException(500, f"Presentation generation failed: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# CLIENT PORTAL FACTORY  –  3-Klick Kunden-Portal Generator
+# ═══════════════════════════════════════════════════════════════════════
+
+_CLIENT_THEMES = {
+    "dark-red":   {"primary":"#9B1C1C","primary_l":"#C53030","bg":"#1A1714","bg2":"#2A2420","bg3":"#3D3630","warm":"#F5F0EB","sand":"#C4A882","muted":"#8C7B6E","border":"rgba(196,168,130,0.15)"},
+    "dark-blue":  {"primary":"#1E40AF","primary_l":"#2563EB","bg":"#0F1623","bg2":"#1A2332","bg3":"#243040","warm":"#E8EFF8","sand":"#93B4D4","muted":"#3A5070","border":"rgba(147,180,212,0.12)"},
+    "dark-green": {"primary":"#065F46","primary_l":"#047857","bg":"#0D1B16","bg2":"#162820","bg3":"#1E3828","warm":"#ECFDF5","sand":"#6EE7B7","muted":"#2A5A44","border":"rgba(110,231,183,0.12)"},
+    "dark-amber": {"primary":"#92400E","primary_l":"#B45309","bg":"#1C1508","bg2":"#2A1F0E","bg3":"#3A2D16","warm":"#FFFBEB","sand":"#D97706","muted":"#5A3D0E","border":"rgba(217,119,6,0.15)"},
+    "dark-slate": {"primary":"#475569","primary_l":"#64748B","bg":"#0F1117","bg2":"#1A1F2A","bg3":"#252C3A","warm":"#E2E8F0","sand":"#94A3B8","muted":"#334155","border":"rgba(148,163,184,0.12)"},
+    "light-clean":{"primary":"#1E293B","primary_l":"#334155","bg":"#F8FAFC","bg2":"#FFFFFF","bg3":"#F1F5F9","warm":"#0F172A","sand":"#475569","muted":"#94A3B8","border":"rgba(15,23,42,0.1)"},
+}
+
+_I18N = {
+    "de": {"login_title":"Anmelden","login_sub":"Zugang für {n}-Team und FehrAdvice-Berater","label_email":"E-Mail","label_pw":"Passwort","btn_login":"Anmelden","btn_logout":"Abmelden","nav_overview":"Übersicht","nav_dash":"Dashboard","nav_analysis":"Analyse","nav_deliv":"Deliverables","nav_activity":"Aktuell","welcome":"Willkommen","badge":"Aktives Projekt","stat_prog":"Projektfortschritt","stat_prog_sub":"Projekt läuft","stat_docs":"Dokumente","stat_docs_sub":"verfügbar","stat_next":"Nächster Termin","stat_next_v":"TBD","stat_next_sub":"wird koordiniert","proj_sub":"Strategisches Beratungsprojekt","empty_act":"Noch keine Aktivitäten. Das Projekt startet bald.","empty_deliv":"Dokumente erscheinen hier sobald sie bereitgestellt werden.","chat_sub":"KI-gestützte Analyse über Projektdokumente","ctx":"Kontext","chat_ready":"Bereit","chat_welcome":"Guten Tag. Ich bin BEATRIX, Ihre KI-Analyseplattform für dieses Projekt.<br><br>Was möchten Sie wissen?","chat_ph":"Frage stellen...","sug1":"Was sind die wichtigsten Erkenntnisse?","sug2":"Zeig das BCM-Profil","sug3":"Empfehlungen für nächste Schritte","bcm_sub":"Behavioral Change Model · 10C Framework","deliv_sub":"Berichte, Analysen und Workshop-Unterlagen","err_fields":"Bitte E-Mail und Passwort eingeben.","err_auth":"E-Mail oder Passwort falsch.","err_chat":"Verbindungsfehler. Bitte erneut versuchen.","locale":"de-CH","deliv_nav":'<div class="nav-item" onclick="sv(\'d\',this)"><span class="ni">📁</span> Deliverables</div>',"chat_nav":'<div class="nav-item" onclick="sv(\'c\',this)"><span class="ni">💬</span> BEATRIX Chat</div>',"bcm_nav":'<div class="nav-item" onclick="sv(\'b\',this)"><span class="ni">🧠</span> BCM / EBF</div>'},
+    "en": {"login_title":"Sign In","login_sub":"Access for {n} team and FehrAdvice consultants","label_email":"Email","label_pw":"Password","btn_login":"Sign In","btn_logout":"Sign Out","nav_overview":"Overview","nav_dash":"Dashboard","nav_analysis":"Analysis","nav_deliv":"Deliverables","nav_activity":"Recent Activity","welcome":"Welcome","badge":"Active Project","stat_prog":"Project Progress","stat_prog_sub":"project active","stat_docs":"Documents","stat_docs_sub":"available","stat_next":"Next Meeting","stat_next_v":"TBD","stat_next_sub":"being coordinated","proj_sub":"Strategic consulting project","empty_act":"No activity yet. Project starting soon.","empty_deliv":"Documents will appear here once available.","chat_sub":"AI-powered analysis over project documents","ctx":"Context","chat_ready":"Ready","chat_welcome":"Hello. I'm BEATRIX, your AI analysis platform for this project.<br><br>What would you like to know?","chat_ph":"Ask a question...","sug1":"What are the key insights?","sug2":"Show the BCM profile","sug3":"Recommendations for next steps","bcm_sub":"Behavioral Change Model · 10C Framework","deliv_sub":"Reports, analyses, and workshop materials","err_fields":"Please enter email and password.","err_auth":"Incorrect email or password.","err_chat":"Connection error. Please try again.","locale":"en-US","deliv_nav":'<div class="nav-item" onclick="sv(\'d\',this)"><span class="ni">📁</span> Deliverables</div>',"chat_nav":'<div class="nav-item" onclick="sv(\'c\',this)"><span class="ni">💬</span> BEATRIX Chat</div>',"bcm_nav":'<div class="nav-item" onclick="sv(\'b\',this)"><span class="ni">🧠</span> BCM / EBF</div>'},
+    "fr": {"login_title":"Connexion","login_sub":"Accès pour l'équipe {n} et les consultants FehrAdvice","label_email":"E-mail","label_pw":"Mot de passe","btn_login":"Se connecter","btn_logout":"Se déconnecter","nav_overview":"Vue d'ensemble","nav_dash":"Tableau de bord","nav_analysis":"Analyse","nav_deliv":"Livrables","nav_activity":"Activité récente","welcome":"Bienvenue","badge":"Projet actif","stat_prog":"Avancement","stat_prog_sub":"projet en cours","stat_docs":"Documents","stat_docs_sub":"disponibles","stat_next":"Prochain RDV","stat_next_v":"À définir","stat_next_sub":"en coordination","proj_sub":"Projet de conseil stratégique","empty_act":"Aucune activité. Le projet démarre bientôt.","empty_deliv":"Les documents apparaîtront ici dès disponibilité.","chat_sub":"Analyse IA sur les documents du projet","ctx":"Contexte","chat_ready":"Prêt","chat_welcome":"Bonjour. Je suis BEATRIX, votre plateforme d'analyse IA.<br><br>Comment puis-je vous aider?","chat_ph":"Poser une question...","sug1":"Quelles sont les insights clés?","sug2":"Afficher le profil BCM","sug3":"Recommandations pour la suite","bcm_sub":"Modèle de changement comportemental · Cadre 10C","deliv_sub":"Rapports, analyses et supports d'atelier","err_fields":"Veuillez saisir e-mail et mot de passe.","err_auth":"E-mail ou mot de passe incorrect.","err_chat":"Erreur de connexion. Veuillez réessayer.","locale":"fr-CH","deliv_nav":'<div class="nav-item" onclick="sv(\'d\',this)"><span class="ni">📁</span> Livrables</div>',"chat_nav":'<div class="nav-item" onclick="sv(\'c\',this)"><span class="ni">💬</span> BEATRIX Chat</div>',"bcm_nav":'<div class="nav-item" onclick="sv(\'b\',this)"><span class="ni">🧠</span> BCM / EBF</div>'},
+}
+
+def _generate_portal_html(client_name: str, client_slug: str, lang: str, theme: str, modules: list) -> str:
+    s = _I18N.get(lang, _I18N["de"])
+    c = _CLIENT_THEMES.get(theme, _CLIENT_THEMES["dark-slate"])
+    init = client_name[0].upper()
+    mods_json = json.dumps(modules)
+    nav_d = s["deliv_nav"] if "deliverables" in modules else ""
+    nav_c = s["chat_nav"] if "chat" in modules else ""
+    nav_b = s["bcm_nav"] if "bcm" in modules else ""
+
+    css_vars = f"""--p:{c['primary']};--pl:{c['primary_l']};--bg:{c['bg']};--bg2:{c['bg2']};--bg3:{c['bg3']};--warm:{c['warm']};--sand:{c['sand']};--muted:{c['muted']};--brd:{c['border']}"""
+
+    return f"""<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>{client_name} × FehrAdvice</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{{{css_vars}}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--warm);min-height:100vh;overflow-x:hidden}}
+body::before{{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");opacity:.025;pointer-events:none;z-index:0}}
+/* LOGIN */
+#ls{{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;transition:opacity .5s,visibility .5s}}
+#ls.h{{opacity:0;visibility:hidden}}
+.lc{{width:100%;max-width:400px;padding:24px}}
+.lb{{margin-bottom:48px}}
+.ll{{display:flex;align-items:center;gap:16px;margin-bottom:10px}}
+.li{{width:48px;height:48px;background:var(--p);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:#fff}}
+.ld{{width:1px;height:32px;background:var(--brd)}}
+.lf{{font-family:'Syne',sans-serif;font-size:12px;font-weight:600;color:var(--sand);letter-spacing:.08em;text-transform:uppercase}}
+.lt{{font-size:13px;color:var(--muted);letter-spacing:.04em}}
+.lcard{{background:var(--bg2);border:1px solid var(--brd);padding:32px}}
+.ltitle{{font-family:'Syne',sans-serif;font-size:20px;font-weight:700;margin-bottom:6px}}
+.lsub{{font-size:13px;color:var(--muted);margin-bottom:26px}}
+.fg{{margin-bottom:14px}}
+.fl{{display:block;font-size:11px;font-weight:500;color:var(--sand);letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px}}
+.fi{{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--brd);color:var(--warm);padding:11px 14px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s}}
+.fi:focus{{border-color:var(--sand)}}
+.fi::placeholder{{color:var(--muted)}}
+.btnl{{width:100%;background:var(--p);color:#fff;border:none;padding:13px;font-family:'Syne',sans-serif;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;margin-top:6px;transition:background .2s;display:flex;align-items:center;justify-content:center;gap:8px}}
+.btnl:hover{{background:var(--pl)}}
+.btnl:disabled{{opacity:.5;cursor:not-allowed}}
+.lerr{{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#fca5a5;padding:10px 14px;font-size:13px;margin-top:10px;display:none}}
+.lerr.show{{display:block}}
+/* APP */
+#app{{display:none;min-height:100vh}}
+#app.v{{display:flex}}
+/* SIDEBAR */
+.sb{{width:230px;min-width:230px;background:var(--bg2);border-right:1px solid var(--brd);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100;transition:transform .3s}}
+.sbh{{padding:18px;border-bottom:1px solid var(--brd)}}
+.sbl{{display:flex;align-items:center;gap:11px;margin-bottom:10px}}
+.sbi{{width:34px;height:34px;background:var(--p);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:15px;color:#fff;flex-shrink:0}}
+.sbm{{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--warm);letter-spacing:.04em}}
+.sbs{{font-size:10px;color:var(--sand);letter-spacing:.08em;text-transform:uppercase}}
+.sbbadge{{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.05);border:1px solid var(--brd);padding:3px 9px;font-size:10px;color:var(--sand);letter-spacing:.06em;text-transform:uppercase}}
+.sbn{{flex:1;padding:14px 0;overflow-y:auto}}
+.nsl{{padding:7px 18px 5px;font-size:10px;font-weight:500;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}}
+.nav-item{{display:flex;align-items:center;gap:9px;padding:8px 18px;font-size:13px;color:var(--muted);cursor:pointer;transition:all .15s;border-left:2px solid transparent;user-select:none}}
+.nav-item:hover{{color:var(--warm);background:rgba(255,255,255,.03)}}
+.nav-item.active{{color:var(--warm);background:rgba(255,255,255,.05);border-left-color:var(--p)}}
+.ni{{font-size:14px;width:17px;text-align:center}}
+.sbu{{padding:14px 18px;border-top:1px solid var(--brd);display:flex;align-items:center;gap:9px}}
+.ua{{width:30px;height:30px;background:var(--bg3);border:1px solid var(--brd);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--sand);flex-shrink:0}}
+.ui{{flex:1;min-width:0}}
+.un{{font-size:12px;font-weight:500;color:var(--warm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.ur{{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}}
+.blo{{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px;transition:color .2s}}
+.blo:hover{{color:var(--warm)}}
+/* MAIN */
+.mn{{margin-left:230px;flex:1;min-height:100vh;display:flex;flex-direction:column}}
+.tb{{height:54px;border-bottom:1px solid var(--brd);display:flex;align-items:center;padding:0 26px;gap:14px;background:rgba(0,0,0,.25);backdrop-filter:blur(8px);position:sticky;top:0;z-index:50}}
+.tbt{{font-family:'Syne',sans-serif;font-size:14px;font-weight:600;flex:1}}
+.tbd{{font-size:12px;color:var(--muted)}}
+.pc{{padding:28px 26px;flex:1}}
+.view{{display:none;animation:fi .2s ease}}
+.view.active{{display:block}}
+@keyframes fi{{from{{opacity:0;transform:translateY(4px)}}to{{opacity:1;transform:translateY(0)}}}}
+.ph{{margin-bottom:26px}}
+.pt{{font-family:'Syne',sans-serif;font-size:24px;font-weight:700;margin-bottom:4px}}
+.pst{{font-size:14px;color:var(--muted)}}
+.sg{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:24px}}
+.sc{{background:var(--bg2);border:1px solid var(--brd);padding:18px;position:relative;overflow:hidden}}
+.sc::before{{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--p)}}
+.sl{{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}}
+.sv{{font-family:'Syne',sans-serif;font-size:26px;font-weight:700;margin-bottom:3px}}
+.sd{{font-size:12px;color:var(--sand)}}
+.card{{background:var(--bg2);border:1px solid var(--brd);padding:18px;margin-bottom:18px}}
+.stitle{{font-family:'Syne',sans-serif;font-size:14px;font-weight:600;margin-bottom:14px}}
+/* CHAT */
+.cl{{display:flex;flex-direction:column;height:calc(100vh - 54px - 56px);min-height:360px}}
+.ch{{background:var(--bg2);border:1px solid var(--brd);border-bottom:none;padding:14px 18px;display:flex;align-items:center;gap:10px}}
+.csd{{width:7px;height:7px;background:#10B981;border-radius:50%;box-shadow:0 0 6px rgba(16,185,129,.5)}}
+.cht{{font-family:'Syne',sans-serif;font-size:13px;font-weight:600}}
+.chs{{font-size:11px;color:var(--muted);margin-left:auto}}
+.csug{{display:flex;gap:7px;padding:9px 14px 0;flex-wrap:wrap;background:var(--bg2);border-left:1px solid var(--brd);border-right:1px solid var(--brd)}}
+.chip{{padding:4px 11px;background:transparent;border:1px solid var(--brd);color:var(--muted);font-size:11px;font-family:'DM Sans',sans-serif;cursor:pointer;transition:all .15s;white-space:nowrap}}
+.chip:hover{{border-color:var(--sand);color:var(--warm)}}
+.cm{{flex:1;overflow-y:auto;background:rgba(255,255,255,.01);border:1px solid var(--brd);border-bottom:none;padding:18px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}}
+.cm::-webkit-scrollbar{{width:3px}}
+.cm::-webkit-scrollbar-thumb{{background:var(--brd)}}
+.msg{{display:flex;gap:9px;max-width:83%;animation:mi .22s ease}}
+@keyframes mi{{from{{opacity:0;transform:translateY(7px)}}to{{opacity:1;transform:translateY(0)}}}}
+.msg.u{{flex-direction:row-reverse;align-self:flex-end}}
+.ma{{width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;font-family:'Syne',sans-serif;margin-top:2px}}
+.msg.ai .ma{{background:var(--p);color:#fff}}
+.msg.u .ma{{background:var(--bg3);border:1px solid var(--brd);color:var(--sand)}}
+.mb{{padding:9px 13px;font-size:13.5px;line-height:1.6}}
+.msg.ai .mb{{background:var(--bg2);border:1px solid var(--brd);border-radius:8px}}
+.msg.u .mb{{background:rgba(255,255,255,.06);border:1px solid var(--brd);border-radius:8px}}
+.td{{display:flex;gap:4px;align-items:center;padding:6px 0}}
+.dot{{width:5px;height:5px;background:var(--sand);border-radius:50%;animation:tb 1.2s ease infinite}}
+.dot:nth-child(2){{animation-delay:.2s}}.dot:nth-child(3){{animation-delay:.4s}}
+@keyframes tb{{0%,60%,100%{{transform:translateY(0);opacity:.4}}30%{{transform:translateY(-5px);opacity:1}}}}
+.cia{{background:var(--bg2);border:1px solid var(--brd);padding:12px 14px;display:flex;gap:9px;align-items:flex-end}}
+.ci{{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--brd);color:var(--warm);padding:9px 13px;font-size:14px;font-family:'DM Sans',sans-serif;resize:none;outline:none;transition:border-color .2s;max-height:110px;min-height:42px}}
+.ci:focus{{border-color:var(--sand)}}
+.ci::placeholder{{color:var(--muted)}}
+.bs{{background:var(--p);border:none;color:#fff;width:42px;height:42px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s;font-size:16px;flex-shrink:0}}
+.bs:hover{{background:var(--pl)}}.bs:disabled{{opacity:.4;cursor:not-allowed}}
+/* BCM */
+.bg2{{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}}
+.mc{{background:var(--bg2);border:1px solid var(--brd);padding:18px}}
+.mt{{font-family:'Syne',sans-serif;font-size:13px;font-weight:600;margin-bottom:14px}}
+.awm{{display:grid;grid-template-columns:26px 1fr 1fr;grid-template-rows:1fr 1fr 26px;gap:3px;aspect-ratio:1;max-height:210px}}
+.axc{{border:1px solid var(--brd);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);text-align:center;padding:5px;position:relative}}
+.axc.hl{{background:rgba(255,255,255,.05);border-color:var(--p);color:var(--warm);font-weight:500}}
+.axc.al{{background:transparent;border:none;font-size:9px;color:var(--sand);font-weight:500;text-transform:uppercase;letter-spacing:.06em}}
+.adot{{position:absolute;width:9px;height:9px;background:var(--p);border-radius:50%;border:2px solid var(--bg);box-shadow:0 0 7px var(--p)}}
+.c10g{{display:grid;grid-template-columns:1fr 1fr;gap:5px}}
+.c10i{{display:flex;align-items:center;gap:7px;padding:7px 9px;background:rgba(255,255,255,.02);border:1px solid var(--brd);cursor:pointer;transition:all .15s}}
+.c10i:hover{{background:rgba(255,255,255,.04)}}
+.c10i.active{{background:rgba(255,255,255,.06);border-color:var(--p)}}
+.c10n{{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--p);min-width:20px}}
+.c10l{{font-size:11px;color:var(--sand);font-weight:500;line-height:1.3}}
+/* DELIVERABLES */
+.dg{{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:11px;margin-bottom:22px}}
+.dc{{background:var(--bg2);border:1px solid var(--brd);padding:15px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;gap:9px}}
+.dc:hover{{background:rgba(255,255,255,.04)}}
+/* SPINNER */
+.spin{{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:sp .6s linear infinite}}
+@keyframes sp{{to{{transform:rotate(360deg)}}}}
+/* HAMBURGER + MOBILE */
+.hbg{{display:none;background:none;border:none;color:var(--warm);font-size:20px;cursor:pointer;padding:4px}}
+.sbo{{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99}}
+@media(max-width:768px){{.sb{{transform:translateX(-100%)}} .sb.open{{transform:translateX(0)}} .sbo.show{{display:block}} .mn{{margin-left:0}} .hbg{{display:block}} .bg2{{grid-template-columns:1fr}} .pc{{padding:18px 14px}} .cl{{height:calc(100vh - 54px - 38px)}}}}
+</style></head>
+<body>
+<div id="ls">
+  <div class="lc">
+    <div class="lb">
+      <div class="ll"><div class="li">{init}</div><div class="ld"></div><div class="lf">FehrAdvice</div></div>
+      <div class="lt">Collaboration Portal · {client_name} × FehrAdvice</div>
+    </div>
+    <div class="lcard">
+      <div class="ltitle">{s['login_title']}</div>
+      <div class="lsub">{s['login_sub'].format(n=client_name)}</div>
+      <div class="fg"><label class="fl">{s['label_email']}</label><input type="email" id="lem" class="fi" placeholder="name@company.com" autocomplete="email"></div>
+      <div class="fg"><label class="fl">{s['label_pw']}</label><input type="password" id="lpw" class="fi" placeholder="••••••••" autocomplete="current-password"></div>
+      <button class="btnl" id="btnl" onclick="login()"><span id="blt">{s['btn_login']}</span></button>
+      <div class="lerr" id="lerr"></div>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="sbo" id="sbo" onclick="closeSb()"></div>
+  <nav class="sb" id="sb">
+    <div class="sbh">
+      <div class="sbl"><div class="sbi">{init}</div><div><div class="sbm">{client_name.upper()}</div><div class="sbs">× FehrAdvice</div></div></div>
+      <div class="sbbadge"><span style="width:6px;height:6px;background:#10B981;border-radius:50%;display:inline-block"></span> {s['badge']}</div>
+    </div>
+    <nav class="sbn">
+      <div class="nsl">{s['nav_overview']}</div>
+      <div class="nav-item active" onclick="sv('dash',this)"><span class="ni">⬛</span> {s['nav_dash']}</div>
+      {nav_d}
+      <div class="nsl">{s['nav_analysis']}</div>
+      {nav_c}
+      {nav_b}
+    </nav>
+    <div class="sbu">
+      <div class="ua" id="ua">?</div>
+      <div class="ui"><div class="un" id="un">...</div><div class="ur" id="ur">...</div></div>
+      <button class="blo" onclick="logout()" title="{s['btn_logout']}">↩</button>
+    </div>
+  </nav>
+  <main class="mn">
+    <div class="tb">
+      <button class="hbg" onclick="openSb()">☰</button>
+      <div class="tbt" id="tbt">{s['nav_dash']}</div>
+      <div class="tbd" id="tbd"></div>
+    </div>
+    <div class="pc">
+
+      <div class="view active" id="v-dash">
+        <div class="ph"><div class="pt">{s['welcome']}, <span id="gn">...</span></div><div class="pst">{client_name} × FehrAdvice · {s['proj_sub']}</div></div>
+        <div class="sg">
+          <div class="sc"><div class="sl">{s['stat_prog']}</div><div class="sv">0%</div><div class="sd">{s['stat_prog_sub']}</div></div>
+          <div class="sc"><div class="sl">{s['stat_docs']}</div><div class="sv">0</div><div class="sd">{s['stat_docs_sub']}</div></div>
+          <div class="sc"><div class="sl">{s['stat_next']}</div><div class="sv" style="font-size:16px">{s['stat_next_v']}</div><div class="sd">{s['stat_next_sub']}</div></div>
+        </div>
+        <div class="card"><div class="stitle">{s['nav_activity']}</div><div style="text-align:center;padding:36px 20px;color:var(--muted);font-size:14px">{s['empty_act']}</div></div>
+      </div>
+
+      <div class="view" id="v-c">
+        <div class="ph"><div class="pt">BEATRIX Chat</div><div class="pst">{s['chat_sub']}</div></div>
+        <div class="cl">
+          <div class="ch"><div class="csd"></div><div class="cht">BEATRIX · {client_name}-{s['ctx']}</div><div class="chs">{s['chat_ready']}</div></div>
+          <div class="csug" id="csug">
+            <button class="chip" onclick="sugg(this)">{s['sug1']}</button>
+            <button class="chip" onclick="sugg(this)">{s['sug2']}</button>
+            <button class="chip" onclick="sugg(this)">{s['sug3']}</button>
+          </div>
+          <div class="cm" id="cm"><div class="msg ai"><div class="ma">B</div><div class="mb">{s['chat_welcome']}</div></div></div>
+          <div class="cia">
+            <textarea class="ci" id="ci" placeholder="{s['chat_ph']}" rows="1" onkeydown="ck(event)" oninput="ar(this)"></textarea>
+            <button class="bs" id="bs" onclick="send()">↑</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="v-b">
+        <div class="ph"><div class="pt">BCM / EBF</div><div class="pst">{s['bcm_sub']}</div></div>
+        <div class="bg2">
+          <div class="mc"><div class="mt">Awareness × Willingness</div>
+            <div class="awm">
+              <div class="axc al" style="writing-mode:vertical-rl;transform:rotate(180deg)">Awareness</div>
+              <div class="axc">High/Low<br><small>Know, won't</small></div>
+              <div class="axc hl"><div class="adot" style="top:40%;left:50%"></div>High/High<br><small>Target</small></div>
+              <div class="axc al"></div>
+              <div class="axc" style="opacity:.5">Low/Low</div>
+              <div class="axc">Low/High<br><small>Want, don't know</small></div>
+              <div class="axc al"></div>
+              <div class="axc al">Low</div>
+              <div class="axc al">High → Willingness</div>
+            </div>
+          </div>
+          <div class="mc"><div class="mt">10C Framework</div>
+            <div class="c10g">
+              {"".join(f'<div class="c10i" onclick="this.classList.toggle(\'active\')"><div class="c10n">C{i}</div><div class="c10l">{n}</div></div>' for i,n in [(1,"Context"),(2,"Cognitive Biases"),(3,"Choice Architecture"),(4,"Commitment"),(5,"Communication"),(6,"Culture & Norms"),(7,"Capabilities"),(8,"Consequences"),(9,"Coordination"),(10,"Change Mgmt")])}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="v-d">
+        <div class="ph"><div class="pt">{s['nav_deliv']}</div><div class="pst">{s['deliv_sub']}</div></div>
+        <div style="text-align:center;padding:60px 20px;color:var(--muted)"><div style="font-size:40px;margin-bottom:14px">📁</div><div style="font-size:14px">{s['empty_deliv']}</div></div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+const API='https://bea-lab-upload-production.up.railway.app/api';
+const SLUG='{client_slug}';
+let user=null,tok=null,hist=[];
+const titles={{dash:'{s['nav_dash']}',c:'BEATRIX Chat',b:'BCM / EBF',d:'{s['nav_deliv']}'}};
+
+window.addEventListener('DOMContentLoaded',()=>{{
+  document.getElementById('tbd').textContent=new Date().toLocaleDateString('{s['locale']}',{{weekday:'short',day:'numeric',month:'long'}});
+  const t=sessionStorage.getItem('pt_'+SLUG),u=sessionStorage.getItem('pu_'+SLUG);
+  if(t&&u){{tok=t;user=JSON.parse(u);showApp();}}
+  document.getElementById('lpw').addEventListener('keydown',e=>{{if(e.key==='Enter')login();}});
+}});
+
+async function login(){{
+  const em=document.getElementById('lem').value.trim(),pw=document.getElementById('lpw').value;
+  const btn=document.getElementById('btnl'),err=document.getElementById('lerr');
+  if(!em||!pw){{showErr('{s['err_fields']}');return;}}
+  btn.disabled=true;document.getElementById('blt').innerHTML='<span class="spin"></span>';err.classList.remove('show');
+  try{{
+    const r=await fetch(API+'/login',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email:em,password:pw}})}});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||'{s['err_auth']}');
+    tok=d.token;user=d.user||{{email:em,name:em.split('@')[0]}};
+    sessionStorage.setItem('pt_'+SLUG,tok);sessionStorage.setItem('pu_'+SLUG,JSON.stringify(user));
+    showApp();
+  }}catch(e){{showErr(e.message);btn.disabled=false;document.getElementById('blt').textContent='{s['btn_login']}';}}
+}}
+function showErr(m){{const e=document.getElementById('lerr');e.textContent=m;e.classList.add('show');}}
+function showApp(){{
+  document.getElementById('ls').classList.add('h');
+  document.getElementById('app').style.display='flex';
+  const nm=user?.name||user?.email?.split('@')[0]||'...';
+  const ini=nm.split(' ').map(x=>x[0]).join('').substring(0,2).toUpperCase();
+  document.getElementById('gn').textContent=nm.split(' ')[0];
+  document.getElementById('un').textContent=nm;
+  document.getElementById('ua').textContent=ini;
+  document.getElementById('ur').textContent=user?.email?.includes('fehradvice')?'FehrAdvice':'{client_name}';
+}}
+function logout(){{
+  ['pt_','pu_'].forEach(k=>sessionStorage.removeItem(k+SLUG));
+  tok=null;user=null;hist=[];
+  document.getElementById('ls').classList.remove('h');
+  document.getElementById('app').style.display='none';
+  document.getElementById('lpw').value='';
+  document.getElementById('lerr').classList.remove('show');
+}}
+function sv(id,el){{
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const v=document.getElementById('v-'+id);if(v)v.classList.add('active');
+  if(el)el.classList.add('active');
+  document.getElementById('tbt').textContent=titles[id]||id;
+  closeSb();
+}}
+function openSb(){{document.getElementById('sb').classList.add('open');document.getElementById('sbo').classList.add('show');}}
+function closeSb(){{document.getElementById('sb').classList.remove('open');document.getElementById('sbo').classList.remove('show');}}
+function ar(el){{el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px';}}
+function ck(e){{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();send();}}}}
+function sugg(b){{document.getElementById('ci').value=b.textContent;document.getElementById('csug').style.display='none';send();}}
+async function send(){{
+  const inp=document.getElementById('ci'),msg=inp.value.trim();if(!msg)return;
+  inp.value='';inp.style.height='auto';
+  addMsg('u',msg);hist.push({{role:'user',content:msg}});
+  const btn=document.getElementById('bs');btn.disabled=true;
+  const tid=typing();
+  try{{
+    const r=await fetch(API+'/chat',{{method:'POST',headers:{{'Content-Type':'application/json','Authorization':'Bearer '+tok}},body:JSON.stringify({{message:msg,history:hist.slice(-10),client_context:SLUG,mode:'beatrix'}})}});
+    rmTyping(tid);
+    if(r.ok){{const d=await r.json();const rep=d.response||d.message||d.content||'OK';addMsg('ai',rep,d.sources);hist.push({{role:'assistant',content:rep}});}}
+    else addMsg('ai','{s['err_chat']}');
+  }}catch(e){{rmTyping(tid);addMsg('ai','{s['err_chat']}');}}
+  btn.disabled=false;
+}}
+function addMsg(role,txt,src){{
+  const c=document.getElementById('cm'),isAI=role==='ai';
+  const u=user?.name?.split(' ').map(x=>x[0]).join('').substring(0,2).toUpperCase()||'ME';
+  const d=document.createElement('div');d.className='msg '+(isAI?'ai':'u');
+  const srcHtml=src?.length?`<div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:5px">${{src.map(s=>`<span style="padding:2px 8px;background:rgba(255,255,255,.05);border:1px solid var(--brd);font-size:10px;color:var(--sand)">📄 ${{s}}</span>`).join('')}}</div>`:'';
+  d.innerHTML=`<div class="ma">${{isAI?'B':u}}</div><div><div class="mb">${{fmt(txt)}}</div>${{srcHtml}}</div>`;
+  c.appendChild(d);c.scrollTop=c.scrollHeight;
+}}
+function fmt(t){{return t.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\\n\\n/g,'<br><br>').replace(/\\n/g,'<br>');}}
+let tc=0;
+function typing(){{const id='t'+(++tc),c=document.getElementById('cm'),d=document.createElement('div');d.className='msg ai';d.id=id;d.innerHTML='<div class="ma">B</div><div class="mb"><div class="td"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>';c.appendChild(d);c.scrollTop=c.scrollHeight;return id;}}
+function rmTyping(id){{document.getElementById(id)?.remove();}}
+</script>
+</body></html>"""
+
+
+@app.post("/api/admin/create-client")
+async def create_client_portal(request: Request, current_user: User = Depends(get_current_user)):
+    """3-Klick Client Portal Factory – generates, deploys and routes a full client portal."""
+    if not current_user.is_admin:
+        raise HTTPException(403, "Admin required")
+
+    import re, httpx as _httpx, base64 as _b64
+
+    body = await request.json()
+    client_name = (body.get("client_name") or "").strip()
+    if not client_name:
+        raise HTTPException(400, "client_name required")
+
+    slug = re.sub(r"[^a-z0-9-]", "", client_name.lower().replace(" ", "-").replace("_", "-"))
+    if not slug:
+        raise HTTPException(400, "Invalid client name")
+
+    lang    = body.get("lang", "de")
+    theme   = body.get("theme", "dark-slate")
+    modules = body.get("modules", ["chat", "bcm", "deliverables"])
+    users   = body.get("users", [])
+    log     = []
+
+    GH_TOKEN = os.getenv("GH_TOKEN", "")
+    FRONTEND  = "FehrAdvice-Partners-AG/bea-lab-frontend"
+    GH_API    = "https://api.github.com"
+    GH_HDR    = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIX", "Content-Type": "application/json"}
+
+    # 1. Generate HTML
+    html = _generate_portal_html(client_name, slug, lang, theme, modules)
+    log.append("✅ Portal HTML generated")
+
+    # 2. Push HTML to GitHub
+    fname = f"{slug}.html"
+    try:
+        chk = _httpx.get(f"{GH_API}/repos/{FRONTEND}/contents/{fname}", headers=GH_HDR, timeout=10)
+        existing_sha = chk.json().get("sha") if chk.status_code == 200 else None
+        payload = {"message": f"feat: Client portal for {client_name}", "content": _b64.b64encode(html.encode()).decode()}
+        if existing_sha:
+            payload["sha"] = existing_sha
+        r = _httpx.put(f"{GH_API}/repos/{FRONTEND}/contents/{fname}", json=payload, headers=GH_HDR, timeout=20)
+        if r.status_code in (200, 201):
+            log.append(f"✅ {fname} pushed to GitHub")
+        else:
+            log.append(f"⚠️ GitHub push: {r.status_code}")
+    except Exception as e:
+        log.append(f"⚠️ GitHub: {e}")
+
+    # 3. Update vercel.json (slug route + host route)
+    try:
+        vr = _httpx.get(f"{GH_API}/repos/{FRONTEND}/contents/vercel.json", headers=GH_HDR, timeout=10)
+        vd = vr.json()
+        vc = json.loads(_b64.b64decode(vd["content"]).decode())
+        rw = vc.get("rewrites", [])
+        rw = [x for x in rw if x.get("source") != f"/{slug}" and not (x.get("destination") == f"/{fname}" and "has" in x)]
+        ci = next((i for i, x in enumerate(rw) if x.get("source") == "/(.*)" and "has" not in x), len(rw))
+        rw.insert(ci, {"source": f"/{slug}", "destination": f"/{fname}"})
+        rw.insert(0, {"source": "/(.*)", "has": [{"type": "host", "value": f"{slug}.bea-lab.io"}], "destination": f"/{fname}"})
+        vc["rewrites"] = rw
+        vp = _httpx.put(f"{GH_API}/repos/{FRONTEND}/contents/vercel.json", headers=GH_HDR, timeout=20,
+                        json={"message": f"feat: Routing for {slug}", "content": _b64.b64encode(json.dumps(vc, indent=2).encode()).decode(), "sha": vd["sha"]})
+        log.append("✅ vercel.json updated" if vp.status_code in (200, 201) else f"⚠️ vercel.json: {vp.status_code}")
+    except Exception as e:
+        log.append(f"⚠️ vercel.json: {e}")
+
+    # 4. Create user accounts
+    db_session = next(get_db())
+    created = []
+    try:
+        for u in users:
+            em = (u.get("email") or "").strip().lower()
+            nm = u.get("name", "")
+            pw = u.get("password") or f"{client_name}Portal2026!"
+            if not em:
+                continue
+            if db_session.query(User).filter(User.email == em).first():
+                created.append({"email": em, "status": "exists"})
+                continue
+            import hashlib, secrets as _sec
+            salt = _sec.token_hex(32)
+            ph = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt.encode(), 260000).hex()
+            nu = User(email=em, name=nm, password_hash=ph, password_salt=salt, is_active=True, email_verified=True, company=client_name, role="researcher")
+            db_session.add(nu)
+            created.append({"email": em, "status": "created", "password": pw})
+        db_session.commit()
+        log.append(f"✅ {len(created)} user(s) processed")
+    except Exception as e:
+        db_session.rollback()
+        log.append(f"⚠️ Users: {e}")
+    finally:
+        db_session.close()
+
+    return {
+        "status": "ok",
+        "client_name": client_name,
+        "slug": slug,
+        "urls": {
+            "path": f"https://www.bea-lab.io/{slug}",
+            "subdomain": f"https://{slug}.bea-lab.io (needs DNS CNAME)",
+        },
+        "dns": {"type": "CNAME", "host": slug, "value": "cname.vercel-dns.com"},
+        "users": created,
+        "log": log,
+    }
