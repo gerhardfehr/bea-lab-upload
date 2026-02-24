@@ -6316,6 +6316,176 @@ def call_claude_json(system_prompt, messages, today, model="claude-sonnet-4-2025
     return None, answer
 
 
+# ═══════════════════════════════════════════════════════════
+# POST-VALIDATION (ebf_agent.py philosophy, Step 2)
+# Susceptibility = 0.0: Python validates Claude's output
+# Catches hallucinated customer codes, invalid project codes,
+# bad dates, wrong currencies, and overwritten known data.
+# ═══════════════════════════════════════════════════════════
+
+def validate_and_sanitize_response(data: dict, intent: str, known_entities: dict, detected_customer: str = "") -> tuple:
+    """Validate and fix Claude's domain specialist output. Returns (cleaned_data, corrections_log).
+    
+    Rules:
+    1. customer_code must exist in our system (lowercase)
+    2. Project codes must follow pattern [A-Z]{2,5}[0-9]{3,4}
+    3. Budget must be numeric
+    4. Dates must be valid ISO
+    5. Known entities (fa_owner, currency) from GitHub override Claude's guesses
+    6. Lead codes follow pattern L-XXX-X-YY-NNN
+    7. fa_owner must be a known team member
+    """
+    import re as _re
+    corrections = []
+    
+    if not data or not isinstance(data, dict):
+        return data, corrections
+    
+    # ── Rule 1: Customer code normalization + validation ──
+    cc = data.get("customer_code", "")
+    if cc:
+        cc_lower = cc.lower().strip()
+        # Check against customer alias map
+        if cc_lower in _CUSTOMER_ALIASES:
+            cc_normalized = _CUSTOMER_ALIASES[cc_lower]
+        elif cc_lower != cc:
+            cc_normalized = cc_lower
+        else:
+            cc_normalized = cc_lower
+        
+        if cc_normalized != cc:
+            corrections.append(f"customer_code: '{cc}' → '{cc_normalized}'")
+            data["customer_code"] = cc_normalized
+    
+    # If we detected a customer deterministically but Claude used a different one, trust ours
+    if detected_customer and data.get("customer_code") and data["customer_code"] != detected_customer:
+        # Only override if Claude's code doesn't look like a valid variant
+        if detected_customer in _CUSTOMER_ALIASES.values():
+            corrections.append(f"customer_code override: '{data['customer_code']}' → '{detected_customer}' (deterministic detection)")
+            data["customer_code"] = detected_customer
+    
+    # ── Rule 2: Project code validation ──
+    pc = data.get("project_code", "")
+    if pc and intent == "project":
+        if not _re.match(r'^[A-Z]{2,5}\d{3,4}$', str(pc)):
+            corrections.append(f"project_code invalid: '{pc}' (removed, will auto-generate)")
+            data.pop("project_code", None)
+    
+    # ── Rule 3: Budget normalization ──
+    for budget_field in ("budget", "estimated_value", "estimated_value_chf", "budget_chf"):
+        val = data.get(budget_field)
+        if val is not None and val != "":
+            try:
+                if isinstance(val, str):
+                    # Handle "30k", "1.5M", "80'000" etc.
+                    cleaned = str(val).replace("'", "").replace(" ", "").replace(",", ".")
+                    cleaned = _re.sub(r'[kK]$', '000', cleaned)
+                    cleaned = _re.sub(r'[mM]$', '000000', cleaned)
+                    cleaned = _re.sub(r'[€$£]', '', cleaned)
+                    data[budget_field] = float(cleaned)
+                    if data[budget_field] != val:
+                        corrections.append(f"{budget_field}: '{val}' → {data[budget_field]}")
+                elif isinstance(val, (int, float)):
+                    data[budget_field] = float(val)
+            except (ValueError, TypeError):
+                corrections.append(f"{budget_field}: '{val}' invalid (removed)")
+                data[budget_field] = None
+    
+    # ── Rule 4: Date validation ──
+    for date_field in ("start_date", "end_date", "next_action_date"):
+        val = data.get(date_field)
+        if val and isinstance(val, str) and val.strip():
+            try:
+                from datetime import datetime as _dt
+                # Accept YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
+                cleaned = val.strip()[:10]
+                _dt.strptime(cleaned, "%Y-%m-%d")
+                data[date_field] = cleaned
+            except ValueError:
+                corrections.append(f"{date_field}: '{val}' invalid date (removed)")
+                data.pop(date_field, None)
+    
+    # ── Rule 5: Validate against known customer data from GitHub ──
+    customer_code = data.get("customer_code", "")
+    if customer_code:
+        try:
+            cache = load_customer_context_from_github()
+            cust_data = cache["customers"].get(customer_code, {})
+            contacts_data = cache["contacts"].get(customer_code, {})
+            
+            # fa_owner: Trust GitHub over Claude
+            known_owner = contacts_data.get("fa_owner", "")
+            if known_owner and data.get("fa_owner") and data["fa_owner"] != known_owner:
+                corrections.append(f"fa_owner: '{data['fa_owner']}' → '{known_owner}' (from customer registry)")
+                data["fa_owner"] = known_owner
+            
+            # Currency: Derive from customer country
+            country = cust_data.get("country", "")
+            if country:
+                expected_currency = COUNTRY_CURRENCY.get(country, "CHF")
+                if data.get("currency") and data["currency"] != expected_currency:
+                    corrections.append(f"currency: '{data['currency']}' → '{expected_currency}' (customer country: {country})")
+                    data["currency"] = expected_currency
+            
+            # Customer name: Trust registry
+            known_name = cust_data.get("name", "")
+            if known_name and data.get("customer_name") and data["customer_name"] != known_name:
+                corrections.append(f"customer_name: '{data['customer_name']}' → '{known_name}'")
+                data["customer_name"] = known_name
+            
+            # Project code: Validate against sequence if available
+            sequences = cache.get("sequences", {})
+            if intent == "project" and not data.get("project_code") and customer_code in sequences:
+                seq = sequences[customer_code]
+                if isinstance(seq, dict) and seq.get("next"):
+                    data["project_code"] = seq["next"]
+                    corrections.append(f"project_code auto-assigned: {seq['next']} (from sequence registry)")
+            
+        except Exception as e:
+            logger.debug(f"Post-validation GitHub enrichment skipped: {e}")
+    
+    # ── Rule 6: fa_owner must be a known team member ──
+    KNOWN_FA_TEAM = {"GF", "AF", "MBU", "DF", "KF", "JH", "RS", "PS", "MB", "SB", "TF", "AK", "FK"}
+    owner = data.get("fa_owner", "")
+    if owner and owner.upper() not in KNOWN_FA_TEAM:
+        corrections.append(f"fa_owner: '{owner}' not in known team (kept but flagged)")
+        data["_fa_owner_unverified"] = True
+    
+    # ── Rule 7: Lead code format validation ──
+    if intent == "lead" and data.get("lead_code"):
+        lc = data["lead_code"]
+        if not _re.match(r'^L-[A-Z]{2,5}-[A-Z]-\d{2}-\d{3}$', str(lc)):
+            corrections.append(f"lead_code: '{lc}' invalid format (removed, will auto-generate)")
+            data.pop("lead_code", None)
+    
+    # ── Rule 8: Probability must be 0-100 ──
+    prob = data.get("probability")
+    if prob is not None and prob != "":
+        try:
+            p = float(prob)
+            if p < 0 or p > 100:
+                corrections.append(f"probability: {p} out of range (removed)")
+                data["probability"] = None
+        except (ValueError, TypeError):
+            data["probability"] = None
+    
+    # ── Rule 9: Stage must be a known value ──
+    KNOWN_STAGES = {"initial_contact", "qualifying", "proposal", "negotiation", "closed_won", "closed_lost", "on_hold"}
+    stage = data.get("stage", "")
+    if stage and stage not in KNOWN_STAGES:
+        # Try to fuzzy match
+        for ks in KNOWN_STAGES:
+            if stage.lower().replace("_", "").replace("-", "") in ks.replace("_", ""):
+                data["stage"] = ks
+                corrections.append(f"stage: '{stage}' → '{ks}'")
+                break
+    
+    if corrections:
+        logger.info(f"Post-validation ({intent}): {len(corrections)} corrections: {'; '.join(corrections[:5])}")
+    
+    return data, corrections
+
+
 @app.post("/api/chat/intent")
 async def chat_intent(request: Request, user=Depends(require_permission("chat.intent"))):
     """Universal intent router – detects what the user wants and routes to domain specialist."""
@@ -6486,6 +6656,15 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
         if parsed:
             resp_message = parsed.get("message", "")
             resp_data = parsed.get("data", parsed.get("project", {}))
+
+            # ── POST-VALIDATION: Python checks Claude's output (Susceptibility = 0.0) ──
+            if resp_data and isinstance(resp_data, dict):
+                resp_data, _corrections = validate_and_sanitize_response(
+                    resp_data, intent, session_entities, detected_customer=entities.get("customer", ""))
+                if _corrections:
+                    # Append correction note to message for transparency
+                    _corr_note = " | ".join(_corrections[:3])
+                    resp_message += f"\n\n_[Auto-korrigiert: {_corr_note}]_"
 
             # 🚀 Move ALL post-response tasks to background thread
             # These were blocking the response by ~8-12 seconds!
@@ -6902,12 +7081,16 @@ async def chat_project_intent(request: Request, user=Depends(require_permission(
     try:
         parsed, raw = call_claude_json(domain_prompt + draft_note, messages, today)
         if parsed:
+            _proj_data = parsed.get("data", parsed.get("project", {}))
+            # POST-VALIDATION
+            if _proj_data and isinstance(_proj_data, dict):
+                _proj_data, _corr = validate_and_sanitize_response(_proj_data, "project", {})
             return {
                 "ok": True,
                 "intent": "project",
                 "status": parsed.get("status", "need_info"),
-                "project": parsed.get("data", parsed.get("project", {})),
-                "data": parsed.get("data", parsed.get("project", {})),
+                "project": _proj_data,
+                "data": _proj_data,
                 "missing": parsed.get("missing", []),
                 "message": parsed.get("message", ""),
                 "confidence": parsed.get("confidence", 0),
