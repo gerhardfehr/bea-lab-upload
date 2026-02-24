@@ -409,6 +409,13 @@ class User(Base):
     crm_role = Column(String(30), default="none")  # none, viewer, manager, admin
     crm_owner_code = Column(String(20), nullable=True)  # OWN-GF, OWN-EB, etc.
     lead_management = Column(Boolean, default=False)  # access to lead management suite
+    # ── User Group (access control) ──────────────────────────────────────
+    # fehradvice: internal team → full BEATRIX access
+    # client:     customer → only their own portal (client_slug)
+    # student:    UZH / Field Experiments → course portal only
+    # researcher: external → papers & research, no CRM/client data
+    user_group = Column(String(30), default="researcher")  # fehradvice | client | student | researcher
+    client_slug = Column(String(100), nullable=True)  # for group=client: which portal they belong to
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
@@ -16450,6 +16457,32 @@ Halte dich strikt an das JSON-Format. Keine anderen Texte."""
         logger.error(f"Presentation generation failed: {e}")
         raise HTTPException(500, f"Presentation generation failed: {str(e)}")
 
+
+
+@app.put("/api/admin/users/{user_id}/set-group")
+async def set_user_group(user_id: str, request: Request, current_user: User = Depends(require_auth)):
+    """Set user_group and optional client_slug for a user."""
+    if not current_user.is_admin:
+        raise HTTPException(403, "Admin required")
+    body = await request.json()
+    group = body.get("user_group")
+    if group not in ("fehradvice", "client", "student", "researcher"):
+        raise HTTPException(400, "Invalid group. Use: fehradvice, client, student, researcher")
+    db_session = get_db()
+    try:
+        user = db_session.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(404, "User not found")
+        user.user_group = group
+        if body.get("client_slug") is not None:
+            user.client_slug = body.get("client_slug") or None
+        # Auto-set is_admin for fehradvice group if specified
+        if body.get("is_admin") is not None:
+            user.is_admin = bool(body.get("is_admin"))
+        db_session.commit()
+        return {"status": "ok", "user_id": user_id, "user_group": group, "client_slug": user.client_slug}
+    finally:
+        db_session.close()
 
 # ═══════════════════════════════════════════════════════════════════════
 # CLIENT PORTAL FACTORY  –  3-Klick Kunden-Portal Generator
