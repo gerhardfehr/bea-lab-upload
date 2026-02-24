@@ -3071,11 +3071,43 @@ async def save_linkedin_data(data: dict, user=Depends(require_auth)):
     try:
         u = db.query(User).filter(User.email == user["sub"]).first()
         if not u: raise HTTPException(404)
-        if data.get("sub"): u.linkedin_id = str(data["sub"])
-        if data.get("name") and not u.name: u.name = data["name"]
-        if data.get("picture"): u.profile_photo_url = data["picture"]
+        updated = []
+        # LinkedIn ID (always update)
+        if data.get("sub"):
+            u.linkedin_id = str(data["sub"])
+            updated.append("linkedin_id")
+        # Name: update if empty or if LinkedIn has fuller version
+        if data.get("name"):
+            if not u.name or len(data["name"]) > len(u.name or ""):
+                u.name = data["name"]
+                updated.append("name")
+        # Profile photo (always update from LinkedIn — higher quality)
+        if data.get("picture"):
+            u.profile_photo_url = data["picture"]
+            updated.append("photo")
+        # LinkedIn profile URL from sub (construct if not set)
+        if not u.linkedin_url and data.get("sub"):
+            u.linkedin_url = f"https://www.linkedin.com/in/{data['sub']}"
+        # Email verification: if LinkedIn email matches, mark as verified
+        li_email = data.get("email", "").lower()
+        if li_email and li_email == u.email.lower() and not u.email_verified:
+            u.email_verified = True
+            updated.append("email_verified")
+        logger.info(f"LinkedIn profile saved for {u.email}: {', '.join(updated)}")
         db.commit()
-        return {"message": "LinkedIn-Daten gespeichert", "linkedin_connected": True}
+        return {
+            "message": "LinkedIn-Profil verknüpft",
+            "linkedin_connected": True,
+            "updated_fields": updated,
+            "profile": {
+                "name": u.name,
+                "email": u.email,
+                "photo": u.profile_photo_url,
+                "linkedin_id": u.linkedin_id,
+                "position": u.position,
+                "company": u.company,
+            }
+        }
     finally: db.close()
 
 @app.post("/api/profile/linkedin/disconnect")
