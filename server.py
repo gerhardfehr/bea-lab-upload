@@ -6488,314 +6488,407 @@ def validate_and_sanitize_response(data: dict, intent: str, known_entities: dict
 
 # ═══════════════════════════════════════════════════════════
 # PRE-WORKFLOWS (ebf_agent.py philosophy, Step 3)
-# Python drives, Haiku works. Sonnet only as fallback.
-# Susceptibility = 0.1 (Haiku extracts text fields, Python does everything else)
+# Python fills all known fields BEFORE the LLM call.
+# Then Haiku extracts only name/description/type from user message.
+# Result: ~1-3s instead of ~10-25s for project/lead intents.
 # ═══════════════════════════════════════════════════════════
 
-def _extract_fields_with_haiku(message: str, known_fields: dict, target_fields: list, today: str) -> dict:
-    """Use Haiku as a NARROW worker to extract specific text fields from user message.
-    Susceptibility = 0.1: Haiku only extracts, Python validates."""
-    known_str = ", ".join(f"{k}={v}" for k, v in known_fields.items() if v)
-    fields_str = ", ".join(target_fields)
-    
-    prompt = f"""Extrahiere aus der Nachricht folgende Felder: {fields_str}
-Bereits bekannt: {known_str}
-Antworte NUR mit JSON-Objekt. Keine Erklärungen. Nur die gefragten Felder.
-Unbekannte Felder = leerer String."""
-    
-    try:
-        parsed, _ = call_claude_json(prompt,
-                                      [{"role": "user", "content": message}],
-                                      today,
-                                      model="claude-haiku-4-5-20251001",
-                                      max_tokens=300)
-        if parsed and isinstance(parsed, dict):
-            # Only return target fields, nothing Claude might hallucinate
-            return {k: v for k, v in parsed.items() if k in target_fields and v}
-    except Exception as e:
-        logger.warning(f"Haiku extraction failed: {e}")
-    return {}
-
-
-def pre_workflow_project(message: str, entities: dict, session_entities: dict,
-                          current_draft: dict, today: str) -> dict | None:
-    """Pre-workflow for project intent. Python fills known fields, Haiku extracts the rest.
-    Returns full response dict or None to fall through to Sonnet."""
+def _extract_budget_from_message(msg: str) -> dict:
+    """Extract budget amount from user message. Pure Python, no LLM."""
     import re as _re
+    # Patterns: "Budget 45k", "30.000 EUR", "80k€", "geschätzter Wert 120k"
+    m = _re.search(r'(\d[\d.,\']*)\s*([kKmM])?[\s]*(EUR|CHF|USD|GBP|€|\$|£)?', msg)
+    if not m:
+        return {}
+    raw_num = m.group(1).replace("'", "").replace(",", ".")
+    try:
+        amount = float(raw_num)
+    except ValueError:
+        return {}
+    multiplier = m.group(2)
+    if multiplier and multiplier.lower() == 'k':
+        amount *= 1000
+    elif multiplier and multiplier.lower() == 'm':
+        amount *= 1000000
+    currency_hint = m.group(3) or ""
+    currency_map = {"€": "EUR", "$": "USD", "£": "GBP"}
+    currency = currency_map.get(currency_hint, currency_hint) if currency_hint else ""
+    return {"amount": amount, "currency_hint": currency}
+
+
+def _extract_date_from_message(msg: str) -> str:
+    """Extract a start date from user message. Pure Python."""
+    import re as _re
+    from datetime import datetime
     
-    customer_code = entities.get("customer") or session_entities.get("customer_code", "")
-    if not customer_code:
-        return None  # Can't do much without a customer → Sonnet handles
+    month_map = {
+        "jan": "01", "feb": "02", "mär": "03", "mar": "03", "apr": "04",
+        "mai": "05", "may": "05", "jun": "06", "jul": "07", "aug": "08",
+        "sep": "09", "okt": "10", "oct": "10", "nov": "11", "dez": "12", "dec": "12"
+    }
     
-    # ── Phase A: Python pre-fills from GitHub (Susceptibility = 0.0) ──
-    draft = {**current_draft}
-    cache = None
+    # "Start März 2026", "Start im April"
+    m = _re.search(r'(?:start|beginn|ab|im)\s+(?:im\s+)?(\w+)\s*(\d{4})?', msg.lower())
+    if m:
+        month_word = m.group(1)[:3]
+        year = m.group(2) or str(datetime.utcnow().year)
+        month_num = month_map.get(month_word)
+        if month_num:
+            return f"{year}-{month_num}-01"
+    
+    # ISO date: "2026-04-15"
+    m2 = _re.search(r'(\d{4}-\d{2}-\d{2})', msg)
+    if m2:
+        return m2.group(1)
+    
+    return ""
+
+
+def _check_duplicate_projects(customer_code: str, message: str) -> list:
+    """Check if user's request might match existing projects. Returns list of potential duplicates."""
     try:
         cache = load_customer_context_from_github()
+        projects = cache.get("projects", {}).get(customer_code, [])
+        if not projects:
+            return []
+        
+        # Simple word overlap between message and project names
+        msg_words = set(message.lower().split())
+        # Remove common stop words
+        stop_words = {"neues", "neuer", "neue", "mandat", "projekt", "für", "bei", "der", "die", "das",
+                      "ein", "eine", "mit", "und", "im", "am", "vom", "zum", "zur", "von", "budget", "start"}
+        msg_words -= stop_words
+        
+        duplicates = []
+        for p in projects:
+            p_name = p.get("name", "").lower()
+            p_words = set(p_name.split()) - stop_words
+            overlap = msg_words & p_words
+            if len(overlap) >= 2 or (len(overlap) == 1 and len(msg_words) <= 4):
+                duplicates.append(p)
+        return duplicates
     except Exception:
-        pass
+        return []
+
+
+def pre_workflow_project(message: str, entities: dict, session_entities: dict, current_draft: dict) -> dict:
+    """Pre-fill project fields from GitHub data. Returns partial result or None for passthrough.
     
-    cust_data = cache["customers"].get(customer_code, {}) if cache else {}
-    contacts_data = cache["contacts"].get(customer_code, {}) if cache else {}
-    projects = cache.get("projects", {}).get(customer_code, []) if cache else []
-    sequences = cache.get("sequences", {}) if cache else {}
+    Flow:
+    1. Python: Load customer data → fill customer_code, fa_owner, currency, next project_code
+    2. Python: Extract budget, date from message
+    3. Python: Check for duplicate projects
+    4. Haiku: Extract ONLY name, type, description (narrow prompt, ~1s)
+    5. Python: Merge, validate, determine missing fields
+    """
+    customer_code = entities.get("customer", "") or session_entities.get("customer_code", "")
     
-    draft.setdefault("customer_code", customer_code)
-    draft.setdefault("customer_name", cust_data.get("name", customer_code.upper()))
+    if not customer_code:
+        return None  # No customer → can't pre-fill, fall through to Sonnet
     
-    # fa_owner from contacts
-    fa_owner = contacts_data.get("fa_owner", "")
-    if fa_owner:
-        draft.setdefault("fa_owner", fa_owner)
+    # ── Step 1: Load customer data (Python, 0ms from cache) ──
+    draft = {**current_draft}
+    customer_data = {}
+    contacts_data = {}
     
-    # Currency from country
-    country = cust_data.get("country", "")
-    if country:
-        draft.setdefault("currency", COUNTRY_CURRENCY.get(country, "CHF"))
+    try:
+        cache = load_customer_context_from_github()
+        customer_data = cache["customers"].get(customer_code, {})
+        contacts_data = cache["contacts"].get(customer_code, {})
+        sequences = cache.get("sequences", {})
+        existing_projects = cache.get("projects", {}).get(customer_code, [])
+    except Exception as e:
+        logger.warning(f"Pre-workflow project: cache load failed: {e}")
+        return None  # Fall through to Sonnet
     
-    # Next project code from sequences
-    seq_key = customer_code.upper()[:3]
-    # Try multiple key formats
-    for sk in [customer_code, customer_code.upper(), seq_key]:
-        if sk in sequences:
-            seq_val = sequences[sk]
-            if isinstance(seq_val, (int, float)):
-                draft.setdefault("project_code", f"{seq_key}{int(seq_val):03d}")
-            elif isinstance(seq_val, dict) and seq_val.get("next"):
-                draft.setdefault("project_code", seq_val["next"])
+    if not customer_data and not contacts_data:
+        return None  # Unknown customer, Sonnet handles better
+    
+    # Fill known fields
+    draft["customer_code"] = customer_code
+    draft.setdefault("customer_name", customer_data.get("name", customer_code.upper()))
+    draft.setdefault("fa_owner", contacts_data.get("fa_owner", "GF"))
+    
+    country = customer_data.get("country", "")
+    currency = COUNTRY_CURRENCY.get(country, "CHF")
+    draft.setdefault("currency", currency)
+    draft.setdefault("is_new_customer", False)
+    
+    # Next project code from sequence
+    prefix = customer_code.upper()[:3]
+    seq_val = sequences.get(prefix, sequences.get(customer_code.upper(), None))
+    if seq_val is not None:
+        if isinstance(seq_val, int):
+            next_code = f"{prefix}{seq_val:03d}"
+        elif isinstance(seq_val, dict) and seq_val.get("next"):
+            next_code = seq_val["next"]
+        else:
+            next_code = ""
+        if next_code:
+            draft.setdefault("project_code", next_code)
+    
+    # Primary contact
+    for con in contacts_data.get("contacts", []):
+        if con.get("is_primary"):
+            draft.setdefault("client_contact", con.get("name", ""))
             break
     
-    # ── Phase B: Duplicate check (Susceptibility = 0.0) ──
-    if projects:
-        msg_lower = message.lower()
-        for p in projects:
-            p_name = (p.get("name") or "").lower()
-            # Simple overlap: if 2+ words match between message and project name
-            msg_words = set(_re.findall(r'\b\w{3,}\b', msg_lower))
-            p_words = set(_re.findall(r'\b\w{3,}\b', p_name))
-            overlap = msg_words & p_words
-            if len(overlap) >= 2:
-                return {
-                    "ok": True,
-                    "intent": "project",
-                    "action": "check_duplicate",
-                    "status": "need_info",
-                    "data": draft,
-                    "missing": ["confirmation"],
-                    "message": f"Für {draft['customer_name']} gibt es bereits **{p.get('code', '')} {p['name']}** ({p.get('status', 'aktiv')}). Meinst du dieses Projekt, oder brauchst du wirklich ein NEUES Projekt?",
-                    "confidence": 0.9,
-                    "entities": entities,
-                    "_pre_workflow": True
-                }
-    
-    # ── Phase C: Haiku extracts name/type/description/dates/budget (Susceptibility = 0.1) ──
-    haiku_fields = _extract_fields_with_haiku(
-        message, draft,
-        ["name", "type", "description", "start_date", "end_date", "budget", "billing_type"],
-        today
-    )
-    
-    for k, v in haiku_fields.items():
-        if v and k in ("name", "type", "description", "start_date", "end_date", "budget", "billing_type"):
-            draft[k] = v
-    
-    # ── Phase D: Python fills defaults (Susceptibility = 0.0) ──
-    draft.setdefault("project_category", "mandat")
-    draft.setdefault("billing_type", "fixed")
-    draft.setdefault("type", "beratung")
-    
-    # Budget string → number
-    if draft.get("budget") and isinstance(draft["budget"], str):
-        try:
-            cleaned = draft["budget"].replace("'", "").replace(" ", "").replace(",", ".")
-            cleaned = _re.sub(r'[kK]$', '000', cleaned)
-            cleaned = _re.sub(r'[mM]$', '000000', cleaned)
-            cleaned = _re.sub(r'[€$£CHF]', '', cleaned).strip()
-            draft["budget"] = float(cleaned)
-        except (ValueError, TypeError):
-            pass
-    
-    # Budget CHF conversion
-    if draft.get("budget") and isinstance(draft["budget"], (int, float)) and draft.get("currency") and draft["currency"] != "CHF":
-        try:
-            fx = convert_to_chf(draft["budget"], draft["currency"])
-            draft["budget_chf"] = fx.get("amount_chf", draft["budget"])
-        except Exception:
+    # ── Step 2: Extract budget and date from message (Python, 0ms) ──
+    budget_info = _extract_budget_from_message(message)
+    if budget_info.get("amount"):
+        draft.setdefault("budget", budget_info["amount"])
+        if budget_info.get("currency_hint"):
+            draft["currency"] = budget_info["currency_hint"]
+        # CHF conversion
+        if draft["currency"] != "CHF":
+            try:
+                fx = convert_to_chf(draft["budget"], draft["currency"])
+                draft["budget_chf"] = fx.get("amount_chf", draft["budget"])
+            except Exception:
+                draft["budget_chf"] = draft["budget"]
+        else:
             draft["budget_chf"] = draft["budget"]
-    elif draft.get("budget"):
-        draft["budget_chf"] = draft["budget"]
     
-    # ── Phase E: Determine what's missing (Susceptibility = 0.0) ──
-    required = ["customer_code", "name"]
-    missing = [f for f in required if not draft.get(f)]
+    start_date = _extract_date_from_message(message)
+    if start_date:
+        draft.setdefault("start_date", start_date)
     
-    # Nice-to-have missing
-    nice_to_have = []
-    if not draft.get("description"):
-        nice_to_have.append("description")
-    if not draft.get("end_date"):
-        nice_to_have.append("end_date")
+    # ── Step 3: Check duplicate projects (Python, 0ms from cache) ──
+    duplicates = _check_duplicate_projects(customer_code, message)
+    if duplicates and not current_draft:
+        # First message and potential duplicate → ask user
+        dup = duplicates[0]
+        dup_name = f"{dup.get('code', '')} {dup.get('name', '')}".strip()
+        return {
+            "intent": "project",
+            "action": "create",
+            "status": "need_info",
+            "data": draft,
+            "missing": ["confirmation"],
+            "message": f"Für {draft['customer_name']} gibt es bereits das Projekt **{dup_name}** ({dup.get('status', 'aktiv')}). Meinst du dieses Projekt, oder soll ein **neues** eröffnet werden?",
+            "confidence": 0.85,
+            "_pre_workflow": True,
+            "_duplicate_check": True
+        }
     
-    all_missing = missing + nice_to_have
-    
-    # ── Phase F: Build response message (Susceptibility = 0.0) ──
-    if missing:
-        msg_parts = [f"Projekt für **{draft.get('customer_name', customer_code.upper())}** — mir fehlt noch: {', '.join(missing)}"]
-    else:
-        code = draft.get('project_code', '???')
-        name = draft.get('name', '???')
-        msg_parts = [f"Projekt **{code} – {name}** für {draft['customer_name']} bereit!"]
+    # ── Step 4: Haiku extracts ONLY name, type, description (~1s) ──
+    # This is the NARROW prompt — Haiku doesn't decide anything, just extracts
+    try:
+        extraction_prompt = f"""Extrahiere aus der User-Nachricht NUR diese Felder:
+- name: Projektname (kurz, prägnant, auf Deutsch/Englisch wie im Text)
+- type: Einer von: beratung, workshop, studie, intervention, keynote, training, retainer
+- description: 1-Satz Beschreibung des Projekts
+- billing_type: fixed | time_material | retainer (Default: fixed)
+- project_category: mandat | lead | probono (Default: mandat)
+
+Bekannter Kontext: Kunde={draft.get('customer_name','')}, Budget={draft.get('budget','')}, Start={draft.get('start_date','')}
+
+Antworte NUR mit JSON, keine Erklärungen. Beispiel:
+{{"name":"KI Workshop","type":"workshop","description":"Workshop zum Thema KI","billing_type":"fixed","project_category":"mandat"}}"""
         
-        msg_parts.append("\n**Erfasst:**")
-        if draft.get("type"): msg_parts.append(f"- Typ: {draft['type']}")
+        haiku_result, _ = call_claude_json(
+            extraction_prompt,
+            [{"role": "user", "content": message}],
+            datetime.utcnow().strftime("%Y-%m-%d"),
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200
+        )
+        
+        if haiku_result:
+            for field in ("name", "type", "description", "billing_type", "project_category"):
+                val = haiku_result.get(field)
+                if val and isinstance(val, str) and val.strip():
+                    draft.setdefault(field, val.strip())
+    except Exception as e:
+        logger.warning(f"Pre-workflow Haiku extraction failed: {e}")
+        # Continue with what we have
+    
+    # ── Step 5: Determine missing fields (Python, 0ms) ──
+    required = ["customer_code", "name"]
+    recommended = ["type", "description", "start_date", "budget"]
+    missing = [f for f in required if not draft.get(f)]
+    missing_recommended = [f for f in recommended if not draft.get(f)]
+    
+    # ── Step 6: Build response message (Python, 0ms) ──
+    name = draft.get("name", "")
+    code = draft.get("project_code", "")
+    cname = draft.get("customer_name", customer_code.upper())
+    
+    if not missing:
+        # All required fields present
+        budget_str = ""
         if draft.get("budget"):
             b = draft["budget"]
-            curr = draft.get("currency", "CHF")
-            if curr != "CHF" and draft.get("budget_chf"):
-                msg_parts.append(f"- Budget: {b:,.0f} {curr} (≈ {draft['budget_chf']:,.0f} CHF)")
-            else:
-                msg_parts.append(f"- Budget: {b:,.0f} CHF")
-        if draft.get("start_date"): msg_parts.append(f"- Start: {draft['start_date']}")
-        if draft.get("fa_owner"): msg_parts.append(f"- Owner: {draft['fa_owner']}")
-    
-    if nice_to_have:
-        msg_parts.append(f"\n**Optional noch ergänzen:** {', '.join(nice_to_have)}")
-    
-    status = "complete" if not missing else "need_info"
-    
-    logger.info(f"Pre-workflow project: {customer_code} → {len(draft)} fields filled, {len(all_missing)} missing, status={status}")
+            c = draft.get("currency", "CHF")
+            budget_str = f"\n- Budget: {b:,.0f} {c}".replace(",", "'")
+            if c != "CHF" and draft.get("budget_chf"):
+                budget_str += f" (≈ {draft['budget_chf']:,.0f} CHF)".replace(",", "'")
+        
+        date_str = f"\n- Start: {draft['start_date']}" if draft.get("start_date") else ""
+        owner_str = f"\n- Owner: {draft.get('fa_owner', 'GF')}"
+        
+        msg_parts = [f"Projekt **{code} – {name}** für {cname} bereit:"]
+        msg_parts.append(f"- Typ: {draft.get('type', 'beratung')}{budget_str}{date_str}{owner_str}")
+        
+        if missing_recommended:
+            msg_parts.append(f"\nOptional noch ergänzen: {', '.join(missing_recommended)}")
+        
+        msg_parts.append("\nSoll ich das Projekt so eröffnen?")
+        
+        result_msg = "\n".join(msg_parts)
+        status = "complete" if not missing_recommended else "need_info"
+    else:
+        result_msg = f"Neues Projekt für {cname} ({code}) — mir fehlt noch: **{', '.join(missing)}**"
+        status = "need_info"
     
     return {
-        "ok": True,
         "intent": "project",
         "action": "create",
         "status": status,
         "data": draft,
-        "missing": all_missing,
-        "message": "\n".join(msg_parts),
+        "missing": missing + missing_recommended[:3],
+        "message": result_msg,
         "confidence": 0.95,
-        "entities": entities,
         "_pre_workflow": True
     }
 
 
-def pre_workflow_lead(message: str, entities: dict, session_entities: dict,
-                       current_draft: dict, today: str) -> dict | None:
-    """Pre-workflow for lead intent. Python fills known fields, Haiku extracts the rest."""
-    import re as _re
+def pre_workflow_lead(message: str, entities: dict, session_entities: dict, current_draft: dict) -> dict:
+    """Pre-fill lead fields from GitHub data. Same pattern as project."""
+    customer_code = entities.get("customer", "") or session_entities.get("customer_code", "")
     
-    customer_code = entities.get("customer") or session_entities.get("customer_code", "")
     if not customer_code:
-        return None  # Need customer for lead pre-fill
+        return None
     
-    # ── Phase A: Python pre-fills from GitHub ──
     draft = {**current_draft}
-    cache = None
+    
     try:
         cache = load_customer_context_from_github()
+        customer_data = cache["customers"].get(customer_code, {})
+        contacts_data = cache["contacts"].get(customer_code, {})
+        existing_leads = cache.get("leads_summary", {}).get(customer_code, [])
     except Exception:
-        pass
+        return None
     
-    cust_data = cache["customers"].get(customer_code, {}) if cache else {}
-    contacts_data = cache["contacts"].get(customer_code, {}) if cache else {}
+    if not customer_data and not contacts_data:
+        return None
     
-    draft.setdefault("customer_code", customer_code)
-    draft.setdefault("customer_name", cust_data.get("name", customer_code.upper()))
-    draft.setdefault("is_new_customer", not bool(cust_data))
-    
-    fa_owner = contacts_data.get("fa_owner", "")
-    if fa_owner:
-        draft.setdefault("fa_owner", fa_owner)
-    
-    country = cust_data.get("country", "")
-    if country:
-        draft.setdefault("currency", COUNTRY_CURRENCY.get(country, "CHF"))
-    
+    # Fill known fields
+    draft["customer_code"] = customer_code
+    draft.setdefault("customer_name", customer_data.get("name", customer_code.upper()))
+    draft.setdefault("fa_owner", contacts_data.get("fa_owner", "GF"))
+    draft.setdefault("is_new_customer", False)
     draft.setdefault("stage", "initial_contact")
     
-    # ── Phase B: Haiku extracts opportunity/contact/value ──
-    haiku_fields = _extract_fields_with_haiku(
-        message, draft,
-        ["opportunity", "contact_person", "contact_role", "estimated_value", "type", "source", "next_action"],
-        today
-    )
+    country = customer_data.get("country", "")
+    currency = COUNTRY_CURRENCY.get(country, "CHF")
+    draft.setdefault("currency", currency)
     
-    for k, v in haiku_fields.items():
-        if v:
-            draft[k] = v
+    # Primary contact
+    for con in contacts_data.get("contacts", []):
+        if con.get("is_primary"):
+            draft.setdefault("contact_person", con.get("name", ""))
+            draft.setdefault("contact_role", con.get("role", ""))
+            if con.get("email"):
+                draft.setdefault("contact_email", con["email"])
+            break
     
-    # ── Phase C: Python normalizes ──
-    if draft.get("estimated_value") and isinstance(draft["estimated_value"], str):
-        try:
-            cleaned = draft["estimated_value"].replace("'", "").replace(" ", "").replace(",", ".")
-            cleaned = _re.sub(r'[kK]$', '000', cleaned)
-            cleaned = _re.sub(r'[mM]$', '000000', cleaned)
-            cleaned = _re.sub(r'[€$£CHF]', '', cleaned).strip()
-            draft["estimated_value"] = float(cleaned)
-        except (ValueError, TypeError):
-            pass
-    
-    if draft.get("estimated_value") and isinstance(draft["estimated_value"], (int, float)):
-        curr = draft.get("currency", "CHF")
-        if curr != "CHF":
+    # Budget from message
+    budget_info = _extract_budget_from_message(message)
+    if budget_info.get("amount"):
+        draft.setdefault("estimated_value", budget_info["amount"])
+        if budget_info.get("currency_hint"):
+            draft["currency"] = budget_info["currency_hint"]
+        if draft["currency"] != "CHF":
             try:
-                fx = convert_to_chf(draft["estimated_value"], curr)
+                fx = convert_to_chf(draft["estimated_value"], draft["currency"])
                 draft["estimated_value_chf"] = fx.get("amount_chf", draft["estimated_value"])
             except Exception:
                 draft["estimated_value_chf"] = draft["estimated_value"]
         else:
             draft["estimated_value_chf"] = draft["estimated_value"]
     
-    draft.setdefault("type", "beratung")
+    # Lead code (auto-generate)
+    prefix = customer_code.upper()[:3]
+    is_bestand = "B" if not draft.get("is_new_customer") else "N"
+    year = datetime.utcnow().strftime("%y")
+    lead_num = len(existing_leads) + 1
+    draft.setdefault("lead_code", f"L-{prefix}-{is_bestand}-{year}-{lead_num:03d}")
     
-    # ── Phase D: Missing fields ──
+    # Mention existing leads
+    existing_note = ""
+    if existing_leads:
+        existing_note = f"\n\n_Es gibt bereits {len(existing_leads)} Lead(s) für {draft['customer_name']}._"
+    
+    # ── Haiku: Extract opportunity, type, notes (~1s) ──
+    try:
+        extraction_prompt = f"""Extrahiere aus der Nachricht:
+- opportunity: Kurzbeschreibung der Verkaufschance (1 Zeile)
+- type: Einer von: beratung, workshop, studie, intervention, keynote, training, retainer
+- source: Einer von: referral, event, inbound, outbound, existing_client
+- notes: Zusätzliche Details (oder leer)
+
+Antworte NUR mit JSON."""
+        
+        haiku_result, _ = call_claude_json(
+            extraction_prompt,
+            [{"role": "user", "content": message}],
+            datetime.utcnow().strftime("%Y-%m-%d"),
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200
+        )
+        
+        if haiku_result:
+            for field in ("opportunity", "type", "source", "notes"):
+                val = haiku_result.get(field)
+                if val and isinstance(val, str) and val.strip():
+                    draft.setdefault(field, val.strip())
+    except Exception as e:
+        logger.warning(f"Pre-workflow lead Haiku extraction failed: {e}")
+    
+    # Determine missing
     required = ["customer_code", "opportunity"]
+    recommended = ["estimated_value", "contact_person", "next_action"]
     missing = [f for f in required if not draft.get(f)]
+    missing_rec = [f for f in recommended if not draft.get(f)]
     
-    nice_to_have = []
-    for f in ["contact_person", "estimated_value", "next_action"]:
-        if not draft.get(f):
-            nice_to_have.append(f)
+    # Build message
+    cname = draft.get("customer_name", customer_code.upper())
+    opp = draft.get("opportunity", "")
+    val_str = ""
+    if draft.get("estimated_value"):
+        v = draft["estimated_value"]
+        c = draft.get("currency", "CHF")
+        val_str = f" – {v:,.0f} {c}".replace(",", "'")
     
-    all_missing = missing + nice_to_have
-    
-    # ── Phase E: Response message ──
-    if missing:
-        msg_parts = [f"Lead für **{draft.get('customer_name', customer_code.upper())}** — was ist die Opportunity?"]
+    if not missing:
+        msg = f"Lead **{draft.get('lead_code', '')}** für {cname} erfasst:\n**{opp}**{val_str}\n- Owner: {draft.get('fa_owner', 'GF')}\n- Kontakt: {draft.get('contact_person', '?')}"
+        if missing_rec:
+            msg += f"\n\nNoch ergänzen: {', '.join(missing_rec)}"
+        msg += existing_note
     else:
-        opp = draft.get("opportunity", "?")
-        msg_parts = [f"Lead für **{draft['customer_name']}** erfasst!"]
-        msg_parts.append(f"\n**{opp}**")
-        if draft.get("estimated_value"):
-            curr = draft.get("currency", "CHF")
-            val = draft["estimated_value"]
-            if isinstance(val, (int, float)):
-                msg_parts.append(f"- Geschätzter Wert: {val:,.0f} {curr}")
-        if draft.get("contact_person"):
-            msg_parts.append(f"- Kontakt: {draft['contact_person']}")
-        if draft.get("fa_owner"):
-            msg_parts.append(f"- Owner: {draft['fa_owner']}")
-        msg_parts.append(f"- Stage: {draft.get('stage', 'initial_contact')}")
-    
-    if nice_to_have:
-        msg_parts.append(f"\n**Noch ergänzen:** {', '.join(nice_to_have)}")
-    
-    status = "complete" if not missing else "need_info"
-    
-    logger.info(f"Pre-workflow lead: {customer_code} → {len(draft)} fields, {len(all_missing)} missing, status={status}")
+        msg = f"Lead für {cname} — mir fehlt noch: **{', '.join(missing)}**{existing_note}"
     
     return {
-        "ok": True,
         "intent": "lead",
         "action": "create",
-        "status": status,
+        "status": "complete" if not missing else "need_info",
         "data": draft,
-        "missing": all_missing,
-        "message": "\n".join(msg_parts),
+        "missing": missing + missing_rec[:3],
+        "message": msg,
         "confidence": 0.95,
-        "entities": entities,
         "_pre_workflow": True
     }
+
+
+def try_pre_workflow(intent: str, message: str, entities: dict, session_entities: dict, current_draft: dict) -> dict:
+    """Try Python pre-workflow. Returns result dict or None for Sonnet fallthrough."""
+    if intent == "project":
+        return pre_workflow_project(message, entities, session_entities, current_draft)
+    elif intent == "lead":
+        return pre_workflow_lead(message, entities, session_entities, current_draft)
+    # model, context → None (passthrough to Sonnet, these need creative LLM reasoning)
+    return None
 
 
 @app.post("/api/chat/intent")
@@ -6967,12 +7060,12 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
     _pre_result = None
     if intent == "project" and not current_draft:
         try:
-            _pre_result = pre_workflow_project(message, entities, session_entities, current_draft, today)
+            _pre_result = pre_workflow_project(message, entities, session_entities, current_draft)
         except Exception as e:
             logger.warning(f"Pre-workflow project failed, falling through to Sonnet: {e}")
     elif intent == "lead" and not current_draft:
         try:
-            _pre_result = pre_workflow_lead(message, entities, session_entities, current_draft, today)
+            _pre_result = pre_workflow_lead(message, entities, session_entities, current_draft)
         except Exception as e:
             logger.warning(f"Pre-workflow lead failed, falling through to Sonnet: {e}")
     
