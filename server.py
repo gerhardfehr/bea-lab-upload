@@ -5894,6 +5894,7 @@ def detect_intent_deterministic(message: str, session_type: str = "general") -> 
     # NOTE: Checked AFTER company AND project patterns.
     # "Budget 45k" matches lead, but "Mandat + Budget" should be project.
     # Guard: if message also contains project keywords, skip lead match.
+    # EXCEPTION: If "lead" is EXPLICITLY mentioned, it always wins.
     lead_patterns = [
         r"(?:neuer?\s+)?lead\b",
         r"(?:pipeline|akquise|pitch|offerte|angebot)\b",
@@ -5902,9 +5903,11 @@ def detect_intent_deterministic(message: str, session_type: str = "general") -> 
         r"(?:erstgespräch|anfrage)\s+(?:von|mit|für)",
         r"(?:opportunity|neugeschäft|vertrieb)",
     ]
-    # Project-override words: if these appear, don't match as lead even if budget pattern fires
+    # Explicit lead signal: "neuer lead", "lead für", "lead:" etc.
+    _explicit_lead = _re.search(r"\blead\b", msg)
+    # Project-override words: if these appear WITHOUT explicit lead, skip lead match
     _project_override = _re.search(r"(?:mandat|projekt|auftrag|workshop|deliverable|kick.?off|lieferung)", msg)
-    if not _project_override:
+    if _explicit_lead or not _project_override:
         for p in lead_patterns:
             if _re.search(p, msg):
                 customer = detect_customer_deterministic(msg)
