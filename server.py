@@ -5788,6 +5788,206 @@ def format_currency(amount, currency: str = "CHF") -> str:
     return f"{symbol} {formatted}"
 
 
+# ═══════════════════════════════════════════════════════════
+# DETERMINISTIC INTENT ROUTER (ebf_agent.py philosophy)
+# Susceptibility = 0.0: Python decides, not the LLM
+# Haiku fallback only for ambiguous messages (confidence < 0.6)
+# ═══════════════════════════════════════════════════════════
+
+def _build_customer_aliases():
+    """Build customer alias map from CUSTOMERS_LIST + GitHub cache. Called once at startup."""
+    aliases = {}
+    # From CUSTOMERS_LIST (always available)
+    for code in CUSTOMERS_LIST.replace("\n", ",").split(","):
+        code = code.strip().lower()
+        if not code:
+            continue
+        aliases[code] = code
+        # Generate common aliases: "erste-bank" → "erste", "migros-bank" → "migros"
+        if "-" in code:
+            short = code.split("-")[0]
+            if len(short) >= 3 and short not in aliases:
+                aliases[short] = code
+    # Manual aliases for common names/abbreviations
+    _manual = {
+        "luzerner kantonalbank": "lukb", "luzerner kb": "lukb",
+        "erste bank": "erste-bank", "erste": "erste-bank",
+        "graubündner kb": "gkb", "graubündner kantonalbank": "gkb",
+        "zürcher kantonalbank": "zkb", "zürcher kb": "zkb",
+        "berner kb": "bekb", "berner kantonalbank": "bekb",
+        "julius bär": "julius-baer", "julius baer": "julius-baer",
+        "swiss life": "swiss-life", "swisslife": "swiss-life",
+        "post finance": "postfinance", "post": "postfinance",
+        "peek & cloppenburg": "peek-cloppenburg", "p&c": "peek-cloppenburg",
+        "ringier": "ringier-medien-schweiz",
+        "groupe mutuel": "groupe-mutuel",
+        "zindel": "zindel-united", "zindel united": "zindel-united",
+        "a1": "a1-telekom", "a1 telekom": "a1-telekom",
+        "sbb": "sob", "südostbahn": "sob",
+        "economie suisse": "economiesuisse",
+        "migros": "migros-bank",
+        "hilti": "hilti", "abbvie": "abbvie", "allianz": "allianz",
+        "helvetia": "helvetia", "swisscom": "swisscom", "alpla": "alpla",
+        "alpiq": "alpiq", "cms": "cms", "innosuisse": "innosuisse",
+        "hofer": "hofer-reisen", "hofer reisen": "hofer-reisen",
+        "kaufland": "kaufland", "helsana": "helsana", "sanitas": "sanitas",
+        "concordia": "concordia", "visana": "visana", "swica": "swica",
+        "atupri": "atupri", "assura": "assura", "kpt": "kpt",
+        "raiffeisen": "raiffeisen", "ubs": "ubs", "bmw": "bmw",
+        "orf": "orf", "srg": "srg", "neon": "neon", "revolut": "revolut",
+        "philoro": "philoro", "porr": "porr", "lindt": "lindt-copacking",
+        "valiant": "valiant", "vontobel": "vontobel",
+    }
+    aliases.update(_manual)
+    return aliases
+
+_CUSTOMER_ALIASES = _build_customer_aliases()
+
+
+def detect_customer_deterministic(msg: str) -> str:
+    """Pure Python customer detection. Susceptibility = 0.0."""
+    msg_lower = msg.lower()
+    # Sort by length descending so "erste bank" matches before "erste"
+    for alias, code in sorted(_CUSTOMER_ALIASES.items(), key=lambda x: -len(x[0])):
+        if alias in msg_lower:
+            return code
+    return ""
+
+
+def detect_intent_deterministic(message: str, session_type: str = "general") -> dict:
+    """Pure Python intent detection. Susceptibility = 0.0 for routing decisions.
+    
+    Returns: {"intent": str, "confidence": float, "entities": dict}
+    If confidence < 0.6, caller should fall back to Haiku LLM router.
+    """
+    import re as _re
+    msg = message.lower().strip()
+
+    # ── T-PAPER triggers (highest priority) ──
+    paper_patterns = [
+        r"(?:füge?|add|import|lade)\s+.*(?:paper|studie|artikel|publication)",
+        r"(?:ariely|kahneman|fehr|thaler|tversky|loewenstein|gneezy|list|levitt|duflo)\s*[\(\[]?\d{4}",
+        r"(?:doi|arxiv|ssrn)[:\s]+\S+",
+        r"(?:bibliogra|bibtex|zitier|cit|referenz)\w*\s+(?:hinzu|add|import)",
+    ]
+    for p in paper_patterns:
+        if _re.search(p, msg):
+            author_year = _re.search(r"(\w+)\s*[\(\[]?(\d{4})", msg)
+            return {"intent": "paper", "confidence": 0.95,
+                    "entities": {"author": author_year.group(1) if author_year else "",
+                                 "year": author_year.group(2) if author_year else ""}}
+
+    # ── Company triggers (before lead, since "neue Firma" is specific) ──
+    company_patterns = [
+        r"(?:neue?\s+)?(?:firma|unternehmen)\s+(?:an)?leg",
+        r"(?:leg[e]?\s+).+(?:als\s+)?(?:firma|unternehmen)\s+an",
+        r"(?:stammdaten|firmendaten)\s+(?:erfass|anleg|import)",
+        r"(?:neue?\s+firma)\s+\w+",
+    ]
+    for p in company_patterns:
+        if _re.search(p, msg):
+            customer = detect_customer_deterministic(msg)
+            return {"intent": "company", "confidence": 0.9,
+                    "entities": {"customer": customer}, "session_type": "lead"}
+
+    # ── Lead triggers ──
+    # NOTE: Checked AFTER company AND project patterns.
+    # "Budget 45k" matches lead, but "Mandat + Budget" should be project.
+    # Guard: if message also contains project keywords, skip lead match.
+    lead_patterns = [
+        r"(?:neuer?\s+)?lead\b",
+        r"(?:pipeline|akquise|pitch|offerte|angebot)\b",
+        r"(?:budget|volumen|wert)\s*:?\s*[\d.,]+\s*[kKmM€$]",
+        r"(?:geschätz|estimat)\w*\s*(?:wert|value|volumen)",
+        r"(?:erstgespräch|anfrage)\s+(?:von|mit|für)",
+        r"(?:opportunity|neugeschäft|vertrieb)",
+    ]
+    # Project-override words: if these appear, don't match as lead even if budget pattern fires
+    _project_override = _re.search(r"(?:mandat|projekt|auftrag|workshop|deliverable|kick.?off|lieferung)", msg)
+    if not _project_override:
+        for p in lead_patterns:
+            if _re.search(p, msg):
+                customer = detect_customer_deterministic(msg)
+                return {"intent": "lead", "confidence": 0.9,
+                        "entities": {"customer": customer}}
+
+    # ── Project triggers ──
+    project_patterns = [
+        r"(?:neues?\s+)?(?:mandat|projekt|auftrag)\b",
+        r"(?:workshop|deliverable|lieferung|meilenstein)\b",
+        r"(?:kick.?off|timeline|projektplan)\b",
+        r"(?:start|beginn)\s+(?:im\s+)?(?:jan|feb|mär|apr|mai|jun|jul|aug|sep|okt|nov|dez)",
+        r"(?:phase|sprint|workstream)\s+\d",
+    ]
+    for p in project_patterns:
+        if _re.search(p, msg):
+            customer = detect_customer_deterministic(msg)
+            return {"intent": "project", "confidence": 0.9,
+                    "entities": {"customer": customer}}
+
+    # ── Lead fallback: project-override blocked lead above, but no project pattern matched ──
+    # Now check lead patterns without the override guard
+    if _project_override:
+        # Project words present but no project pattern matched → still check lead
+        for p in lead_patterns:
+            if _re.search(p, msg):
+                customer = detect_customer_deterministic(msg)
+                return {"intent": "lead", "confidence": 0.75,
+                        "entities": {"customer": customer}}
+
+    # ── Model triggers (BCM/EBF) ──
+    model_patterns = [
+        r"\b(?:bcm|10c|behavioral\s+c\w+\s+model)\b",
+        r"(?:modell|intervention|nudge)\s+(?:bau|erstell|design|entwick)",
+        r"(?:axiom|willingness|awareness)\s*[×x]?\s*(?:matrix|defini)",
+        r"(?:psi|ψ).?(?:dimension|vektor|analyse|profil)",
+        r"(?:behavior\w*\s+change|verhaltensänderung)\s+(?:modell|design)",
+    ]
+    for p in model_patterns:
+        if _re.search(p, msg):
+            customer = detect_customer_deterministic(msg)
+            return {"intent": "model", "confidence": 0.9,
+                    "entities": {"customer": customer} if customer else {}}
+
+    # ── Context/Ψ triggers ──
+    context_patterns = [
+        r"(?:ausgangslage|situationsanalyse|kontext.?analyse|kontexterfassung)",
+        r"(?:zielgruppe|stakeholder|umfeld)\s+(?:versteh|analys|beschreib|erfass)",
+        r"(?:8\s+)?(?:ψ|psi).?dimension",
+        r"(?:kundenabwanderung|churn|retention)\s+(?:analys|versteh)",
+        r"(?:regulatorisch|compliance|psd\d)",
+    ]
+    for p in context_patterns:
+        if _re.search(p, msg):
+            customer = detect_customer_deterministic(msg)
+            return {"intent": "context", "confidence": 0.85,
+                    "entities": {"customer": customer} if customer else {}}
+
+    # ── Knowledge triggers ──
+    knowledge_patterns = [
+        r"(?:was\s+ist|erkläre?|definier)\s+(?:das\s+)?(?:ebf|bcm|10c|evidence|framework)",
+        r"(?:paper|studie|forschung|evidenz|literatur)\s+(?:such|find|über|zu\s)",
+        r"(?:wissenschaft|theor|empir)\w+\s+(?:grundlage|basis|hintergrund)",
+        r"(?:welche\s+(?:paper|studien|forschung))",
+    ]
+    for p in knowledge_patterns:
+        if _re.search(p, msg):
+            return {"intent": "knowledge", "confidence": 0.85, "entities": {}}
+
+    # ── Session continuity: Stay in typed session ──
+    if session_type not in ("general", ""):
+        return {"intent": session_type, "confidence": 0.7, "entities": {}}
+
+    # ── Customer mentioned but no clear intent → could be lead or project ──
+    customer = detect_customer_deterministic(msg)
+    if customer:
+        return {"intent": "general", "confidence": 0.5,
+                "entities": {"customer": customer}}
+
+    # ── PASSTHROUGH: Nothing matched → general ──
+    return {"intent": "general", "confidence": 0.5, "entities": {}}
+
+
 INTENT_ROUTER_SYSTEM = """Du bist der BEATRIX Intent-Router. Analysiere die User-Nachricht und bestimme den Intent.
 
 VERFÜGBARE INTENTS (Session-Typen):
@@ -6152,20 +6352,28 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
         intent = session_type
 
     if not intent:
-        # Quick classification call (Haiku = fast, 1-2s vs 3-5s Sonnet)
-        try:
-            router_messages = [{"role": "user", "content": message}]
-            parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
-                                           model="claude-haiku-4-5-20251001", max_tokens=500)
-            if parsed:
-                intent = parsed.get("intent", "general")
-                entities = parsed.get("entities", {})
-                logger.info(f"Intent routed: {intent} (confidence: {parsed.get('confidence',0)}) for: {message[:60]}")
-            else:
-                intent = "general"
-        except Exception as e:
-            logger.warning(f"Router failed: {e}, defaulting to general")
-            intent = "general"
+        # ── Deterministic routing (Susceptibility = 0.0, ~0ms) ──
+        det_result = detect_intent_deterministic(message, session_type)
+        intent = det_result["intent"]
+        entities = det_result["entities"]
+        _det_confidence = det_result["confidence"]
+
+        # Fallback to Haiku ONLY if deterministic confidence is low AND message is non-trivial
+        if _det_confidence < 0.6 and len(message) > 30:
+            try:
+                router_messages = [{"role": "user", "content": message}]
+                parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
+                                               model="claude-haiku-4-5-20251001", max_tokens=500)
+                if parsed and parsed.get("confidence", 0) > _det_confidence:
+                    intent = parsed.get("intent", intent)
+                    entities = {**entities, **parsed.get("entities", {})}
+                    logger.info(f"Intent routed via Haiku fallback: {intent} (conf: {parsed.get('confidence',0)}) for: {message[:60]}")
+                else:
+                    logger.info(f"Intent routed deterministic (Haiku didn't improve): {intent} (conf: {_det_confidence}) for: {message[:60]}")
+            except Exception as e:
+                logger.warning(f"Haiku fallback failed: {e}, using deterministic: {intent}")
+        else:
+            logger.info(f"Intent routed deterministic: {intent} (conf: {_det_confidence}) for: {message[:60]}")
 
     # ── Step 2: Handle knowledge/general via existing KB path ──
     if intent in ("knowledge", "general"):
@@ -6380,17 +6588,22 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
     if not intent and session_type != "general":
         intent = session_type
     if not intent:
-        try:
-            router_messages = [{"role": "user", "content": message}]
-            parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
-                                           model="claude-haiku-4-5-20251001", max_tokens=500)
-            if parsed:
-                intent = parsed.get("intent", "general")
-                entities = parsed.get("entities", {})
-            else:
-                intent = "general"
-        except Exception:
-            intent = "general"
+        # ── Deterministic routing (Susceptibility = 0.0, ~0ms) ──
+        det_result = detect_intent_deterministic(message, session_type)
+        intent = det_result["intent"]
+        entities = det_result["entities"]
+        _det_confidence = det_result["confidence"]
+        if _det_confidence < 0.6 and len(message) > 30:
+            try:
+                router_messages = [{"role": "user", "content": message}]
+                parsed, raw = call_claude_json(INTENT_ROUTER_SYSTEM, router_messages, today,
+                                               model="claude-haiku-4-5-20251001", max_tokens=500)
+                if parsed and parsed.get("confidence", 0) > _det_confidence:
+                    intent = parsed.get("intent", intent)
+                    entities = {**entities, **parsed.get("entities", {})}
+            except Exception:
+                pass
+        logger.info(f"Stream intent routed: {intent} (det_conf: {_det_confidence}) for: {message[:60]}")
 
     # ── Update session type + merge entities ──
     if intent not in ("knowledge", "general"):
