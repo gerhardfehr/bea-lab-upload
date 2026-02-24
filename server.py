@@ -414,7 +414,7 @@ class User(Base):
     # client:     customer → only their own portal (client_slug)
     # student:    UZH / Field Experiments → course portal only
     # researcher: external → papers & research, no CRM/client data
-    user_group = Column(String(30), default="researcher")  # fehradvice | client | student | researcher
+    user_group = Column(String(30), default="researcher", server_default="researcher")  # fehradvice | client | student | researcher
     client_slug = Column(String(100), nullable=True)  # for group=client: which portal they belong to
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
@@ -10059,6 +10059,22 @@ async def delete_document(doc_id: str, user=Depends(require_permission("document
 
 # ========== STARTUP: Embed existing documents ==========
 @app.on_event("startup")
+async def run_db_migrations():
+    """Run schema migrations on startup."""
+    try:
+        from sqlalchemy import text as _text
+        db = get_db()
+        engine = db.bind
+        with engine.connect() as conn:
+            conn.execute(_text("ALTER TABLE users ADD COLUMN IF NOT EXISTS user_group VARCHAR(30) DEFAULT 'researcher'"))
+            conn.execute(_text("ALTER TABLE users ADD COLUMN IF NOT EXISTS client_slug VARCHAR(100)"))
+            conn.execute(_text("UPDATE users SET user_group = 'fehradvice' WHERE email LIKE '%@fehradvice.com' AND (user_group IS NULL OR user_group = 'researcher')"))
+            conn.commit()
+        logger.info("✅ DB migrations OK (user_group, client_slug)")
+    except Exception as e:
+        logger.warning(f"DB migration warning: {e}")
+
+@app.on_event("startup")
 async def startup_embed():
     """On startup, embed any documents that don't have embeddings yet."""
     # ── Ensure admin accounts are active ──
@@ -16493,6 +16509,30 @@ async def set_user_group(user_id: str, request: Request, current_user: User = De
         return {"status": "ok", "user_id": user_id, "user_group": group, "client_slug": user.client_slug}
     finally:
         db_session.close()
+
+@app.get("/api/admin/run-migration")
+async def run_migration_endpoint(request: Request):
+    """Emergency: run DB schema migration."""
+    secret = request.headers.get("X-Migration-Secret", "")
+    if secret != "beatrix-migrate-2026":
+        raise HTTPException(403, "Forbidden")
+    from sqlalchemy import text as _text
+    db = get_db()
+    engine = db.bind
+    results = []
+    with engine.connect() as conn:
+        for sql in [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS user_group VARCHAR(30) DEFAULT 'researcher'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS client_slug VARCHAR(100)",
+            "UPDATE users SET user_group = 'fehradvice' WHERE email LIKE '%@fehradvice.com' AND (user_group IS NULL OR user_group = 'researcher')",
+        ]:
+            try:
+                conn.execute(_text(sql))
+                results.append(f"✅ {sql[:60]}")
+            except Exception as e:
+                results.append(f"⚠️ {e}")
+        conn.commit()
+    return {"status": "ok", "results": results}
 
 # ═══════════════════════════════════════════════════════════════════════
 # CLIENT PORTAL FACTORY  –  3-Klick Kunden-Portal Generator
