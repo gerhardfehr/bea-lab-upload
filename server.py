@@ -6028,6 +6028,7 @@ INTENT_TO_SESSION_TYPE = {
     "model": "model",         # Modell
     "context": "context",     # Kontext Ψ
     "knowledge": "research",  # Literatur (KB/RAG)
+    "paper": "research",      # Paper-Import → KB path
     "general": "general",     # Fragen
 }
 
@@ -6375,8 +6376,8 @@ async def chat_intent(request: Request, user=Depends(require_permission("chat.in
         else:
             logger.info(f"Intent routed deterministic: {intent} (conf: {_det_confidence}) for: {message[:60]}")
 
-    # ── Step 2: Handle knowledge/general via existing KB path ──
-    if intent in ("knowledge", "general"):
+    # ── Step 2: Handle knowledge/general/paper via existing KB path ──
+    if intent in ("knowledge", "general", "paper"):
         # 🔍 Background fact-check
         import threading
         _fc_msg, _fc_user, _fc_cust = message, user["sub"], entities.get("customer", "")
@@ -6615,8 +6616,8 @@ async def chat_intent_stream(request: Request, user=Depends(require_permission("
             db_upd.close()
         session_entities = merged_entities
 
-    # ── Step 2: Redirect knowledge/general ──
-    if intent in ("knowledge", "general"):
+    # ── Step 2: Redirect knowledge/general/paper ──
+    if intent in ("knowledge", "general", "paper"):
         import threading
         _fc_msg, _fc_user, _fc_cust = message, user["sub"], entities.get("customer", "")
         threading.Thread(target=lambda: fact_check_user_claims(_fc_msg, _fc_user, customer_code=_fc_cust), daemon=True).start()
