@@ -519,6 +519,16 @@ def get_db():
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
         try:
             Base.metadata.create_all(bind=_engine)
+            # Migrate: add user_group + client_slug columns if missing
+            try:
+                with _engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS user_group VARCHAR(30) DEFAULT 'researcher'"))
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS client_slug VARCHAR(100)"))
+                    # Auto-assign fehradvice group to @fehradvice.com users
+                    conn.execute(text("UPDATE users SET user_group = 'fehradvice' WHERE email LIKE '%@fehradvice.com' AND (user_group IS NULL OR user_group = 'researcher')"))
+                    conn.commit()
+            except Exception as _mg_err:
+                print(f"user_group migration note: {_mg_err}")
             # Migrate v3: create lab_evaluations, lab_announcements, lab_course_info tables
             try:
                 with _engine.connect() as conn:
