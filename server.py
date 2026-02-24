@@ -16814,7 +16814,7 @@ function rmTyping(id){{document.getElementById(id)?.remove();}}
 
 
 @app.post("/api/admin/create-client")
-async def create_client_portal(request: Request, current_user: User = Depends(get_current_user)):
+async def create_client_portal(request: Request, current_user: User = Depends(require_auth)):
     """3-Klick Client Portal Factory – generates, deploys and routes a full client portal."""
     if not current_user.is_admin:
         raise HTTPException(403, "Admin required")
@@ -16879,7 +16879,7 @@ async def create_client_portal(request: Request, current_user: User = Depends(ge
         log.append(f"⚠️ vercel.json: {e}")
 
     # 4. Create user accounts
-    db_session = next(get_db())
+    db_session = get_db()
     created = []
     try:
         for u in users:
