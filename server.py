@@ -43,7 +43,9 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "BEATRIX Lab <noreply@bea-lab.io>")
 APP_URL = os.getenv("APP_URL", "https://www.bea-lab.io")
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "78hevff5ov8phw")
-LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
+_LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
+def get_linkedin_secret():
+    return _LINKEDIN_CLIENT_SECRET or os.getenv("LINKEDIN_CLIENT_SECRET", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GH_CONTEXT_REPO = os.getenv("GH_CONTEXT_REPO", "FehrAdvice-Partners-AG/complementarity-context-framework")
 VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY", "")
@@ -3039,7 +3041,7 @@ async def linkedin_callback(code: str = "", state: str = "", error: str = ""):
     ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
     # Exchange code for token
     try:
-        token_data = urllib.parse.urlencode({"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri, "client_id": LINKEDIN_CLIENT_ID, "client_secret": LINKEDIN_CLIENT_SECRET}).encode()
+        token_data = urllib.parse.urlencode({"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri, "client_id": LINKEDIN_CLIENT_ID, "client_secret": get_linkedin_secret()}).encode()
         req = urllib.request.Request("https://www.linkedin.com/oauth/v2/accessToken", data=token_data, method="POST", headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BEATRIXLab/3.5"})
         token_resp = json.loads(urllib.request.urlopen(req, context=ctx).read())
         access_token = token_resp["access_token"]
@@ -3087,6 +3089,17 @@ async def disconnect_linkedin(user=Depends(require_auth)):
         return {"message": "LinkedIn getrennt"}
     finally: db.close()
 
+
+@app.post("/api/admin/config/linkedin")
+async def admin_set_linkedin_config(request: Request, user=Depends(require_permission("platform.manage_users"))):
+    """Admin sets LinkedIn OAuth secret at runtime (not persisted to env)."""
+    global _LINKEDIN_CLIENT_SECRET
+    data = await request.json()
+    secret = data.get("client_secret", "")
+    if not secret: raise HTTPException(400, "client_secret erforderlich")
+    _LINKEDIN_CLIENT_SECRET = secret
+    logger.info(f"LinkedIn client secret set at runtime by {user.get('sub', '?')}")
+    return {"status": "configured", "linkedin_ready": bool(LINKEDIN_CLIENT_ID and _LINKEDIN_CLIENT_SECRET)}
 # ── Behavioral Insights / Ψ-Profiling ──────────────────────────────────
 
 INSIGHT_QUESTION_POOL = [
