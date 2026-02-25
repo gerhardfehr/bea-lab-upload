@@ -9604,6 +9604,38 @@ async def get_paper_upload_priority(user=Depends(require_auth)):
         raise HTTPException(500, f"Konnte Priority-Liste nicht laden: {e}")
 
 
+# ========== INTEGRATED PAPERS STATUS (GitHub file check) ==========
+
+_integrated_files_cache = {"data": None, "ts": 0}
+
+@app.get("/api/papers/integrated-files")
+async def get_integrated_files(user=Depends(require_auth)):
+    """List all filenames in papers/evaluated/integrated/ from GitHub (cached 10 min).
+    Used by frontend to show which papers are already processed in the knowledge base."""
+    import time
+    now = time.time()
+    if _integrated_files_cache["data"] and (now - _integrated_files_cache["ts"]) < 600:
+        return _integrated_files_cache["data"]
+
+    if not GH_TOKEN:
+        raise HTTPException(500, "GitHub not configured")
+    import urllib.request as ur, ssl
+    ctx2 = ssl.create_default_context(); ctx2.check_hostname = False; ctx2.verify_mode = ssl.CERT_NONE
+    gh = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json", "User-Agent": "BEATRIXLab"}
+    try:
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/papers/evaluated/integrated/"
+        req = ur.Request(url, headers=gh)
+        resp = json.loads(ur.urlopen(req, context=ctx2, timeout=15).read())
+        filenames = [item["name"] for item in resp if isinstance(item, dict)]
+        result = {"files": filenames, "count": len(filenames), "ts": now}
+        _integrated_files_cache["data"] = result
+        _integrated_files_cache["ts"] = now
+        return result
+    except Exception as e:
+        logger.error(f"Integrated files fetch failed: {e}")
+        raise HTTPException(500, f"Konnte integrierte Dateien nicht laden: {e}")
+
+
 # ========== PAPER FINDER SOURCES (verified researcher PDFs) ==========
 
 _paper_sources_cache = {"data": None, "ts": 0}
